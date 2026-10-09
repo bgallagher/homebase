@@ -102,16 +102,33 @@ public struct OpenSSHTransport: SSHTransport {
         return CommandResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
     }
 
+    /// Streams combined output over a forced remote pseudo-terminal (`-tt`), so lines end in \r\n.
+    ///
+    /// Stopping the stream sends Ctrl-C through that terminal first, which makes the remote command exit
+    /// and ssh finish on its own. Killing the local ssh alone is not enough: some servers (Tailscale SSH,
+    /// as found in testing) leave the remote process running, so a quiet `docker logs -f` would stay
+    /// behind forever. The kill is only a fallback if ssh has not exited a couple of seconds after the Ctrl-C.
+    ///
+    /// Streams deliberately do NOT use the shared ControlMaster connection: in testing, Ctrl-C written to
+    /// a multiplexed client never reached the remote command, but on its own connection it does.
     public func stream(_ command: String) -> AsyncThrowingStream<String, Error> {
-        let args = baseArguments() + [command]
+        let args = ["-tt"] + (port.map { ["-p", String($0)] } ?? []) + [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+            host,
+            command,
+        ]
         return AsyncThrowingStream { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
             process.arguments = args
-            let out = Pipe()
+            let out = Pipe(), input = Pipe()
             process.standardOutput = out
             process.standardError = out
-            process.standardInput = FileHandle.nullDevice
+            process.standardInput = input
             out.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty { return }
@@ -122,7 +139,11 @@ public struct OpenSSHTransport: SSHTransport {
                 continuation.finish()
             }
             continuation.onTermination = { _ in
-                if process.isRunning { process.terminate() }
+                guard process.isRunning else { return }
+                try? input.fileHandleForWriting.write(contentsOf: Data([0x03])) // Ctrl-C to the remote pty
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                    if process.isRunning { process.terminate() }
+                }
             }
             do { try process.run() } catch {
                 continuation.finish(throwing: OpenSSHError.launchFailed(error.localizedDescription))

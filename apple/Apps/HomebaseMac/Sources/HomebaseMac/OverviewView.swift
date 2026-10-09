@@ -5,6 +5,7 @@ struct OverviewView: View {
     let model: AppModel
     let server: Server
     let openTerminal: () -> Void
+    let openScreen: (String) -> Void
 
     var body: some View {
         let state = model.state
@@ -14,7 +15,7 @@ struct OverviewView: View {
                     Text("Waiting for you to confirm the host key…").foregroundStyle(Theme.textMuted)
                 } else if let o = state.overview {
                     header(o, stale: state.isStale ? state.updatedAt : nil)
-                    if !state.attention.isEmpty { AttentionStrip(items: state.attention) }
+                    if !state.attention.isEmpty { AttentionStrip(items: state.attention, open: openScreen) }
                     if let error = state.error { ErrorBanner(message: error) }
                     cards(o, cpu: state.cpuPercent)
                 } else if let error = state.error {
@@ -117,12 +118,13 @@ struct StatCard: View {
 
 struct AttentionStrip: View {
     let items: [AttentionItem]
+    let open: (String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "exclamationmark.triangle").font(.system(size: 18)).foregroundStyle(Theme.warn)
             Text("Needs attention").fontWeight(.semibold).foregroundStyle(Theme.warn)
-            FlowChips(items: items)
+            FlowChips(items: items, open: open)
             Spacer(minLength: 0)
         }
         .padding(14)
@@ -133,15 +135,25 @@ struct AttentionStrip: View {
 
 private struct FlowChips: View {
     let items: [AttentionItem]
+    let open: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(items) { item in
-                Text(item.message)
+                // Each chip jumps to the screen that helps fix it, when that screen exists.
+                let target = Screen(rawValue: item.fix)?.isAvailable == true
+                Button { open(item.fix) } label: {
+                    HStack(spacing: 6) {
+                        Text(item.message)
+                        if target { Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)) }
+                    }
                     .font(.system(size: 13))
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .foregroundStyle(item.severity == .critical ? Theme.danger : Theme.warnText)
                     .background(Theme.warnChip, in: RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.pointer)
+                .disabled(!target)
             }
         }
     }

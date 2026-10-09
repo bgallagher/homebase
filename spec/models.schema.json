@@ -53,7 +53,8 @@
         "cpu",
         "memory",
         "disks",
-        "rebootRequired"
+        "rebootRequired",
+        "unhealthyContainers"
       ],
       "properties": {
         "hostname": {
@@ -160,6 +161,12 @@
         },
         "rebootRequired": {
           "type": "boolean"
+        },
+        "unhealthyContainers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -187,6 +194,106 @@
         },
         "fix": {
           "type": "string"
+        }
+      }
+    },
+    "DockerSnapshot": {
+      "type": "object",
+      "required": [
+        "containers"
+      ],
+      "properties": {
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "image",
+              "state",
+              "health",
+              "status",
+              "ports"
+            ],
+            "description": "Optional fields are omitted (not null) when unknown. Stacks are derived from `project`.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "exited",
+                  "paused",
+                  "restarting",
+                  "created",
+                  "removing",
+                  "dead"
+                ]
+              },
+              "health": {
+                "enum": [
+                  "none",
+                  "starting",
+                  "healthy",
+                  "unhealthy"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "hostPort",
+                    "containerPort",
+                    "proto"
+                  ],
+                  "properties": {
+                    "hostPort": {
+                      "type": "integer"
+                    },
+                    "containerPort": {
+                      "type": "integer"
+                    },
+                    "proto": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "project": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "workingDir": {
+                "type": "string"
+              },
+              "configFile": {
+                "type": "string"
+              },
+              "cpuPercent": {
+                "type": "number"
+              },
+              "memoryUsedBytes": {
+                "type": "integer"
+              },
+              "memoryLimitBytes": {
+                "type": "integer"
+              }
+            }
+          }
         }
       }
     }

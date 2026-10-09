@@ -1,0 +1,6 @@
+##docker
+ok
+##ps
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
+##stats
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock

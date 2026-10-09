@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 3 done: bootstrap, SSH transport + terminal spike, Overview/attention, saved servers + host-key trust, terminal tabs); do not build ahead of the stage the user has approved.
+Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 3 done: bootstrap, SSH transport + terminal spike, Overview/attention, saved servers + host-key trust, terminal tabs, Docker); do not build ahead of the stage the user has approved.
 
 ## Commands
 
@@ -21,6 +21,8 @@ cd apple && swift test --filter ModelsTests/testServerRoundTripsThroughJSON   # 
 ```
 tools/capture-fixtures <ssh-host> <command-id> <name>   # save a real command's output as spec/fixtures/<id>/<name>.out.txt
 cd apple && swift run homebase-probe <host> overview    # headless two-poll check of ServerSession against a real host
+cd apple && swift run homebase-probe <host> docker      # Docker poll + harmless action checks against a real host
+cd apple && swift run homebase-probe <host> logs <container>  # stream logs 4 s, cancel, check no remote process is left
 cd apple && swift run homebase-probe <host> hostkey     # unknown -> trust -> tampered flow, using a throwaway known_hosts
 ```
 
@@ -50,5 +52,8 @@ Xcode is installed on the dev machine. There is no `.xcodeproj` yet. The Mac app
 - Host keys: `HostKeyVerifier` (SSHSystem) runs ssh with `StrictHostKeyChecking=yes`. Unknown key -> user sees fingerprints and confirms -> exactly the scanned lines are appended to known_hosts. Changed key -> blocked, never offered for acceptance. `AppModel` only polls the selected server.
 - `Server.host` is whatever ssh connects to (hostname, IP or ~/.ssh/config alias). Imported servers keep the alias as `host` so ssh applies the rest of the entry.
 - Terminals: `TerminalStore` holds each server's `TerminalTab`s; a tab owns its SwiftTerm `LocalProcessTerminalView` (not SwiftUI), so sessions survive switching screens, tabs and servers, and end only on tab close, server removal or quit. Tabs run `ssh -t` over the same ControlPath as `OpenSSHTransport`, so a new tab reuses the open connection (about 0.17 s vs 0.8 s). Cmd+T / Cmd+W are menu commands (`TerminalCommands`) that replace File > Close and fall back to closing the window when no terminal is showing.
-- Not built yet: Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server, automatic terminal reconnect (a dead tab shows a Reconnect button), a global read-only flag checked in the service layer.
+- Docker: `DockerSession` (Core actor, polls every 10 s only while the Docker screen is open, because `docker stats` takes ~2.5 s) parses `docker ps -a` + `docker stats` into stacks grouped by compose project label. Actions (`start/stop/restart`) and logs only accept a hex container id (`DockerSession.isContainerID`), since the id is interpolated into a remote shell command. The Overview command also lists unhealthy container names, which feed the attention strip; each chip links to its `fix` screen.
+- Streams (`OpenSSHTransport.stream`, used for logs) deliberately use their own connection with `-tt`, not the shared ControlMaster: stopping a stream sends Ctrl-C through the pty, and tested behaviour is that Ctrl-C reaches the remote command on its own connection but not through a multiplexed one. Merely killing the local ssh leaves `docker logs -f` running forever on Tailscale SSH servers.
+- Fixtures from real servers must be sanitized before committing (IPs, private container names, emails). `spec/fixtures/**/raw-*` is git-ignored for raw captures. Golden files may be generated with `HOMEBASE_WRITE_GOLDEN=1 swift test`; review them by hand.
+- Not built yet: Docker pull/recreate/rebuild/update checks, Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server, automatic terminal reconnect (a dead tab shows a Reconnect button), a global read-only flag checked in the service layer.
 - The server stays untouched: no agent, standard SSH commands only (Debian/Ubuntu and apt for the MVP).

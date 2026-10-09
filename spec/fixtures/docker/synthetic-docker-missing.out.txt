@@ -1,0 +1,6 @@
+##docker
+missing
+##ps
+bash: line 1: docker: command not found
+##stats
+bash: line 1: docker: command not found

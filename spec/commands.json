@@ -3,9 +3,63 @@
   "commands": [
     {
       "id": "overview",
-      "description": "One batched read of host, OS, uptime, load, CPU counters, memory, disks and reboot flag. Sections start with a '##name' line.",
-      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi",
+      "description": "One batched read of host, OS, uptime, load, CPU counters, memory, disks and reboot flag and the names of unhealthy containers (empty if docker is absent). Sections start with a '##name' line.",
+      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null",
       "timeoutSeconds": 10,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker",
+      "description": "All containers (docker ps -a) plus one-shot resource stats for running ones. Compose stacks are derived from container labels.",
+      "script": "echo '##docker'; if command -v docker >/dev/null 2>&1; then echo ok; else echo missing; fi; echo '##ps'; docker ps -a --format '{{json .}}' 2>&1; echo '##stats'; docker stats --no-stream --format '{{json .}}' 2>&1",
+      "timeoutSeconds": 20,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_start",
+      "kind": "action",
+      "description": "docker start one container. {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker start {id}",
+      "timeoutSeconds": 30,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_stop",
+      "kind": "action",
+      "description": "docker stop one container. {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker stop {id}",
+      "timeoutSeconds": 60,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_restart",
+      "kind": "action",
+      "description": "docker restart one container. {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker restart {id}",
+      "timeoutSeconds": 60,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_logs",
+      "kind": "stream",
+      "description": "Follow one container's logs, starting with the last 100 lines. Run over a pseudo-terminal on its own connection; stop by sending Ctrl-C. {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker logs -f --tail 100 {id}",
+      "timeoutSeconds": 0,
       "distros": [
         "debian",
         "ubuntu"

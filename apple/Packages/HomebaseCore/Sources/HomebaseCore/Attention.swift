@@ -24,6 +24,11 @@ public enum Attention {
                 message: "\(disk.mount) is \(disk.usePercent)% full.",
                 fix: "docker"))
         }
+        for name in overview.unhealthyContainers {
+            items.append(AttentionItem(
+                id: "container_unhealthy:\(name)", severity: .warning,
+                message: "\(name) is unhealthy.", fix: "docker"))
+        }
         if overview.rebootRequired {
             items.append(AttentionItem(
                 id: "reboot_required", severity: .warning,

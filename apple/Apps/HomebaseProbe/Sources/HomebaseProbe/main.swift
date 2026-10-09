@@ -42,6 +42,55 @@ if args.count > 2, args[2] == "hostkey" {
     exit(0)
 }
 let transport = OpenSSHTransport(host: args[1])
+if args.count > 2, args[2] == "docker" {
+    let session = DockerSession(transport: transport)
+    let t0 = Date()
+    await session.refresh()
+    print("docker poll: \(String(format: "%.2f", Date().timeIntervalSince(t0)))s")
+    var state = await session.state
+    if let e = state.error { print("error: \(e)"); exit(1) }
+    guard let snap = state.snapshot else { exit(1) }
+    for stack in snap.stacks {
+        print("\(stack.name) (\(stack.configFileName ?? "-")): \(stack.runningCount) running, \(stack.unhealthyCount) unhealthy, \(stack.stoppedCount) stopped")
+        for c in stack.containers {
+            print("   \(c.service ?? c.name) [\(c.state)/\(c.health)] cpu \(c.cpuPercent.map { String(format: "%.1f", $0) } ?? "-")% mem \(c.memoryUsedBytes.map { "\($0 / 1_048_576)MiB" } ?? "-") ports \(c.ports.map { "\($0.hostPort)->\($0.containerPort)" })")
+        }
+    }
+    // Harmless: starting an already-running container is a no-op that echoes its id.
+    if let running = snap.containers.first(where: { $0.isRunning }) {
+        await session.perform(.start, containerID: running.id)
+        state = await session.state
+        print("no-op start of \(running.name): actionError=\(state.actionError ?? "none"), busy=\(state.busy.count)")
+    }
+    await session.perform(.start, containerID: "0123456789ab")
+    state = await session.state
+    print("start of nonexistent id: actionError=\(state.actionError ?? "none")")
+    await session.perform(.restart, containerID: "x; reboot")
+    state = await session.state
+    print("injection attempt: actionError=\(state.actionError ?? "none")")
+    exit(0)
+}
+if args.count > 3, args[2] == "logs" {
+    // Stream a container's logs for 4 s, cancel, then check nothing is left running on the server.
+    let name = args[3]
+    let task = Task {
+        var bytes = 0
+        do {
+            for try await chunk in transport.stream("docker logs -f --tail 3 \(name)") {
+                bytes += chunk.utf8.count
+                print("chunk:", chunk.replacingOccurrences(of: "\r", with: "<CR>").prefix(120))
+            }
+        } catch { print("stream error: \(error)") }
+        return bytes
+    }
+    try await Task.sleep(nanoseconds: 4_000_000_000)
+    task.cancel()
+    _ = await task.value
+    try await Task.sleep(nanoseconds: 1_500_000_000)
+    let r = try await transport.run("pgrep -af 'docker logs' | grep -v pgrep | wc -l", timeout: 10)
+    print("remote 'docker logs' processes still running: \(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines))")
+    exit(0)
+}
 if args.count > 2, args[2] == "overview" {
     // Two polls through the real ServerSession, so CPU% (needs two readings) is exercised.
     let session = ServerSession(transport: transport)

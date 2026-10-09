@@ -27,6 +27,8 @@ for c in commands:
     for key in ("id", "script", "timeoutSeconds"):
         if key not in c:
             errors.append(f"commands.json: {cid or '?'} missing '{key}'")
+    if c.get("kind") in ("action", "stream"):
+        continue  # parameterised actions and streams: no parsed output, so no fixtures
     outs = sorted((spec / "fixtures" / str(cid)).glob("*.out.txt"))
     if not outs:
         errors.append(f"fixtures/{cid}: no fixtures")

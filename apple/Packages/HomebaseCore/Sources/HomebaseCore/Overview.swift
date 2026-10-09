@@ -42,6 +42,8 @@ public struct Overview: Sendable, Codable, Equatable {
     public var memory: Memory
     public var disks: [Disk]
     public var rebootRequired: Bool
+    /// Names of containers whose health check is failing (empty if docker is absent).
+    public var unhealthyContainers: [String]
 
     /// CPU use (0 to 100) between an earlier reading and this one, or nil if no time passed.
     public func cpuPercent(since previous: Overview) -> Double? {

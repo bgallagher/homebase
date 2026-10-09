@@ -18,7 +18,8 @@ public actor ServerSession {
     echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; \
     echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; \
     echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; \
-    echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi
+    echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; \
+    echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null
     """
 
     private let transport: SSHTransport

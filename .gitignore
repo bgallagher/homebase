@@ -8,3 +8,6 @@ build/
 .gradle/
 local.properties
 .idea/
+
+# raw captures from real servers: never commit, sanitize into named fixtures first
+spec/fixtures/**/raw-*

@@ -56,6 +56,14 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(items[0].severity, .warning)
         o.disks[0].usePercent = 96
         XCTAssertEqual(Attention.evaluate(o)[0].severity, .critical)
+
+        o.disks[0].usePercent = 10
+        o.rebootRequired = false
+        o.unhealthyContainers = ["sonarr", "radarr"]
+        let unhealthy = Attention.evaluate(o)
+        XCTAssertEqual(unhealthy.map(\.id), ["container_unhealthy:sonarr", "container_unhealthy:radarr"])
+        XCTAssertEqual(unhealthy[0].message, "sonarr is unhealthy.")
+        XCTAssertEqual(unhealthy[0].fix, "docker")
     }
 }
 
@@ -66,7 +74,14 @@ final class ServerSessionTests: XCTestCase {
 
     func testRefreshPublishesStateAndComputesCPUOnSecondReading() async throws {
         let first = try fixture()
-        let second = first.replacingOccurrences(of: "cpu  1425701 1145 769412 30949700", with: "cpu  1425701 1145 769412 30950700")
+        // Second reading: same counters but 1000 more idle ticks, so CPU use over the interval is 0%.
+        let second = first.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            guard line.hasPrefix("cpu  ") else { return String(line) }
+            var f = line.split(separator: " ").map(String.init)
+            f[4] = String(Int(f[4])! + 1000)
+            return f.joined(separator: " ")
+        }.joined(separator: "\n")
+        XCTAssertNotEqual(first, second)
         let session = ServerSession(transport: FakeTransport([
             .success(CommandResult(stdout: first)), .success(CommandResult(stdout: second)),
         ]))

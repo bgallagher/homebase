@@ -1,0 +1,171 @@
+{
+  "containers" : [
+    {
+      "configFile" : "\/opt\/stacks\/shlink\/compose.yaml",
+      "cpuPercent" : 0.02,
+      "health" : "none",
+      "id" : "8f2d2c2d6dfb",
+      "image" : "shlinkio\/shlink:stable",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 268225741,
+      "name" : "shlink",
+      "ports" : [
+        {
+          "containerPort" : 8080,
+          "hostPort" : 8087,
+          "proto" : "tcp"
+        }
+      ],
+      "project" : "shlink",
+      "service" : "shlink",
+      "state" : "running",
+      "status" : "Up 3 hours",
+      "workingDir" : "\/opt\/stacks\/shlink"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/shlink\/compose.yaml",
+      "cpuPercent" : 0,
+      "health" : "healthy",
+      "id" : "934f7faa28d6",
+      "image" : "postgres:17-alpine",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 23037215,
+      "name" : "shlink_db",
+      "ports" : [
+
+      ],
+      "project" : "shlink",
+      "service" : "shlink_db",
+      "state" : "running",
+      "status" : "Up 4 hours (healthy)",
+      "workingDir" : "\/opt\/stacks\/shlink"
+    },
+    {
+      "configFile" : "\/opt\/dockge\/compose.yaml",
+      "cpuPercent" : 0.02,
+      "health" : "healthy",
+      "id" : "2ff4bce07c73",
+      "image" : "louislam\/dockge:1",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 209610342,
+      "name" : "dockge-dockge-1",
+      "ports" : [
+        {
+          "containerPort" : 5001,
+          "hostPort" : 5001,
+          "proto" : "tcp"
+        }
+      ],
+      "project" : "dockge",
+      "service" : "dockge",
+      "state" : "running",
+      "status" : "Up 24 hours (healthy)",
+      "workingDir" : "\/opt\/dockge"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/monitoring\/compose.yaml",
+      "health" : "none",
+      "id" : "174426c1eb89",
+      "image" : "grafana\/grafana:latest",
+      "name" : "grafana",
+      "ports" : [
+
+      ],
+      "project" : "monitoring",
+      "service" : "grafana",
+      "state" : "exited",
+      "status" : "Exited (0) 2 hours ago",
+      "workingDir" : "\/opt\/stacks\/monitoring"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/monitoring\/compose.yaml",
+      "cpuPercent" : 0.72999999999999998,
+      "health" : "unhealthy",
+      "id" : "374f796cf7b4",
+      "image" : "prom\/prometheus:latest",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 169764454,
+      "name" : "prometheus",
+      "ports" : [
+        {
+          "containerPort" : 9090,
+          "hostPort" : 9090,
+          "proto" : "tcp"
+        }
+      ],
+      "project" : "monitoring",
+      "service" : "prometheus",
+      "state" : "running",
+      "status" : "Up 3 minutes (unhealthy)",
+      "workingDir" : "\/opt\/stacks\/monitoring"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/monitoring\/compose.yaml",
+      "cpuPercent" : 0,
+      "health" : "none",
+      "id" : "3d646862bdc8",
+      "image" : "prom\/node-exporter:latest",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 10461643,
+      "name" : "node-exporter",
+      "ports" : [
+
+      ],
+      "project" : "monitoring",
+      "service" : "node-exporter",
+      "state" : "running",
+      "status" : "Up 24 hours",
+      "workingDir" : "\/opt\/stacks\/monitoring"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/monitoring\/compose.yaml",
+      "cpuPercent" : 12.710000000000001,
+      "health" : "healthy",
+      "id" : "9db0a86c1d9d",
+      "image" : "gcr.io\/cadvisor\/cadvisor:latest",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 180459930,
+      "name" : "cadvisor",
+      "ports" : [
+
+      ],
+      "project" : "monitoring",
+      "service" : "cadvisor",
+      "state" : "running",
+      "status" : "Up 24 hours (healthy)",
+      "workingDir" : "\/opt\/stacks\/monitoring"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/watchtower\/compose.yaml",
+      "cpuPercent" : 0,
+      "health" : "healthy",
+      "id" : "4d27a014ae76",
+      "image" : "nickfedor\/watchtower:latest",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 12991857,
+      "name" : "watchtower",
+      "ports" : [
+
+      ],
+      "project" : "watchtower",
+      "service" : "watchtower",
+      "state" : "running",
+      "status" : "Up 24 hours (healthy)",
+      "workingDir" : "\/opt\/stacks\/watchtower"
+    },
+    {
+      "cpuPercent" : 0,
+      "health" : "none",
+      "id" : "abcdef012345",
+      "image" : "alpine:3.20",
+      "memoryLimitBytes" : 8128225608,
+      "memoryUsedBytes" : 1258291,
+      "name" : "scratch",
+      "ports" : [
+
+      ],
+      "state" : "running",
+      "status" : "Up 5 minutes"
+    }
+  ]
+}
