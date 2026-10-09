@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Run a spec command on a real host and save its stdout as a fixture.
+
+usage: tools/capture-fixtures <ssh-host> <command-id> <fixture-name>
+Writes spec/fixtures/<command-id>/<fixture-name>.out.txt. Review it for secrets,
+then write the matching <fixture-name>.expected.json by hand (or from reviewed parser output).
+"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+if len(sys.argv) != 4:
+    sys.exit(__doc__)
+host, cid, name = sys.argv[1:]
+spec = Path(__file__).resolve().parent.parent / "spec"
+cmd = next((c for c in json.loads((spec / "commands.json").read_text())["commands"] if c["id"] == cid), None)
+if cmd is None:
+    sys.exit(f"unknown command id {cid}")
+r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, cmd["script"]],
+                   capture_output=True, text=True, timeout=cmd["timeoutSeconds"] + 10)
+if r.returncode != 0:
+    sys.exit(f"ssh exited {r.returncode}: {r.stderr}")
+out = spec / "fixtures" / cid
+out.mkdir(parents=True, exist_ok=True)
+(out / f"{name}.out.txt").write_text(r.stdout)
+print(f"wrote {out / (name + '.out.txt')}")

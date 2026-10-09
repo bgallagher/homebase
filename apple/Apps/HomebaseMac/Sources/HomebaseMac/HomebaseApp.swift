@@ -21,13 +21,16 @@ struct HomebaseApp: App {
 }
 
 struct ContentView: View {
-    @State private var host = ""
+    @State private var draft = ""
+    @State private var host = ""   // committed on Return, so typing doesn't open a connection per keystroke
+    @State private var model = ServerModel()
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Host").foregroundStyle(.secondary)
-                TextField("ssh host or ~/.ssh/config alias", text: $host)
+                TextField("ssh host or ~/.ssh/config alias, then Return", text: $draft)
+                    .onSubmit { host = draft.trimmingCharacters(in: .whitespaces) }
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 280)
                 Spacer()
@@ -35,6 +38,8 @@ struct ContentView: View {
             .padding(12)
             Divider()
             TabView {
+                OverviewView(model: model, host: host)
+                    .tabItem { Text("Overview") }
                 CommandProbeView(host: host)
                     .tabItem { Text("Command") }
                 TerminalPane(host: host)

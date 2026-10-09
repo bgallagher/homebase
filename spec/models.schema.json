@@ -2,23 +2,179 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Homebase models",
   "$defs": {
-    "OSRelease": {
-      "type": "object",
-      "required": ["id", "name", "version"],
-      "properties": {
-        "id": {"type": "string"},
-        "name": {"type": "string"},
-        "version": {"type": "string"}
-      }
-    },
     "Server": {
       "type": "object",
-      "required": ["id", "name", "host"],
+      "required": [
+        "id",
+        "name",
+        "host"
+      ],
       "properties": {
-        "id": {"type": "string"},
-        "name": {"type": "string"},
-        "host": {"type": "string"},
-        "sshConfigAlias": {"type": ["string", "null"]}
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "sshConfigAlias": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Overview": {
+      "type": "object",
+      "required": [
+        "hostname",
+        "os",
+        "uptimeSeconds",
+        "load1",
+        "load5",
+        "load15",
+        "cores",
+        "cpu",
+        "memory",
+        "disks",
+        "rebootRequired"
+      ],
+      "properties": {
+        "hostname": {
+          "type": "string"
+        },
+        "os": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "version",
+            "prettyName"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "prettyName": {
+              "type": "string"
+            }
+          }
+        },
+        "uptimeSeconds": {
+          "type": "number"
+        },
+        "load1": {
+          "type": "number"
+        },
+        "load5": {
+          "type": "number"
+        },
+        "load15": {
+          "type": "number"
+        },
+        "cores": {
+          "type": "integer"
+        },
+        "cpu": {
+          "type": "object",
+          "description": "Cumulative /proc/stat counters: total = user..steal, idle = idle+iowait",
+          "required": [
+            "total",
+            "idle"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer"
+            },
+            "idle": {
+              "type": "integer"
+            }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "required": [
+            "totalBytes",
+            "availableBytes"
+          ],
+          "properties": {
+            "totalBytes": {
+              "type": "integer"
+            },
+            "availableBytes": {
+              "type": "integer"
+            }
+          }
+        },
+        "disks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "filesystem",
+              "mount",
+              "totalBytes",
+              "usedBytes",
+              "usePercent"
+            ],
+            "properties": {
+              "filesystem": {
+                "type": "string"
+              },
+              "mount": {
+                "type": "string"
+              },
+              "totalBytes": {
+                "type": "integer"
+              },
+              "usedBytes": {
+                "type": "integer"
+              },
+              "usePercent": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "rebootRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AttentionItem": {
+      "type": "object",
+      "required": [
+        "id",
+        "severity",
+        "message",
+        "fix"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        }
       }
     }
   }

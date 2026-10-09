@@ -4,9 +4,17 @@
     {
       "id": "disk_high",
       "severity": "warning",
-      "condition": "any filesystem use% > 85",
-      "message": "A disk is over 85% full.",
-      "fix": "docker-prune"
+      "severityCritical": "usePercent >= 95",
+      "condition": "any filesystem usePercent > 85",
+      "message": "{mount} is {usePercent}% full.",
+      "fix": "docker"
+    },
+    {
+      "id": "reboot_required",
+      "severity": "warning",
+      "condition": "rebootRequired is true",
+      "message": "A reboot is required to finish applying updates.",
+      "fix": "updates"
     }
   ]
 }
