@@ -8,6 +8,39 @@ guard args.count >= 2 else {
     FileHandle.standardError.write(Data("usage: homebase-probe <host> [command]\n".utf8))
     exit(2)
 }
+if args.count > 2, args[2] == "hostkey" {
+    // Uses a throwaway known_hosts file, never ~/.ssh/known_hosts.
+    let path = NSTemporaryDirectory() + "probe-known-hosts-\(getpid())"
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let verifier = HostKeyVerifier(knownHostsPath: path)
+    let server = Server(name: args[1], host: args[1])
+    func show(_ s: HostKeyStatus) -> String {
+        switch s {
+        case .trusted: "trusted"
+        case .unknown(let o): "unknown, \(o.hostname):\(o.port)\n  " + o.fingerprints.joined(separator: "\n  ")
+        case .changed(let m): "CHANGED: \(m)"
+        case .failed(let m): "failed: \(m)"
+        }
+    }
+    let first = await verifier.check(server)
+    print("1. empty known_hosts -> \(show(first))")
+    guard case .unknown(let offer) = first else { exit(1) }
+    try verifier.trust(offer)
+    print("2. after trust       -> \(show(await verifier.check(server)))")
+    // Tamper: replace the stored key with a different one; must be reported as changed, never offered.
+    let tampered = try String(contentsOfFile: path, encoding: .utf8).split(separator: "\n").map { line -> String in
+        var f = line.split(separator: " ").map(String.init)
+        guard f.count >= 3 else { return String(line) }
+        var chars = Array(f[2])
+        let i = chars.count - 6                      // inside the key blob, clear of any padding
+        chars[i] = chars[i] == "A" ? "B" : "A"
+        f[2] = String(chars)
+        return f.joined(separator: " ")
+    }.joined(separator: "\n") + "\n"
+    try tampered.write(toFile: path, atomically: true, encoding: .utf8)
+    print("3. tampered key      -> \(show(await verifier.check(server)))")
+    exit(0)
+}
 let transport = OpenSSHTransport(host: args[1])
 if args.count > 2, args[2] == "overview" {
     // Two polls through the real ServerSession, so CPU% (needs two readings) is exercised.

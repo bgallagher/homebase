@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Stage 1 slice: run one command over SSH and show the result.
 struct CommandProbeView: View {
-    let host: String
+    let server: Server
     @State private var command = "uname -a"
     @State private var output = ""
     @State private var running = false
@@ -17,7 +17,7 @@ struct CommandProbeView: View {
                     .font(.system(.body, design: .monospaced))
                     .onSubmit(run)
                 Button("Run", action: run)
-                    .disabled(running || host.isEmpty)
+                    .disabled(running)
             }
             ScrollView {
                 Text(output.isEmpty ? "No output yet" : output)
@@ -32,7 +32,7 @@ struct CommandProbeView: View {
 
     private func run() {
         running = true
-        let transport = OpenSSHTransport(host: host)
+        let transport = OpenSSHTransport(server: server)
         let command = command
         Task {
             defer { running = false }

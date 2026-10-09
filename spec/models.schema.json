@@ -24,8 +24,21 @@
             "string",
             "null"
           ]
+        },
+        "user": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": [
+            "integer",
+            "null"
+          ]
         }
-      }
+      },
+      "description": "host is what ssh connects to: a hostname, an IP or a ~/.ssh/config alias. sshConfigAlias is set when imported from ssh config."
     },
     "Overview": {
       "type": "object",

@@ -22,90 +22,78 @@ struct HomebaseApp: App {
 }
 
 struct ContentView: View {
-    // Stage 3 replaces this with a saved server list; for now remember the last host.
-    @AppStorage("lastHost") private var host = ""
-    @State private var model = ServerModel()
+    @State private var model = AppModel()
     @State private var selection: Screen = .overview
     @State private var visitedTerminal = false
     @State private var showingAdd = false
-    @State private var draft = ""
 
     var body: some View {
         HStack(spacing: 0) {
-            Sidebar(selection: $selection, host: host, status: status) {
-                draft = host
-                showingAdd = true
-            }
+            Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
+                    onSelect: { visitedTerminal = false; selection = .overview; model.select($0) },
+                    onRemove: { visitedTerminal = false; model.remove($0) },
+                    onAddServer: { showingAdd = true })
             Divider()
             detail
         }
         .background(Theme.background)
         .frame(minWidth: 960, minHeight: 600)
-        .onAppear { if host.isEmpty { showingAdd = true } else { model.connect(host: host) } }
-        .onChange(of: host) { _, new in model.connect(host: new) }
+        .onAppear { model.start(); if model.servers.isEmpty { showingAdd = true } }
         .onChange(of: selection) { _, new in if new == .terminal { visitedTerminal = true } }
-        .sheet(isPresented: $showingAdd) { addServerSheet }
+        .sheet(isPresented: $showingAdd) {
+            AddServerSheet(existing: model.servers, canCancel: !model.servers.isEmpty) { server in
+                showingAdd = false
+                visitedTerminal = false
+                selection = .overview
+                model.add(server)
+            } onCancel: { showingAdd = false }
+        }
+        .sheet(isPresented: pendingTrust) {
+            if case .needsTrust(let offer) = model.phase, let server = model.selected {
+                HostKeySheet(server: server, offer: offer, onTrust: model.trustPending, onCancel: model.declineTrust)
+            }
+        }
+    }
+
+    private var pendingTrust: Binding<Bool> {
+        Binding(
+            get: { if case .needsTrust = model.phase { true } else { false } },
+            set: { if !$0 { model.declineTrust() } })
     }
 
     private var status: ConnectionStatus {
-        let s = model.state
-        if host.isEmpty { return .none }
-        if s.error != nil { return .failing }
-        return s.overview == nil ? .connecting : .connected
+        switch model.phase {
+        case .blocked: .failing
+        case .idle where model.state.error != nil: .failing
+        case .polling:
+            model.state.error != nil ? .failing : (model.state.overview == nil || model.state.isStale ? .connecting : .connected)
+        default: .connecting
+        }
     }
 
     @ViewBuilder private var detail: some View {
-        if host.isEmpty {
-            ContentUnavailableView("No server yet", systemImage: "server.rack",
-                                   description: Text("Add a host or a ~/.ssh/config alias to get started."))
-        } else {
+        if let server = model.selected {
             ZStack {
                 switch selection {
                 case .overview:
-                    OverviewView(model: model, host: host, openTerminal: { selection = .terminal })
+                    OverviewView(model: model, server: server, openTerminal: { selection = .terminal })
                 case .command:
-                    CommandProbeView(host: host)
+                    CommandProbeView(server: server).id(server.id)
                 default:
                     EmptyView()
                 }
                 // Keep the terminal alive while other screens are shown, or the SSH session would die.
                 if visitedTerminal {
-                    TerminalPane(host: host).id(host)
+                    TerminalPane(server: server).id(server.id)
                         .padding(.horizontal, 12).padding(.top, 36).padding(.bottom, 12)
                         .background(Color.black)
                         .opacity(selection == .terminal ? 1 : 0)
                         .allowsHitTesting(selection == .terminal)
                 }
             }
+        } else {
+            ContentUnavailableView("No server yet", systemImage: "server.rack",
+                                   description: Text("Add a host or a ~/.ssh/config alias to get started."))
         }
-    }
-
-    private var addServerSheet: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Add server").font(.title2.bold())
-            Text("A hostname, user@host, or an alias from ~/.ssh/config. Uses your existing keys and ssh-agent.")
-                .foregroundStyle(.secondary)
-            TextField("hetzner or root@203.0.113.7", text: $draft)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(connect)
-            HStack {
-                Spacer()
-                if !host.isEmpty { Button("Cancel") { showingAdd = false } }
-                Button("Connect", action: connect)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 420)
-    }
-
-    private func connect() {
-        let value = draft.trimmingCharacters(in: .whitespaces)
-        guard !value.isEmpty else { return }
-        showingAdd = false
-        visitedTerminal = false
-        selection = .overview
-        if value == host { model.connect(host: value) } else { host = value }
     }
 }

@@ -37,6 +37,11 @@ let package = Package(
             path: "Apps/HomebaseProbe/Sources/HomebaseProbe"
         ),
         .testTarget(
+            name: "HomebaseSSHSystemTests",
+            dependencies: ["HomebaseSSHSystem"],
+            path: "Packages/HomebaseSSHSystem/Tests/HomebaseSSHSystemTests"
+        ),
+        .testTarget(
             name: "HomebaseCoreTests",
             dependencies: ["HomebaseCore"],
             path: "Packages/HomebaseCore/Tests/HomebaseCoreTests"

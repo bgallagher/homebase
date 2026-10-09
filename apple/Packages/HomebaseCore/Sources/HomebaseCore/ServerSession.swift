@@ -6,6 +6,8 @@ public struct ServerState: Sendable, Equatable {
     public var attention: [AttentionItem] = []
     public var error: String?
     public var updatedAt: Date?
+    /// True while `overview` is a cached snapshot from an earlier run, not yet refreshed.
+    public var isStale = false
     public init() {}
 }
 
@@ -26,9 +28,21 @@ public actor ServerSession {
     private var loop: Task<Void, Never>?
     private var continuations: [UUID: AsyncStream<ServerState>.Continuation] = [:]
 
-    public init(transport: SSHTransport, interval: TimeInterval = 5) {
+    private let onSnapshot: (@Sendable (Overview) -> Void)?
+
+    /// `onSnapshot` is called after each successful poll (the app uses it to persist the cache).
+    public init(transport: SSHTransport, interval: TimeInterval = 5,
+                cached: (overview: Overview, savedAt: Date)? = nil,
+                onSnapshot: (@Sendable (Overview) -> Void)? = nil) {
         self.transport = transport
         self.interval = interval
+        self.onSnapshot = onSnapshot
+        if let cached {
+            state.overview = cached.overview
+            state.attention = Attention.evaluate(cached.overview)
+            state.updatedAt = cached.savedAt
+            state.isStale = true
+        }
     }
 
     /// Emits the current state immediately, then every refresh.
@@ -73,7 +87,9 @@ public actor ServerSession {
             next.attention = Attention.evaluate(overview)
             next.error = nil
             next.updatedAt = Date()
+            next.isStale = false
             previous = overview
+            onSnapshot?(overview)
             publish(next)
         } catch {
             // Keep the last good data on screen and surface the error beside it.

@@ -17,10 +17,20 @@ public enum OpenSSHError: Error, LocalizedError {
 /// Commands share one multiplexed connection (ControlMaster) so polling is cheap.
 public struct OpenSSHTransport: SSHTransport {
     public let host: String
+    private let port: Int?
     private let controlDir: String
 
+    public init(server: Server) {
+        self.init(destination: server.sshDestination, port: server.port)
+    }
+
     public init(host: String) {
-        self.host = host
+        self.init(destination: host, port: nil)
+    }
+
+    private init(destination: String, port: Int?) {
+        self.host = destination
+        self.port = port
         // Unix socket paths are limited to ~104 bytes, so keep this short.
         let dir = "/tmp/hb-\(getuid())"
         try? FileManager.default.createDirectory(
@@ -30,8 +40,15 @@ public struct OpenSSHTransport: SSHTransport {
     }
 
     /// Options for non-interactive command execution.
+    /// Arguments for an interactive shell (`ssh -t`), used by the terminal view.
+    public static func terminalArguments(for server: Server) -> [String] {
+        var args = ["-t"]
+        if let port = server.port { args += ["-p", String(port)] }
+        return args + [server.sshDestination]
+    }
+
     func baseArguments() -> [String] {
-        [
+        (port.map { ["-p", String($0)] } ?? []) + [
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10",
             "-o", "ServerAliveInterval=15",

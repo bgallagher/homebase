@@ -2,23 +2,25 @@ import HomebaseCore
 import SwiftUI
 
 struct OverviewView: View {
-    let model: ServerModel
-    let host: String
+    let model: AppModel
+    let server: Server
     let openTerminal: () -> Void
 
     var body: some View {
         let state = model.state
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if let o = state.overview {
-                    header(o)
+                if case .needsTrust = model.phase {
+                    Text("Waiting for you to confirm the host key…").foregroundStyle(Theme.textMuted)
+                } else if let o = state.overview {
+                    header(o, stale: state.isStale ? state.updatedAt : nil)
                     if !state.attention.isEmpty { AttentionStrip(items: state.attention) }
                     if let error = state.error { ErrorBanner(message: error) }
                     cards(o, cpu: state.cpuPercent)
                 } else if let error = state.error {
                     ErrorBanner(message: error)
                 } else {
-                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Connecting to \(host)…") }
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Connecting to \(server.name)…") }
                         .foregroundStyle(Theme.textMuted)
                 }
             }
@@ -28,12 +30,16 @@ struct OverviewView: View {
         .foregroundStyle(Theme.textPrimary)
     }
 
-    private func header(_ o: Overview) -> some View {
+    private func header(_ o: Overview, stale: Date?) -> some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(o.hostname).font(.system(size: 26, weight: .bold)).tracking(-0.4)
                 Text("\(o.os.prettyName) · up \(Format.uptime(o.uptimeSeconds)) · \(o.cores) cores")
                     .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+                if let stale {
+                    Text("Showing data from \(stale.formatted(.relative(presentation: .named))) · refreshing…")
+                        .font(.system(size: 12)).foregroundStyle(Theme.warn)
+                }
             }
             Spacer()
             Button(action: openTerminal) {

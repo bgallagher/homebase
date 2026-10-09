@@ -1,3 +1,4 @@
+import HomebaseCore
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
@@ -44,24 +45,36 @@ enum ConnectionStatus { case connecting, connected, failing, none }
 
 struct Sidebar: View {
     @Binding var selection: Screen
-    let host: String
+    let servers: [Server]
+    let selectedID: String?
     let status: ConnectionStatus
+    let onSelect: (Server) -> Void
+    let onRemove: (Server) -> Void
     let onAddServer: () -> Void
+
+    private var selectedName: String? { servers.first { $0.id == selectedID }?.name }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             SectionLabel("Servers")
-            if !host.isEmpty {
-                HStack(spacing: 10) {
-                    StatusDot(status: status, glow: true)
-                    Text(host).fontWeight(.semibold).lineLimit(1)
-                    Spacer()
+            ForEach(servers) { server in
+                let isSelected = server.id == selectedID
+                Button { onSelect(server) } label: {
+                    HStack(spacing: 10) {
+                        StatusDot(status: isSelected ? status : .none, glow: isSelected)
+                        Text(server.name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 9)
+                    .background(isSelected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
+                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(Theme.selection, in: RoundedRectangle(cornerRadius: 9))
+                .buttonStyle(.plain)
+                .contextMenu { Button("Remove \(server.name)", role: .destructive) { onRemove(server) } }
             }
             Button(action: onAddServer) {
-                Label(host.isEmpty ? "Add server" : "Change server", systemImage: "plus")
+                Label("Add server", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 9)
                     .foregroundStyle(Theme.textMuted)
@@ -70,9 +83,9 @@ struct Sidebar: View {
             .buttonStyle(.plain)
             .padding(.top, 4)
 
-            if !host.isEmpty {
+            if let name = selectedName {
                 Divider().padding(.vertical, 12)
-                SectionLabel(host)
+                SectionLabel(name)
                 ForEach(Screen.allCases) { screen in
                     NavRow(screen: screen, selected: selection == screen) {
                         if screen.isAvailable { selection = screen }

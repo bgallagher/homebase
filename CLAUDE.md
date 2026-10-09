@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 2 done: bootstrap, SSH transport + terminal spike, Overview/attention); do not build ahead of the stage the user has approved.
+Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 3 done: bootstrap, SSH transport + terminal spike, Overview/attention, saved servers + host-key trust); do not build ahead of the stage the user has approved.
 
 ## Commands
 
@@ -21,6 +21,7 @@ cd apple && swift test --filter ModelsTests/testServerRoundTripsThroughJSON   # 
 ```
 tools/capture-fixtures <ssh-host> <command-id> <name>   # save a real command's output as spec/fixtures/<id>/<name>.out.txt
 cd apple && swift run homebase-probe <host> overview    # headless two-poll check of ServerSession against a real host
+cd apple && swift run homebase-probe <host> hostkey     # unknown -> trust -> tampered flow, using a throwaway known_hosts
 ```
 
 No linter or formatter is configured yet (`swift-format` is not installed). CI is `.github/workflows/ci.yml` (check-spec on Linux; `swift test` and build on macOS).
@@ -45,5 +46,8 @@ Xcode is installed on the dev machine. There is no `.xcodeproj` yet. The Mac app
 - No Mac-only assumptions in Core. `~/.ssh/config` parsing is a Mac-app feature that produces plain `Server` models.
 - Parsers stay simple (line/column splitting, or JSON from `docker ps --format json`) so they port 1:1 to Kotlin.
 - `ServerSession` (Core actor) owns one server's transport, the 5 s poll loop and the last good `ServerState`. A failed poll keeps the old data and sets `error`. CPU % needs two readings, so `Overview` carries raw `/proc/stat` counters and `cpuPercent(since:)` does the delta. `ServerModel` (Mac app) bridges the actor to SwiftUI; views never call SSH directly. `Attention.evaluate` is a pure function of an `Overview`.
-- Planned: a global read-only flag checked in the service layer.
+- Persistence: `ServerStore` (Core) writes `servers.json` and per-server cached snapshots under `~/Library/Application Support/Homebase/`. Secrets never go there. On select, `AppModel` paints the cached snapshot immediately (`ServerState.isStale`) and replaces it on the first successful poll.
+- Host keys: `HostKeyVerifier` (SSHSystem) runs ssh with `StrictHostKeyChecking=yes`. Unknown key -> user sees fingerprints and confirms -> exactly the scanned lines are appended to known_hosts. Changed key -> blocked, never offered for acceptance. `AppModel` only polls the selected server.
+- `Server.host` is whatever ssh connects to (hostname, IP or ~/.ssh/config alias). Imported servers keep the alias as `host` so ssh applies the rest of the entry.
+- Not built yet: Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server, terminal auto-reconnect, a global read-only flag checked in the service layer.
 - The server stays untouched: no agent, standard SSH commands only (Debian/Ubuntu and apt for the MVP).
