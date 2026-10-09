@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Homebase models",
+  "$defs": {
+    "OSRelease": {
+      "type": "object",
+      "required": ["id", "name", "version"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "version": {"type": "string"}
+      }
+    },
+    "Server": {
+      "type": "object",
+      "required": ["id", "name", "host"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "host": {"type": "string"},
+        "sshConfigAlias": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

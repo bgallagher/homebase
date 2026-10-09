@@ -1,0 +1,16 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/check-spec
+  swift-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+        working-directory: apple
+      - run: swift build --product HomebaseMac
+        working-directory: apple

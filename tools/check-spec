@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Validate the shared spec: JSON parses, every command has fixtures, every fixture has expected output."""
+import json
+import sys
+from pathlib import Path
+
+spec = Path(__file__).resolve().parent.parent / "spec"
+errors = []
+
+def load(name):
+    try:
+        return json.loads((spec / name).read_text())
+    except Exception as e:
+        errors.append(f"{name}: {e}")
+        return {}
+
+load("models.schema.json")
+load("attention-rules.json")
+commands = load("commands.json").get("commands", [])
+
+ids = [c.get("id") for c in commands]
+if len(ids) != len(set(ids)):
+    errors.append("commands.json: duplicate command ids")
+
+for c in commands:
+    cid = c.get("id")
+    for key in ("id", "script", "timeoutSeconds"):
+        if key not in c:
+            errors.append(f"commands.json: {cid or '?'} missing '{key}'")
+    outs = sorted((spec / "fixtures" / str(cid)).glob("*.out.txt"))
+    if not outs:
+        errors.append(f"fixtures/{cid}: no fixtures")
+    for out in outs:
+        expected = out.with_name(out.name.replace(".out.txt", ".expected.json"))
+        if not expected.exists():
+            errors.append(f"{expected.relative_to(spec)}: missing")
+        else:
+            try:
+                json.loads(expected.read_text())
+            except Exception as e:
+                errors.append(f"{expected.relative_to(spec)}: {e}")
+
+for d in (spec / "fixtures").iterdir():
+    if d.is_dir() and d.name not in ids:
+        errors.append(f"fixtures/{d.name}: no matching command in commands.json")
+
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
+print(f"spec ok: {len(commands)} command(s)")

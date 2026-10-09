@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "id": "os_release",
+      "description": "Distribution name and version",
+      "script": "cat /etc/os-release",
+      "timeoutSeconds": 5,
+      "distros": ["debian", "ubuntu"]
+    }
+  ]
+}

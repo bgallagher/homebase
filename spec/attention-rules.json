@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "disk_high",
+      "severity": "warning",
+      "condition": "any filesystem use% > 85",
+      "message": "A disk is over 85% full.",
+      "fix": "docker-prune"
+    }
+  ]
+}
