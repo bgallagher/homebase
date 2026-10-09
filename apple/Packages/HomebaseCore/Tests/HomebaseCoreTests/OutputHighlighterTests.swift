@@ -169,6 +169,14 @@ final class TerminalOutputFilterTests: XCTestCase {
         }
     }
 
+    func testFinishReleasesAHeldBackPartialCharacter() {
+        var f = TerminalOutputFilter()
+        let euro: [UInt8] = [0xE2, 0x82, 0xAC]
+        XCTAssertEqual(f.process(Array(euro.prefix(2))), [], "incomplete character is held back")
+        XCTAssertEqual(f.finish(), Array(euro.prefix(2)), "and released unmodified when the stream ends")
+        XCTAssertEqual(f.finish(), [])
+    }
+
     func testGarbageInputNeverCrashes() {
         var rng = SystemRandomNumberGenerator()
         var f = TerminalOutputFilter()

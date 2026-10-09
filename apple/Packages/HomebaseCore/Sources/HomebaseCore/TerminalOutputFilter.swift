@@ -100,6 +100,12 @@ public struct TerminalOutputFilter {
         return out
     }
 
+    /// Call once when the stream ends: returns any bytes still held back (an incomplete UTF-8 tail), unmodified.
+    public mutating func finish() -> [UInt8] {
+        defer { carry = [] }
+        return carry
+    }
+
     // MARK: - Text runs
 
     private mutating func flush(_ run: inout [UInt8], into out: inout [UInt8], atChunkEnd: Bool) {

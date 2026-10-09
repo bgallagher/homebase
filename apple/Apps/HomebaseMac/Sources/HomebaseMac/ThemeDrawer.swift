@@ -23,6 +23,19 @@ struct ThemeDrawer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Terminal").font(.system(size: 15, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Highlight output", isOn: Binding(get: { store.highlightOutput }, set: { store.highlightOutput = $0 }))
+                    .disabled(!store.highlightAvailable)
+                Text(store.highlightAvailable
+                     ? "Colours IP addresses, errors, warnings and high percentages. Applies to new tabs."
+                     : "Unavailable: the homebase-pty helper was not found next to the app.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card()
+
             Text("Themes").font(.system(size: 15, weight: .semibold))
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)

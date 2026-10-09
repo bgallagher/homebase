@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""End-to-end tests for homebase-pty, run under a real pseudo-terminal (stdlib only).
+
+usage: python3 tools/test-pty-relay [--ssh <host>]
+Build first: (cd apple && swift build --product homebase-pty). With --ssh it also runs `ssh -t <host>` through
+the relay and checks the login banner is highlighted and `exit` ends cleanly.
+"""
+import fcntl
+import os
+import pty
+import select
+import signal
+import struct
+import sys
+import termios
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BIN = ROOT / "apple" / ".build" / "debug" / "homebase-pty"
+ESC = "\x1b"
+failures = []
+
+
+def check(name, ok, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + ("" if ok else f"  -> {detail}"))
+    if not ok:
+        failures.append(name)
+
+
+class Session:
+    def __init__(self, args, rows=24, cols=80):
+        self.pid, self.fd = pty.fork()
+        if self.pid == 0:
+            os.execv(str(BIN), [str(BIN)] + args)
+        self.set_size(rows, cols)
+        self.out = b""
+
+    def set_size(self, rows, cols):
+        fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+    def read(self, seconds=1.0, until=None):
+        end = time.time() + seconds
+        while time.time() < end:
+            r, _, _ = select.select([self.fd], [], [], 0.05)
+            if r:
+                try:
+                    chunk = os.read(self.fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                self.out += chunk
+            if until and until.encode() in self.out:
+                break
+        return self.out.decode("utf-8", "replace")
+
+    def write(self, data):
+        os.write(self.fd, data if isinstance(data, bytes) else data.encode())
+
+    def wait(self, timeout=5.0):
+        end = time.time() + timeout
+        while time.time() < end:
+            pid, status = os.waitpid(self.pid, os.WNOHANG)
+            if pid:
+                return os.waitstatus_to_exitcode(status)
+            self.read(0.05)
+        os.kill(self.pid, signal.SIGKILL)
+        os.waitpid(self.pid, 0)
+        return None
+
+
+def run_all(ssh_host):
+    if not BIN.exists():
+        sys.exit(f"{BIN} not found: build it first")
+
+    s = Session(["--", "/bin/sh", "-c", "printf 'ip 10.0.0.1 error 91%%\\r\\n'"])
+    out = s.read(1.5, until="91")
+    code = s.wait()
+    check("highlights IP, error word and high percentage",
+          f"{ESC}[35m10.0.0.1{ESC}[39m" in out and f"{ESC}[31merror{ESC}[39m" in out and f"{ESC}[31m91%{ESC}[39m" in out, repr(out))
+    check("exit code 0 propagates", code == 0, code)
+
+    s = Session(["--no-highlight", "--", "/bin/sh", "-c", "printf 'ip 10.0.0.1 error\\r\\n'"])
+    out = s.read(1.5, until="error")
+    s.wait()
+    check("--no-highlight leaves output untouched", ESC not in out and "ip 10.0.0.1 error" in out, repr(out))
+
+    s = Session(["--", "/bin/sh", "-c", "exit 7"])
+    check("non-zero exit code propagates", s.wait() == 7)
+
+    s = Session(["--", "/bin/sh", "-c", "kill -9 $$"])
+    check("signal death maps to 128+signal", s.wait() == 137)
+
+    s = Session(["--", "/bin/sh", "-c", r"printf '\033[?1049h10.0.0.1 error\033[?1049l after 10.0.0.2\r\n'"])
+    out = s.read(1.5, until="after")
+    s.wait()
+    check("alternate screen content is untouched", f"{ESC}[?1049h10.0.0.1 error{ESC}[?1049l" in out, repr(out))
+    check("highlighting resumes after leaving the alternate screen", f"{ESC}[35m10.0.0.2{ESC}[39m" in out, repr(out))
+
+    s = Session(["--", "/bin/sh", "-c", r"printf '\033[32mgreen 10.0.0.1\033[0m\r\n'"])
+    out = s.read(1.5, until="green")
+    s.wait()
+    check("program's own colours are left alone", f"{ESC}[35m" not in out and "green 10.0.0.1" in out, repr(out))
+
+    s = Session(["--", "/bin/cat"])
+    s.read(0.4)
+    s.write("hello relay\n")
+    out = s.read(1.5, until="hello relay\r\nhello relay")
+    check("input reaches the command and output comes back", out.count("hello relay") >= 2, repr(out))
+    s.write(b"\x04")
+    check("Ctrl-D ends cat, exit 0", s.wait() == 0)
+
+    s = Session(["--", "/bin/sh", "-c", "sleep 30"])
+    s.read(0.4)
+    s.write(b"\x03")
+    code = s.wait(5)
+    check("Ctrl-C reaches the command (exit 130)", code == 130, code)
+
+    s = Session(["--", "/bin/sh", "-c", "sleep 1; stty size"], rows=24, cols=80)
+    s.read(0.3)
+    s.set_size(31, 117)
+    out = s.read(3.0, until="31 117")
+    s.wait()
+    check("window resize is forwarded to the command", "31 117" in out, repr(out))
+
+    s = Session(["--", "/bin/sh", "-c", "stty size"], rows=40, cols=132)
+    out = s.read(1.5, until="40 132")
+    s.wait()
+    check("initial window size is passed on", "40 132" in out, repr(out))
+
+    s = Session(["--", "/bin/sh", "-c", "sleep 30"])
+    s.read(0.4)
+    os.kill(s.pid, signal.SIGHUP)
+    t = time.time()
+    code = s.wait(6)
+    check("SIGHUP hangs up the command and exits promptly", code is not None and time.time() - t < 5, (code, time.time() - t))
+
+    s = Session(["--", "/bin/sh", "-c", r"printf '\342\202'; sleep 0.3; printf '\254 10.0.0.1 x\r\n'"])
+    out = s.read(2.0, until=" x")
+    s.wait()
+    check("multi-byte character split across reads arrives intact", "€" in out, repr(out))
+
+    s = Session(["--", "/nonexistent/binary"])
+    check("missing command exits 127", s.wait() == 127)
+
+    if ssh_host:
+        s = Session(["--", "/usr/bin/ssh", "-t", ssh_host], rows=40, cols=120)
+        out = s.read(15, until="# ")
+        s.write("exit\n")
+        code = s.wait(10)
+        check(f"ssh {ssh_host}: login banner has a highlighted IP address", f"{ESC}[35m" in out, repr(out[-400:]))
+        check(f"ssh {ssh_host}: exit ends cleanly", code == 0, code)
+
+
+if __name__ == "__main__":
+    host = sys.argv[sys.argv.index("--ssh") + 1] if "--ssh" in sys.argv else None
+    run_all(host)
+    print(f"\n{len(failures)} failure(s)" if failures else "\nall passed")
+    sys.exit(1 if failures else 0)

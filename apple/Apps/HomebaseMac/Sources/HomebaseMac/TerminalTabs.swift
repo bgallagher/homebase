@@ -25,9 +25,21 @@ final class TerminalTab: Identifiable {
 
     static let scrollbackLines = 10_000
 
-    init(server: Server, title: String, theme: TerminalTheme) {
+    /// Where the output-highlighting relay lives, next to the app's own executable (`swift run`, and later
+    /// Contents/MacOS in the app bundle). Nil if it is missing, in which case terminals run ssh directly.
+    static var relayURL: URL? {
+        guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return nil }
+        let url = dir.appendingPathComponent("homebase-pty")
+        return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+    }
+
+    /// Whether this tab's ssh runs through the relay. Set when a tab is created and again on Reconnect.
+    var highlightOutput: Bool
+
+    init(server: Server, title: String, theme: TerminalTheme, highlightOutput: Bool) {
         self.server = server
         self.title = title
+        self.highlightOutput = highlightOutput
         view = LocalProcessTerminalView(frame: .zero)
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         view.changeScrollback(Self.scrollbackLines)
@@ -41,10 +53,13 @@ final class TerminalTab: Identifiable {
     private func launch() {
         isRunning = true
         exitCode = nil
-        view.startProcess(
-            executable: "/usr/bin/ssh",
-            args: OpenSSHTransport.terminalArguments(for: server),
-            environment: Terminal.getEnvironmentVariables(termName: "xterm-256color"))
+        let ssh = OpenSSHTransport.terminalArguments(for: server)
+        let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
+        if highlightOutput, let relay = Self.relayURL {
+            view.startProcess(executable: relay.path, args: ["--", "/usr/bin/ssh"] + ssh, environment: environment)
+        } else {
+            view.startProcess(executable: "/usr/bin/ssh", args: ssh, environment: environment)
+        }
     }
 
     /// Sets the ANSI palette first, then the default colours (installing a palette can reset them).
@@ -58,8 +73,9 @@ final class TerminalTab: Identifiable {
             ? theme.foregroundRGB.nsColor.withAlphaComponent(0.3) : theme.selectionRGB.nsColor
     }
 
-    func reconnect() {
+    func reconnect(highlightOutput: Bool) {
         guard !isRunning else { return }
+        self.highlightOutput = highlightOutput
         view.resetToInitialState()
         launch()
     }
@@ -106,6 +122,16 @@ final class TerminalStore {
     private(set) var theme: TerminalTheme
 
     private static let themeKey = "terminalThemeID"
+    private static let highlightKey = "terminalHighlightOutput"
+
+    /// False when the relay executable was not built or shipped; the toggle is then disabled.
+    var highlightAvailable: Bool { TerminalTab.relayURL != nil }
+
+    /// Colour IPs, errors and warnings in terminal output. Applies to tabs opened (or reconnected) after it changes,
+    /// because it decides how ssh is launched.
+    var highlightOutput: Bool = UserDefaults.standard.object(forKey: "terminalHighlightOutput") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(highlightOutput, forKey: Self.highlightKey) }
+    }
 
     init() {
         var loaded: [TerminalTheme] = []
@@ -152,7 +178,7 @@ final class TerminalStore {
     func newTab(for server: Server) {
         let n = (counters[server.id] ?? 0) + 1
         counters[server.id] = n
-        let tab = TerminalTab(server: server, title: "Shell \(n)", theme: theme)
+        let tab = TerminalTab(server: server, title: "Shell \(n)", theme: theme, highlightOutput: highlightOutput)
         tabs[server.id, default: []].append(tab)
         selected[server.id] = tab.id
     }

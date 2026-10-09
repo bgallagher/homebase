@@ -67,7 +67,7 @@ struct TerminalScreen: View {
         VStack(spacing: 10) {
             Text(tab.exitCode.map { "Session ended (exit \($0))" } ?? "Session ended")
                 .font(.headline)
-            Button("Reconnect") { tab.reconnect() }.keyboardShortcut(.defaultAction)
+            Button("Reconnect") { tab.reconnect(highlightOutput: store.highlightOutput) }.keyboardShortcut(.defaultAction)
         }
         .padding(20)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
