@@ -31,18 +31,26 @@ public struct OpenSSHTransport: SSHTransport {
     private init(destination: String, port: Int?) {
         self.host = destination
         self.port = port
-        // Unix socket paths are limited to ~104 bytes, so keep this short.
+        self.controlDir = Self.controlDirectory()
+    }
+
+    /// Shared by command polling and terminal tabs so a new tab reuses the open connection.
+    /// Unix socket paths are limited to ~104 bytes, so keep this short.
+    static func controlDirectory() -> String {
         let dir = "/tmp/hb-\(getuid())"
         try? FileManager.default.createDirectory(
             atPath: dir, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])
-        self.controlDir = dir
+        return dir
     }
 
     /// Options for non-interactive command execution.
     /// Arguments for an interactive shell (`ssh -t`), used by the terminal view.
     public static func terminalArguments(for server: Server) -> [String] {
-        var args = ["-t"]
+        var args = ["-t",
+                    "-o", "ControlMaster=auto",
+                    "-o", "ControlPersist=120",
+                    "-o", "ControlPath=\(controlDirectory())/%C"]
         if let port = server.port { args += ["-p", String(port)] }
         return args + [server.sshDestination]
     }

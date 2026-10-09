@@ -18,20 +18,51 @@ struct HomebaseApp: App {
             ContentView()
         }
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            TerminalCommands()
+        }
+    }
+}
+
+/// What the Terminal menu items act on. Published by the front window only while a terminal is showing.
+struct TerminalActions {
+    var newTab: () -> Void
+    var closeTab: () -> Void
+}
+
+extension FocusedValues {
+    @Entry var terminalActions: TerminalActions?
+}
+
+struct TerminalCommands: Commands {
+    @FocusedValue(\.terminalActions) private var actions
+
+    var body: some Commands {
+        // Replace File > Close so Cmd+W closes the current tab when a terminal is showing,
+        // and still closes the window everywhere else.
+        CommandGroup(replacing: .saveItem) {
+            Button("New Terminal Tab") { actions?.newTab() }
+                .keyboardShortcut("t")
+                .disabled(actions == nil)
+            Button(actions == nil ? "Close Window" : "Close Tab") {
+                if let actions { actions.closeTab() } else { NSApp.keyWindow?.performClose(nil) }
+            }
+            .keyboardShortcut("w")
+        }
     }
 }
 
 struct ContentView: View {
     @State private var model = AppModel()
     @State private var selection: Screen = .overview
-    @State private var visitedTerminal = false
+    @State private var terminals = TerminalStore()
     @State private var showingAdd = false
 
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
-                    onSelect: { visitedTerminal = false; selection = .overview; model.select($0) },
-                    onRemove: { visitedTerminal = false; model.remove($0) },
+                    onSelect: { selection = .overview; model.select($0) },
+                    onRemove: { terminals.closeAll(for: $0); model.remove($0) },
                     onAddServer: { showingAdd = true })
             Divider()
             detail
@@ -39,11 +70,10 @@ struct ContentView: View {
         .background(Theme.background)
         .frame(minWidth: 960, minHeight: 600)
         .onAppear { model.start(); if model.servers.isEmpty { showingAdd = true } }
-        .onChange(of: selection) { _, new in if new == .terminal { visitedTerminal = true } }
+        .focusedSceneValue(\.terminalActions, terminalActions)
         .sheet(isPresented: $showingAdd) {
             AddServerSheet(existing: model.servers, canCancel: !model.servers.isEmpty) { server in
                 showingAdd = false
-                visitedTerminal = false
                 selection = .overview
                 model.add(server)
             } onCancel: { showingAdd = false }
@@ -53,6 +83,13 @@ struct ContentView: View {
                 HostKeySheet(server: server, offer: offer, onTrust: model.trustPending, onCancel: model.declineTrust)
             }
         }
+    }
+
+    private var terminalActions: TerminalActions? {
+        guard selection == .terminal, let server = model.selected else { return nil }
+        return TerminalActions(
+            newTab: { terminals.newTab(for: server) },
+            closeTab: { if let tab = terminals.selectedTab(for: server) { terminals.close(tab, for: server) } })
     }
 
     private var pendingTrust: Binding<Bool> {
@@ -77,18 +114,12 @@ struct ContentView: View {
                 switch selection {
                 case .overview:
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal })
+                case .terminal:
+                    TerminalScreen(store: terminals, server: server)
                 case .command:
                     CommandProbeView(server: server).id(server.id)
                 default:
                     EmptyView()
-                }
-                // Keep the terminal alive while other screens are shown, or the SSH session would die.
-                if visitedTerminal {
-                    TerminalPane(server: server).id(server.id)
-                        .padding(.horizontal, 12).padding(.top, 36).padding(.bottom, 12)
-                        .background(Color.black)
-                        .opacity(selection == .terminal ? 1 : 0)
-                        .allowsHitTesting(selection == .terminal)
                 }
             }
         } else {

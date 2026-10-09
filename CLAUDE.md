@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 3 done: bootstrap, SSH transport + terminal spike, Overview/attention, saved servers + host-key trust); do not build ahead of the stage the user has approved.
+Homebase is an agentless SSH server manager for self-hosters (Docker Compose + Tailscale). Mac app first (SwiftUI), then iPhone, then Android. Product scope, MVP requirements (M1–M12) and phase gates are in [docs/PRD.md](docs/PRD.md). Only the MVP is scoped in detail. Work proceeds in approved stages (Stages 0 to 3 done: bootstrap, SSH transport + terminal spike, Overview/attention, saved servers + host-key trust, terminal tabs); do not build ahead of the stage the user has approved.
 
 ## Commands
 
@@ -49,5 +49,6 @@ Xcode is installed on the dev machine. There is no `.xcodeproj` yet. The Mac app
 - Persistence: `ServerStore` (Core) writes `servers.json` and per-server cached snapshots under `~/Library/Application Support/Homebase/`. Secrets never go there. On select, `AppModel` paints the cached snapshot immediately (`ServerState.isStale`) and replaces it on the first successful poll.
 - Host keys: `HostKeyVerifier` (SSHSystem) runs ssh with `StrictHostKeyChecking=yes`. Unknown key -> user sees fingerprints and confirms -> exactly the scanned lines are appended to known_hosts. Changed key -> blocked, never offered for acceptance. `AppModel` only polls the selected server.
 - `Server.host` is whatever ssh connects to (hostname, IP or ~/.ssh/config alias). Imported servers keep the alias as `host` so ssh applies the rest of the entry.
-- Not built yet: Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server, terminal auto-reconnect, a global read-only flag checked in the service layer.
+- Terminals: `TerminalStore` holds each server's `TerminalTab`s; a tab owns its SwiftTerm `LocalProcessTerminalView` (not SwiftUI), so sessions survive switching screens, tabs and servers, and end only on tab close, server removal or quit. Tabs run `ssh -t` over the same ControlPath as `OpenSSHTransport`, so a new tab reuses the open connection (about 0.17 s vs 0.8 s). Cmd+T / Cmd+W are menu commands (`TerminalCommands`) that replace File > Close and fall back to closing the window when no terminal is showing.
+- Not built yet: Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server, automatic terminal reconnect (a dead tab shows a Reconnect button), a global read-only flag checked in the service layer.
 - The server stays untouched: no agent, standard SSH commands only (Debian/Ubuntu and apt for the MVP).
