@@ -75,7 +75,7 @@ extension ButtonStyle where Self == PointerButtonStyle {
     static var pointer: PointerButtonStyle { PointerButtonStyle() }
 }
 
-private struct HandCursor: ViewModifier {
+struct HandCursor: ViewModifier {
     @Environment(\.isEnabled) private var isEnabled
     @State private var pushed = false
 
@@ -91,4 +91,9 @@ private struct HandCursor: ViewModifier {
             // A view that vanishes while hovered (screen switch, sheet) must not leave the hand stuck.
             .onDisappear { if pushed { NSCursor.pop(); pushed = false } }
     }
+}
+
+extension View {
+    /// Hand cursor while hovering. Use on clickable areas that are not a Button (e.g. a tappable row).
+    func handCursor() -> some View { modifier(HandCursor()) }
 }

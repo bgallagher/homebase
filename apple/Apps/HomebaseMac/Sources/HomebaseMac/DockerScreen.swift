@@ -15,7 +15,7 @@ struct DockerScreen: View {
 
     var body: some View {
         let state = model.state
-        VStack(spacing: 0) {
+        HSplitView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header(state.snapshot)
@@ -28,7 +28,7 @@ struct DockerScreen: View {
                         ForEach(snapshot.stacks) { stack in
                             StackCard(stack: stack, collapsed: collapsed.contains(stack.id),
                                       toggle: { toggle(stack.id) }, model: model,
-                                      selectedID: model.logTarget?.id,
+                                      selectedID: model.logTarget?.id, compact: model.logTarget != nil,
                                       busy: state.busy, askStop: { confirmStop = $0 })
                         }
                     } else if state.error == nil {
@@ -39,9 +39,10 @@ struct DockerScreen: View {
                 .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(minWidth: 400)
             if let target = model.logTarget {
                 LogPanel(model: model, container: target, busy: state.busy.contains(target.id))
-                    .frame(height: 280)
+                    .frame(minWidth: 300, idealWidth: 460)
             }
         }
         .foregroundStyle(Theme.textPrimary)
@@ -90,6 +91,7 @@ private struct StackCard: View {
     let toggle: () -> Void
     let model: DockerModel
     let selectedID: String?
+    let compact: Bool
     let busy: Set<String>
     let askStop: (DockerContainer) -> Void
 
@@ -112,7 +114,7 @@ private struct StackCard: View {
             if !collapsed {
                 Divider().overlay(Theme.border)
                 ForEach(stack.containers) { c in
-                    ContainerRow(container: c, selected: c.id == selectedID, busy: busy.contains(c.id),
+                    ContainerRow(container: c, selected: c.id == selectedID, compact: compact, busy: busy.contains(c.id),
                                  model: model, askStop: askStop)
                     if c.id != stack.containers.last?.id { Divider().overlay(Theme.border).padding(.leading, 14) }
                 }
@@ -141,9 +143,11 @@ private struct StackCard: View {
 private struct ContainerRow: View {
     let container: DockerContainer
     let selected: Bool
+    let compact: Bool
     let busy: Bool
     let model: DockerModel
     let askStop: (DockerContainer) -> Void
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -153,15 +157,21 @@ private struct ContainerRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            statusBadge.frame(width: 110, alignment: .leading)
+            statusBadge.frame(width: compact ? 90 : 110, alignment: .leading)
 
             Text(resources).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.textSecondary)
-                .frame(width: 130, alignment: .leading)
+                .lineLimit(1).frame(width: compact ? 100 : 130, alignment: .leading)
 
-            Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
-                .lineLimit(1).frame(width: 130, alignment: .leading)
+            if !compact {
+                Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
+                    .lineLimit(1).frame(width: 130, alignment: .leading)
+            }
 
             HStack(spacing: 2) {
+                IconButton(symbol: "text.alignleft", help: "Logs for \(container.name)") {
+                    model.showLogs(for: container)
+                }
+                .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
                 if busy {
                     ProgressView().controlSize(.small).frame(width: 28, height: 28)
                 } else {
@@ -177,11 +187,13 @@ private struct ContainerRow: View {
                     }
                 }
             }
-            .frame(width: 66, alignment: .trailing)
+            .frame(width: 94, alignment: .trailing)
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(selected ? Theme.accent.opacity(0.10) : .clear)
+        .background(selected ? Theme.accent.opacity(0.12) : (hovering ? Theme.selection.opacity(0.5) : .clear))
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .handCursor()
         .onTapGesture { model.showLogs(for: container) }
         .help("Click to follow logs")
     }
@@ -250,16 +262,16 @@ private struct LogPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Circle().fill(model.logsLive ? Theme.ok : Theme.idle).frame(width: 7, height: 7)
-                Text(container.name).fontWeight(.semibold)
-                Text(model.logsLive ? "Live · last 100 lines" : "Stream ended").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                Text(container.name).fontWeight(.semibold).lineLimit(1)
+                Text(model.logsLive ? "Live" : "Ended").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
                 Spacer()
-                PanelButton(title: copied ? "Copied" : "Copy logs") {
+                PanelButton(title: copied ? "Copied" : "Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.logs.text, forType: .string)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 }
-                PanelButton(title: busy ? "Restarting…" : "Restart \(container.name)") {
+                PanelButton(title: busy ? "Restarting…" : "Restart") {
                     model.perform(.restart, on: container)
                 }
                 .disabled(busy)
@@ -281,6 +293,7 @@ private struct LogPanel: View {
             .defaultScrollAnchor(.bottom)
             .background(Color.black.opacity(0.35))
         }
+        .background(Theme.background)
     }
 }
 
