@@ -75,49 +75,26 @@ extension ButtonStyle where Self == PointerButtonStyle {
     static var pointer: PointerButtonStyle { PointerButtonStyle() }
 }
 
-/// Hand cursor over the view's frame, using an AppKit cursor rect rather than NSCursor.push/pop.
-/// Cursor rects are managed by the window, so nested clickable views (a row containing buttons)
-/// cannot unbalance a cursor stack, and a view that disappears while hovered cannot leave a stuck cursor.
+/// Hand cursor over clickable views.
+/// macOS 15+ uses SwiftUI's own pointer API, which the system manages (no push/pop to unbalance).
+/// macOS 14 falls back to setting the cursor from continuous hover events, with no cursor stack either.
+/// An earlier attempt using AppKit cursor rects on a hit-test-transparent background view never
+/// took effect, so do not go back to that.
 struct HandCursor: ViewModifier {
     @Environment(\.isEnabled) private var isEnabled
 
     func body(content: Content) -> some View {
-        content.background(CursorRect(enabled: isEnabled))
+        if #available(macOS 15, *) {
+            content.pointerStyle(isEnabled ? .link : nil)
+        } else {
+            content.onContinuousHover { phase in
+                switch phase {
+                case .active: if isEnabled { NSCursor.pointingHand.set() }
+                case .ended: NSCursor.arrow.set()
+                }
+            }
+        }
     }
-}
-
-private struct CursorRect: NSViewRepresentable {
-    let enabled: Bool
-
-    func makeNSView(context: Context) -> CursorRectView { CursorRectView() }
-
-    func updateNSView(_ view: CursorRectView, context: Context) {
-        view.enabled = enabled
-    }
-}
-
-private final class CursorRectView: NSView {
-    var enabled = true {
-        didSet { if oldValue != enabled { window?.invalidateCursorRects(for: self) } }
-    }
-
-    override func resetCursorRects() {
-        if enabled { addCursorRect(bounds, cursor: .pointingHand) }
-    }
-
-    // The rect covers `bounds`, so it must be rebuilt when the view is resized or moved to a window.
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        window?.invalidateCursorRects(for: self)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.invalidateCursorRects(for: self)
-    }
-
-    /// Never intercept clicks: this view only exists to provide the cursor rect.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 extension View {
