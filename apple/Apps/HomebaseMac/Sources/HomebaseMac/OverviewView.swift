@@ -55,9 +55,10 @@ struct OverviewView: View {
     private func cards(_ o: Overview, cpu: Double?) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 14)], spacing: 14) {
             StatCard(title: "CPU", trailing: "\(o.cores) cores · load \(Format.load(o.load1))",
-                     value: cpu.map { Format.percent($0) } ?? "…",
+                     value: cpu.map { Format.percent($0) } ?? "—",
+                     valueTint: cpu == nil ? Theme.textMuted : nil,
                      detail: "load \(Format.load(o.load1)) · \(Format.load(o.load5)) · \(Format.load(o.load15))",
-                     fraction: cpu.map { $0 / 100 })
+                     fraction: (cpu ?? 0) / 100)  // empty bar until the second reading, so the card keeps its height
             StatCard(title: "Memory", trailing: Format.bytes(o.memory.totalBytes),
                      value: Format.bytes(o.memory.usedBytes), unit: "used",
                      detail: "\(Format.bytes(o.memory.availableBytes)) available",
