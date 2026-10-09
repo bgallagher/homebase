@@ -4,11 +4,12 @@ import SwiftUI
 struct OverviewView: View {
     let model: ServerModel
     let host: String
+    let openTerminal: () -> Void
 
     var body: some View {
         let state = model.state
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let o = state.overview {
                     header(o)
                     if !state.attention.isEmpty { AttentionStrip(items: state.attention) }
@@ -18,37 +19,50 @@ struct OverviewView: View {
                     ErrorBanner(message: error)
                 } else {
                     HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Connecting to \(host)…") }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textMuted)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { model.connect(host: host) }
-        .onChange(of: host) { _, new in model.connect(host: new) }
+        .foregroundStyle(Theme.textPrimary)
     }
 
     private func header(_ o: Overview) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(o.hostname).font(.title.bold())
-            Text("\(o.os.prettyName) · up \(Format.uptime(o.uptimeSeconds)) · \(o.cores) cores")
-                .foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(o.hostname).font(.system(size: 26, weight: .bold)).tracking(-0.4)
+                Text("\(o.os.prettyName) · up \(Format.uptime(o.uptimeSeconds)) · \(o.cores) cores")
+                    .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+            }
+            Spacer()
+            Button(action: openTerminal) {
+                Text("Open Terminal").fontWeight(.semibold)
+                    .padding(.horizontal, 16).frame(height: 34)
+                    .foregroundStyle(Theme.accentText)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 9))
+            }
+            .buttonStyle(.plain)
         }
     }
 
     private func cards(_ o: Overview, cpu: Double?) -> some View {
-        let root = o.disks.first { $0.mount == "/" } ?? o.disks.first
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
-            StatCard(title: "CPU", value: cpu.map { Format.percent($0) } ?? "…",
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 14)], spacing: 14) {
+            StatCard(title: "CPU", trailing: "\(o.cores) cores · load \(Format.load(o.load1))",
+                     value: cpu.map { Format.percent($0) } ?? "…",
                      detail: "load \(Format.load(o.load1)) · \(Format.load(o.load5)) · \(Format.load(o.load15))",
                      fraction: cpu.map { $0 / 100 })
-            StatCard(title: "Memory", value: Format.bytes(o.memory.usedBytes),
-                     detail: "of \(Format.bytes(o.memory.totalBytes))", fraction: o.memory.usedFraction)
-            if let d = root {
-                StatCard(title: "Disk \(d.mount)", value: "\(d.usePercent)%",
-                         detail: "\(Format.bytes(d.usedBytes)) of \(Format.bytes(d.totalBytes))",
+            StatCard(title: "Memory", trailing: Format.bytes(o.memory.totalBytes),
+                     value: Format.bytes(o.memory.usedBytes), unit: "used",
+                     detail: "\(Format.bytes(o.memory.availableBytes)) available",
+                     fraction: o.memory.usedFraction)
+            ForEach(o.disks, id: \.mount) { d in
+                let over = d.usePercent > Attention.diskThresholdPercent
+                StatCard(title: "Disk \(d.mount)", trailing: Format.bytes(d.totalBytes),
+                         value: "\(d.usePercent)%", valueTint: over ? Theme.danger : nil,
+                         detail: "\(Format.bytes(d.usedBytes)) used",
                          fraction: Double(d.usePercent) / 100,
-                         tint: d.usePercent > Attention.diskThresholdPercent ? .red : .accentColor)
+                         tint: over ? Theme.danger : Theme.accent)
             }
         }
     }
@@ -56,21 +70,41 @@ struct OverviewView: View {
 
 struct StatCard: View {
     let title: String
+    var trailing: String = ""
     let value: String
+    var unit: String?
+    var valueTint: Color?
     let detail: String
     var fraction: Double?
-    var tint: Color = .accentColor
+    var tint: Color = Theme.accent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 28, weight: .bold)).monospacedDigit()
-            if let fraction { ProgressView(value: min(max(fraction, 0), 1)).tint(tint) }
-            Text(detail).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(trailing)
+            }
+            .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(value).font(.system(size: 30, weight: .bold)).tracking(-0.5).monospacedDigit()
+                    .foregroundStyle(valueTint ?? Theme.textPrimary)
+                if let unit { Text(unit).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.textMuted) }
+            }
+            if let fraction {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.border)
+                        Capsule().fill(tint).frame(width: geo.size.width * min(max(fraction, 0), 1))
+                    }
+                }
+                .frame(height: 8).padding(.top, 8)
+            }
+            Text(detail).font(.system(size: 12)).foregroundStyle(Theme.textMuted).padding(.top, 4)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        .card()
     }
 }
 
@@ -78,16 +112,31 @@ struct AttentionStrip: View {
     let items: [AttentionItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
-                .font(.headline).foregroundStyle(.orange)
-            ForEach(items) { item in
-                Text(item.message).foregroundStyle(item.severity == .critical ? .red : .primary)
-            }
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 18)).foregroundStyle(Theme.warn)
+            Text("Needs attention").fontWeight(.semibold).foregroundStyle(Theme.warn)
+            FlowChips(items: items)
+            Spacer(minLength: 0)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .background(Theme.warnBackground, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.warnBorder))
+    }
+}
+
+private struct FlowChips: View {
+    let items: [AttentionItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(items) { item in
+                Text(item.message)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .foregroundStyle(item.severity == .critical ? Theme.danger : Theme.warnText)
+                    .background(Theme.warnChip, in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
     }
 }
 
@@ -96,10 +145,10 @@ struct ErrorBanner: View {
 
     var body: some View {
         Label(message, systemImage: "wifi.exclamationmark")
-            .foregroundStyle(.red)
+            .foregroundStyle(Theme.danger)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .background(Theme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
