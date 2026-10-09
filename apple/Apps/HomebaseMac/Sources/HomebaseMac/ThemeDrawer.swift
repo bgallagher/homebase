@@ -49,6 +49,8 @@ struct ThemeDrawer: View {
                     }
                 }
             }
+            Text("Colour schemes from iTerm2-Color-Schemes (MIT). Credits in SOURCES.md.")
+                .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
         }
         .padding(14)
         .frame(width: 300)

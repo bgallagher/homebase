@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Build apple/Apps/HomebaseMac/Resources/themes.json from the open iTerm2-Color-Schemes collection.
+
+Source: https://github.com/mbadolato/iTerm2-Color-Schemes (MIT; per-theme authors are in its CREDITS.md).
+It fetches only raw.githubusercontent.com files, one at a time, and fails loudly on any bad download so a
+broken run never writes partial data. Output is deterministic: running it twice gives no diff.
+
+usage: tools/import-themes
+Edit CHOSEN below to add or remove themes. Our own Homebase Dark/Light themes are kept as the first entries.
+
+NOT used: terminalcolors.com. Its robots.txt disallows /downloads/, so its files must not be scripted.
+"""
+import json
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+BASE = "https://raw.githubusercontent.com/mbadolato/iTerm2-Color-Schemes/master"
+ROOT = Path(__file__).resolve().parent.parent
+RES = ROOT / "apple" / "Apps" / "HomebaseMac" / "Resources"
+
+# upstream file name (windowsterminal/<name>.json) -> family shown in the drawer
+CHOSEN = {
+    "Dracula": "Dracula",
+    "Catppuccin Mocha": "Catppuccin", "Catppuccin Macchiato": "Catppuccin",
+    "Catppuccin Frappe": "Catppuccin", "Catppuccin Latte": "Catppuccin",
+    "Gruvbox Dark": "Gruvbox", "Gruvbox Dark Hard": "Gruvbox", "Gruvbox Light": "Gruvbox",
+    "Kanagawa Wave": "Kanagawa", "Kanagawa Dragon": "Kanagawa", "Kanagawa Lotus": "Kanagawa",
+    "Nord": "Nord", "Nord Light": "Nord",
+    "TokyoNight": "Tokyo Night", "TokyoNight Storm": "Tokyo Night",
+    "TokyoNight Moon": "Tokyo Night", "TokyoNight Day": "Tokyo Night",
+    "Rose Pine": "Rosé Pine", "Rose Pine Moon": "Rosé Pine", "Rose Pine Dawn": "Rosé Pine",
+    "Everforest Dark Hard": "Everforest", "Everforest Light Med": "Everforest",
+    "Ayu Mirage": "Ayu", "Ayu Light": "Ayu",
+    "Atom One Dark": "One", "Atom One Light": "One",
+    "GitHub Dark Default": "GitHub", "GitHub Dark Dimmed": "GitHub", "GitHub Light Default": "GitHub",
+    "Night Owl": "Night Owl",
+    "Nightfox": "Nightfox",
+    "Flexoki Dark": "Flexoki", "Flexoki Light": "Flexoki",
+    "Monokai Pro": "Monokai",
+    "Solarized Dark Patched": "Solarized", "iTerm2 Solarized Light": "Solarized",
+    "Tomorrow Night": "Tomorrow",
+    "Iceberg Dark": "Iceberg", "Iceberg Light": "Iceberg",
+    "Cobalt2": "Cobalt2",
+    "Material Ocean": "Material",
+    "Zenburn": "Zenburn",
+    "Snazzy": "Snazzy",
+}
+
+ANSI_KEYS = ["black", "red", "green", "yellow", "blue", "purple", "cyan", "white",
+             "brightBlack", "brightRed", "brightGreen", "brightYellow",
+             "brightBlue", "brightPurple", "brightCyan", "brightWhite"]
+HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def fetch(url):
+    last = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "homebase-theme-import"}), timeout=20) as r:
+                return r.read().decode("utf-8")
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(1 + attempt)
+    sys.exit(f"download failed: {url}: {last}")
+
+
+def luminance(hexcolor):
+    def lin(c):
+        v = c / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hexcolor[i:i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def slug(name):
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def main():
+    themes = [t for t in json.loads((RES / "themes.json").read_text()) if t["family"] == "Homebase"]
+    credits = fetch(f"{BASE}/CREDITS.md")
+    license_text = fetch(f"{BASE}/LICENSE")
+    sources = []
+    for name in sorted(CHOSEN, key=lambda n: (CHOSEN[n], n)):
+        url = f"{BASE}/windowsterminal/{urllib.parse.quote(name)}.json"
+        d = json.loads(fetch(url))
+        colours = [d.get(k, "") for k in ANSI_KEYS] + [d.get("background", ""), d.get("foreground", "")]
+        if not all(HEX.match(c) for c in colours):
+            sys.exit(f"{name}: missing or malformed colours in {url}")
+        bg = d["background"].upper()
+        theme = {
+            "id": slug(name), "name": d.get("name", name), "family": CHOSEN[name],
+            "appearance": "dark" if luminance(bg) < 0.4 else "light",
+            "background": bg, "foreground": d["foreground"].upper(),
+            "ansi": [c.upper() for c in colours[:16]],
+        }
+        for key, out in (("cursorColor", "cursor"), ("selectionBackground", "selection")):
+            if HEX.match(d.get(key, "")):
+                theme[out] = d[key].upper()
+        themes.append(theme)
+        # Best effort: the CREDITS.md paragraphs that mention this theme by name.
+        paras = [p.strip().replace("\n", " ") for p in credits.split("\n\n") if name.lower() in p.lower()]
+        sources.append((theme["name"], url, paras[:2]))
+        time.sleep(0.15)
+
+    ids = [t["id"] for t in themes]
+    if len(ids) != len(set(ids)):
+        sys.exit("duplicate theme ids")
+    (RES / "themes.json").write_text(json.dumps(themes, indent=2, ensure_ascii=False) + "\n")
+
+    lines = [
+        "# Theme sources", "",
+        "Third-party themes in `themes.json` come from the open **iTerm2-Color-Schemes** collection",
+        "(https://github.com/mbadolato/iTerm2-Color-Schemes), MIT licensed. Each scheme was created by its own author;",
+        "the collection's `CREDITS.md` names them, and the matching lines are quoted below where the name matches.",
+        "Homebase Dark and Homebase Light are our own.", "",
+        "Regenerate with `tools/import-themes`. Do not script-download from terminalcolors.com: its `robots.txt`",
+        "disallows `/downloads/`.", "", "## Licence of the collection", "", "```", license_text.strip(), "```", "",
+        "## Themes", "",
+    ]
+    for name, url, paras in sources:
+        lines.append(f"- **{name}**: {url}")
+        for p in paras:
+            lines.append(f"  - CREDITS.md: {p}")
+    (RES / "SOURCES.md").write_text("\n".join(lines) + "\n")
+    print(f"wrote {len(themes)} themes ({len(themes) - 2} third-party)")
+
+
+main()
