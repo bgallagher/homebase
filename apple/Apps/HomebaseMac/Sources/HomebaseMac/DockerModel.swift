@@ -17,6 +17,8 @@ final class DockerModel {
     @ObservationIgnored private let transport: SSHTransport
     @ObservationIgnored private var listener: Task<Void, Never>?
     @ObservationIgnored private var logTask: Task<Void, Never>?
+    /// Bumped on every open/close so a stream that was cancelled cannot touch the next one's state.
+    @ObservationIgnored private var logGeneration = 0
 
     init(server: Server) {
         let transport = OpenSSHTransport(server: server)
@@ -50,6 +52,11 @@ final class DockerModel {
         Task { await session.perform(action, containerID: container.id) }
     }
 
+    /// Clicking the container that is already open closes its logs.
+    func toggleLogs(for container: DockerContainer) {
+        if logTarget?.id == container.id { closeLogs() } else { showLogs(for: container) }
+    }
+
     func showLogs(for container: DockerContainer) {
         guard logTarget?.id != container.id else { return }
         closeLogs()
@@ -58,20 +65,25 @@ final class DockerModel {
         logs = LogBuffer()
         logError = nil
         logsLive = true
+        let generation = logGeneration
         let transport = transport
         logTask = Task { [weak self] in
             do {
                 for try await chunk in transport.stream(command) {
-                    self?.logs.append(chunk)
+                    guard let self, self.logGeneration == generation else { return }
+                    self.logs.append(chunk)
                 }
             } catch {
-                self?.logError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                guard let self, self.logGeneration == generation else { return }
+                self.logError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }
-            self?.logsLive = false
+            guard let self, self.logGeneration == generation else { return }
+            self.logsLive = false
         }
     }
 
     func closeLogs() {
+        logGeneration += 1
         logTask?.cancel(); logTask = nil   // cancelling sends Ctrl-C to the remote `docker logs -f`
         logTarget = nil
         logsLive = false

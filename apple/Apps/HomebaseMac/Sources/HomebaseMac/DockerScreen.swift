@@ -168,10 +168,10 @@ private struct ContainerRow: View {
             }
 
             HStack(spacing: 2) {
-                IconButton(symbol: "text.alignleft", help: "Logs for \(container.name)") {
-                    model.showLogs(for: container)
+                IconButton(symbol: "text.alignleft", help: "Logs for \(container.name)",
+                           tint: selected ? Theme.accent : Theme.textSecondary) {
+                    model.toggleLogs(for: container)
                 }
-                .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
                 if busy {
                     ProgressView().controlSize(.small).frame(width: 28, height: 28)
                 } else {
@@ -194,7 +194,7 @@ private struct ContainerRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .handCursor()
-        .onTapGesture { model.showLogs(for: container) }
+        .onTapGesture { model.toggleLogs(for: container) }
         .help("Click to follow logs")
     }
 
@@ -227,6 +227,7 @@ private struct ContainerRow: View {
 private struct IconButton: View {
     let symbol: String
     let help: String
+    var tint: Color = Theme.textSecondary
     let action: () -> Void
 
     var body: some View {
@@ -235,7 +236,7 @@ private struct IconButton: View {
                 .frame(width: 28, height: 28).contentShape(Rectangle())
         }
         .buttonStyle(.pointer)
-        .foregroundStyle(Theme.textSecondary)
+        .foregroundStyle(tint)
         .help(help)
     }
 }
@@ -275,6 +276,7 @@ private struct LogPanel: View {
                     model.perform(.restart, on: container)
                 }
                 .disabled(busy)
+                .help("Restart \(container.name)")
                 IconButton(symbol: "xmark", help: "Close logs", action: model.closeLogs)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
