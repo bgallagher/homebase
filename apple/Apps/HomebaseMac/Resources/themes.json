@@ -1,0 +1,58 @@
+[
+  {
+    "id": "homebase-dark",
+    "name": "Homebase Dark",
+    "family": "Homebase",
+    "appearance": "dark",
+    "background": "#15171C",
+    "foreground": "#E7E9ED",
+    "cursor": "#6D8DFF",
+    "selection": "#2B3140",
+    "ansi": [
+      "#1A1D23",
+      "#F87171",
+      "#34D399",
+      "#FBBF24",
+      "#6D8DFF",
+      "#C084FC",
+      "#38BDF8",
+      "#C9CDD6",
+      "#5A6170",
+      "#FCA5A5",
+      "#6EE7B7",
+      "#FDE68A",
+      "#93ABFF",
+      "#D8B4FE",
+      "#7DD3FC",
+      "#F4F5F7"
+    ]
+  },
+  {
+    "id": "homebase-light",
+    "name": "Homebase Light",
+    "family": "Homebase",
+    "appearance": "light",
+    "background": "#F5F6F8",
+    "foreground": "#1B1E24",
+    "cursor": "#3F5FE0",
+    "selection": "#CBD3F5",
+    "ansi": [
+      "#1B1E24",
+      "#C62828",
+      "#1B7F55",
+      "#9A6700",
+      "#3F5FE0",
+      "#8E3FC4",
+      "#0B7FA8",
+      "#D8DCE3",
+      "#626A78",
+      "#E04848",
+      "#2FA374",
+      "#B8830A",
+      "#5B7BF0",
+      "#A95BDB",
+      "#2A9BC8",
+      "#FFFFFF"
+    ]
+  }
+]

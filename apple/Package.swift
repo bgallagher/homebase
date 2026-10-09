@@ -29,7 +29,10 @@ let package = Package(
                 "HomebaseCore", "HomebaseSSHSystem",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
-            path: "Apps/HomebaseMac/Sources/HomebaseMac"
+            path: "Apps/HomebaseMac",
+            exclude: ["Resources/SOURCES.md"],
+            sources: ["Sources/HomebaseMac"],
+            resources: [.copy("Resources/themes.json")]
         ),
         .executableTarget(
             name: "HomebaseProbe",

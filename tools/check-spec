@@ -46,7 +46,35 @@ for d in (spec / "fixtures").iterdir():
     if d.is_dir() and d.name not in ids:
         errors.append(f"fixtures/{d.name}: no matching command in commands.json")
 
+# Terminal themes (app resource, same rules as ThemeCatalog.validate in Swift)
+import re
+hexre = re.compile(r"^#[0-9A-Fa-f]{6}$")
+themes_path = spec.parent / "apple" / "Apps" / "HomebaseMac" / "Resources" / "themes.json"
+try:
+    themes = json.loads(themes_path.read_text())
+except Exception as e:
+    themes = []
+    errors.append(f"themes.json: {e}")
+tids = [t.get("id") for t in themes]
+if len(tids) != len(set(tids)):
+    errors.append("themes.json: duplicate ids")
+if "homebase-dark" not in tids:
+    errors.append("themes.json: default theme homebase-dark is missing")
+for t in themes:
+    tid = t.get("id", "?")
+    if t.get("appearance") not in ("dark", "light"):
+        errors.append(f"themes.json: {tid}: appearance must be dark or light")
+    for key in ("background", "foreground"):
+        if not hexre.match(str(t.get(key, ""))):
+            errors.append(f"themes.json: {tid}: bad {key}")
+    for key in ("cursor", "selection"):
+        if key in t and not hexre.match(str(t[key])):
+            errors.append(f"themes.json: {tid}: bad {key}")
+    ansi = t.get("ansi", [])
+    if len(ansi) != 16 or not all(hexre.match(str(c)) for c in ansi):
+        errors.append(f"themes.json: {tid}: needs exactly 16 valid ANSI colours")
+
 if errors:
     print("\n".join(errors))
     sys.exit(1)
-print(f"spec ok: {len(commands)} command(s)")
+print(f"spec ok: {len(commands)} command(s), {len(themes)} theme(s)")
