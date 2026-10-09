@@ -5,35 +5,27 @@ import SwiftUI
 struct TerminalScreen: View {
     let store: TerminalStore
     let server: Server
-    @AppStorage("themeDrawerOpen") private var drawerOpen = false
 
     var body: some View {
         let tabs = store.tabs(for: server)
         let current = store.selectedTab(for: server)
-        let background = Color(nsColor: store.theme.backgroundRGB.nsColor)
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                tabStrip(tabs, current: current)
-                ZStack {
-                    background
-                    if let current {
-                        TerminalHost(tab: current).id(current.id)
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                        if !current.isRunning { endedOverlay(current) }
-                    } else {
-                        VStack(spacing: 12) {
-                            Text("No open terminals").foregroundStyle(.secondary)
-                            Button("New Terminal") { store.newTab(for: server) }
-                        }
+        let background = Color(rgb: AppearanceStore.shared.resolvedTheme.backgroundRGB)
+        VStack(spacing: 0) {
+            tabStrip(tabs, current: current)
+            ZStack {
+                background
+                if let current {
+                    TerminalHost(tab: current).id(current.id)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                    if !current.isRunning { endedOverlay(current) }
+                } else {
+                    VStack(spacing: 12) {
+                        Text("No open terminals").foregroundStyle(Theme.textMuted)
+                        Button("New Terminal") { store.newTab(for: server) }
                     }
                 }
             }
-            if drawerOpen {
-                Divider()
-                ThemeDrawer(store: store).transition(.move(edge: .trailing))
-            }
         }
-        .animation(.easeOut(duration: 0.18), value: drawerOpen)
         .onAppear { store.ensureTab(for: server) }
     }
 
@@ -51,12 +43,6 @@ struct TerminalScreen: View {
             .foregroundStyle(Theme.textMuted)
             .help("New tab (⌘T)")
             Spacer()
-            Button { drawerOpen.toggle() } label: {
-                Image(systemName: "paintpalette").frame(width: 28, height: 28).contentShape(Rectangle())
-            }
-            .buttonStyle(.pointer)
-            .foregroundStyle(drawerOpen ? Theme.accent : Theme.textMuted)
-            .help("Themes")
         }
         .padding(.leading, 12).padding(.trailing, 12).padding(.top, 34).padding(.bottom, 6)
         .background(Theme.sidebar)
@@ -67,10 +53,12 @@ struct TerminalScreen: View {
         VStack(spacing: 10) {
             Text(tab.exitCode.map { "Session ended (exit \($0))" } ?? "Session ended")
                 .font(.headline)
-            Button("Reconnect") { tab.reconnect(highlightOutput: store.highlightOutput) }.keyboardShortcut(.defaultAction)
+            Button("Reconnect") { tab.reconnect() }.keyboardShortcut(.defaultAction)
         }
         .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .foregroundStyle(Theme.textPrimary)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
     }
 }
 

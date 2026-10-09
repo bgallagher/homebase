@@ -12,11 +12,12 @@ import Foundation
 /// - A match touching the end of a chunk, or continuing from the previous chunk's last token, is skipped:
 ///   it may be part of a longer token. Typed echo therefore stays plain, and a token split across two reads
 ///   is simply not coloured rather than coloured wrongly.
-/// - An incomplete UTF-8 sequence at the end of a chunk is carried to the next call.
+/// - An incomplete UTF-8 sequence at the end of a chunk is carried to the next call (only while enabled).
 public struct TerminalOutputFilter {
-    public var isEnabled = true {
-        didSet { if isEnabled && !oldValue { resetStyleState() } }
-    }
+    /// Controls only whether colour is *inserted*. Escape-sequence state (program colours, alternate screen)
+    /// is tracked either way, so switching on in the middle of a stream is immediately correct (for example
+    /// while vim is open) and switching off gives a byte-for-byte pass-through.
+    public var isEnabled = true
 
     private enum Mode { case text, esc, escIntermediate, csi, osc, oscEsc }
     private var mode = Mode.text
@@ -40,7 +41,6 @@ public struct TerminalOutputFilter {
     private static let resetForeground = Array("\u{1B}[39m".utf8)
 
     public mutating func process(_ input: [UInt8]) -> [UInt8] {
-        guard isEnabled else { return input }
         let data = carry + input
         carry = []
         var out: [UInt8] = []
@@ -91,7 +91,8 @@ public struct TerminalOutputFilter {
         }
 
         // Keep an incomplete trailing UTF-8 sequence for the next call instead of splitting a character.
-        let tail = Self.incompleteUTF8Tail(run)
+        // Only hold bytes back when we might rewrite them; a disabled filter passes everything straight through.
+        let tail = isEnabled ? Self.incompleteUTF8Tail(run) : 0
         if tail > 0 {
             carry = Array(run.suffix(tail))
             run.removeLast(tail)
@@ -114,7 +115,7 @@ public struct TerminalOutputFilter {
         let wasAdjacent = endsWithTokenByte
         endsWithTokenByte = Self.isTokenByte(run[run.count - 1])
 
-        guard !altScreen, !fgActive, !bgActive, !reverse,
+        guard isEnabled, !altScreen, !fgActive, !bgActive, !reverse,
               let text = String(bytes: run, encoding: .utf8) else {
             out.append(contentsOf: run)
             return

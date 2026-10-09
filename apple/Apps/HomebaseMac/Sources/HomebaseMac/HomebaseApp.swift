@@ -57,6 +57,7 @@ struct ContentView: View {
     @State private var selection: Screen = .overview
     @State private var terminals = TerminalStore()
     @State private var showingAdd = false
+    private let appearance = AppearanceStore.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -69,7 +70,16 @@ struct ContentView: View {
         }
         .background(Theme.background)
         .frame(minWidth: 960, minHeight: 600)
-        .onAppear { model.start(); if model.servers.isEmpty { showingAdd = true } }
+        // The theme drives the whole window: accent for controls, light/dark for system-drawn parts, and
+        // every open terminal is recoloured when the resolved theme changes.
+        .tint(Theme.accent)
+        .preferredColorScheme(appearance.fixedColorScheme)
+        .onChange(of: appearance.resolvedTheme) { _, theme in terminals.applyTheme(theme) }
+        .onAppear {
+            appearance.applyWindowAppearance()
+            model.start()
+            if model.servers.isEmpty { showingAdd = true }
+        }
         .focusedSceneValue(\.terminalActions, terminalActions)
         .sheet(isPresented: $showingAdd) {
             AddServerSheet(existing: model.servers, canCancel: !model.servers.isEmpty) { server in
@@ -116,7 +126,7 @@ struct ContentView: View {
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal },
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
                 case .docker:
-                    DockerScreen(server: server, theme: terminals.theme).id(server.id)
+                    DockerScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:
@@ -128,6 +138,7 @@ struct ContentView: View {
         } else {
             ContentUnavailableView("No server yet", systemImage: "server.rack",
                                    description: Text("Add a host or a ~/.ssh/config alias to get started."))
+                .foregroundStyle(Theme.textMuted)
         }
     }
 }

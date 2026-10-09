@@ -6,6 +6,9 @@ import HomebaseCore
 //
 //   homebase-pty [--no-highlight] -- <command> [args...]
 //
+// SIGUSR1 switches highlighting on and SIGUSR2 switches it off while running (idempotent, not a toggle, so
+// the app and the relay cannot drift apart).
+//
 // It runs <command> on its own pty, copies input from our terminal to it unchanged, and copies the command's
 // output back through TerminalOutputFilter, which adds colour to IP addresses, errors and so on. SwiftTerm's
 // own view stays untouched: it just thinks it is talking to a program. Window resizes are forwarded, and the
@@ -13,6 +16,8 @@ import HomebaseCore
 
 nonisolated(unsafe) var winchPending: sig_atomic_t = 0
 nonisolated(unsafe) var hangupPending: sig_atomic_t = 0
+nonisolated(unsafe) var highlightOnPending: sig_atomic_t = 0   // SIGUSR1
+nonisolated(unsafe) var highlightOffPending: sig_atomic_t = 0  // SIGUSR2
 
 func usage() -> Never {
     FileHandle.standardError.write(Data("usage: homebase-pty [--no-highlight] -- <command> [args...]\n".utf8))
@@ -37,6 +42,13 @@ if args.first == "--no-highlight" { highlight = false; args.removeFirst() }
 guard args.first == "--", args.count >= 2 else { usage() }
 args.removeFirst()
 
+// Handlers go in first: SIGUSR1/2 would otherwise terminate us (their default action) if they arrived early.
+signal(SIGWINCH) { _ in winchPending = 1 }
+signal(SIGHUP) { _ in hangupPending = 1 }
+signal(SIGTERM) { _ in hangupPending = 1 }
+signal(SIGUSR1) { _ in highlightOnPending = 1 }
+signal(SIGUSR2) { _ in highlightOffPending = 1 }
+
 // Everything the child needs is built before forkpty: after fork only async-signal-safe calls are allowed.
 let cArgs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
 
@@ -59,6 +71,9 @@ if pid == 0 {
     _exit(127)
 }
 
+// Ignoring SIGPIPE is inherited across exec, so it is set only after the child has been forked.
+signal(SIGPIPE, SIG_IGN)
+
 // Our side of the outer terminal must be raw so bytes pass through untouched (the inner pty does the line editing).
 if outerIsTTY {
     var raw = original
@@ -66,10 +81,6 @@ if outerIsTTY {
     tcsetattr(STDIN_FILENO, TCSANOW, &raw)
 }
 
-signal(SIGWINCH) { _ in winchPending = 1 }
-signal(SIGHUP) { _ in hangupPending = 1 }
-signal(SIGTERM) { _ in hangupPending = 1 }
-signal(SIGPIPE, SIG_IGN)
 
 var filter = TerminalOutputFilter()
 filter.isEnabled = highlight
@@ -82,6 +93,8 @@ mainLoop: while true {
         winchPending = 0
         if outerIsTTY, ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == 0 { _ = ioctl(master, TIOCSWINSZ, &size) }
     }
+    if highlightOnPending != 0 { highlightOnPending = 0; filter.isEnabled = true }
+    if highlightOffPending != 0 { highlightOffPending = 0; filter.isEnabled = false }
     if hangupPending != 0, hangupDeadline == nil {
         // Our terminal went away or we were told to stop: hang up the command, then drain until it exits.
         kill(pid, SIGHUP)

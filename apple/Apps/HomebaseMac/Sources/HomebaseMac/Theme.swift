@@ -1,50 +1,43 @@
 import AppKit
+import HomebaseCore
 import SwiftUI
 
-/// Design tokens from the Homebase design. Dark values come straight from the design;
-/// light values are chosen to match (M12: follow the system appearance).
+/// The app's colours, derived from the selected theme (see AppPalette). Properties read the shared
+/// AppearanceStore, so any view that reads them inside `body` updates when the theme changes.
+@MainActor
 enum Theme {
-    static let background = dynamic(dark: 0x15171C, light: 0xF5F6F8)
-    static let sidebar = dynamic(dark: 0x1A1D23, light: 0xECEEF2)
-    static let card = dynamic(dark: 0x1C2027, light: 0xFFFFFF)
-    static let selection = dynamic(dark: 0x262B35, light: 0xDDE1E8)
-    static let border = dynamic(dark: 0x262A32, light: 0xD8DCE3)
-    static let textPrimary = dynamic(dark: 0xE7E9ED, light: 0x1B1E24)
-    static let textSecondary = dynamic(dark: 0xC9CDD6, light: 0x3A404B)
-    static let textMuted = dynamic(dark: 0x9097A5, light: 0x626A78)
-    static let accent = Color(hex: 0x6D8DFF)
-    static let accentText = Color(hex: 0x0B1020)
-    static let ok = Color(hex: 0x34D399)
-    static let warn = dynamic(dark: 0xFBBF24, light: 0x9A6700)
-    static let danger = dynamic(dark: 0xF87171, light: 0xC62828)
-    static let warnBackground = dynamic(dark: 0x211D14, light: 0xFFF6DB)
-    static let warnBorder = dynamic(dark: 0x4A3F1F, light: 0xEBD79A)
-    static let warnChip = dynamic(dark: 0x2C2718, light: 0xFBEBB8)
-    static let warnText = dynamic(dark: 0xE8D9A8, light: 0x5C4500)
-    static let idle = Color(hex: 0x5A6170)
+    private static var p: AppPalette { AppearanceStore.shared.palette }
+
+    static var background: Color { Color(rgb: p.background) }
+    static var sidebar: Color { Color(rgb: p.sidebar) }
+    static var card: Color { Color(rgb: p.card) }
+    static var selection: Color { Color(rgb: p.selection) }
+    static var border: Color { Color(rgb: p.border) }
+    static var textPrimary: Color { Color(rgb: p.textPrimary) }
+    static var textSecondary: Color { Color(rgb: p.textSecondary) }
+    static var textMuted: Color { Color(rgb: p.textMuted) }
+    static var accent: Color { Color(rgb: p.accent) }
+    static var accentText: Color { Color(rgb: p.accentText) }
+    static var ok: Color { Color(rgb: p.ok) }
+    static var warn: Color { Color(rgb: p.warn) }
+    static var danger: Color { Color(rgb: p.danger) }
+    static var warnBackground: Color { Color(rgb: p.warnBackground) }
+    static var warnBorder: Color { Color(rgb: p.warnBorder) }
+    static var warnChip: Color { Color(rgb: p.warnChip) }
+    static var warnText: Color { Color(rgb: p.warnText) }
+    static var idle: Color { Color(rgb: p.idle) }
 
     static let cardRadius: CGFloat = 12
-
-    private static func dynamic(dark: UInt32, light: UInt32) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return NSColor(hex: isDark ? dark : light)
-        })
-    }
 }
 
-extension NSColor {
-    convenience init(hex: UInt32) {
-        self.init(
-            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-            green: CGFloat((hex >> 8) & 0xFF) / 255,
-            blue: CGFloat(hex & 0xFF) / 255,
-            alpha: 1)
+extension RGB {
+    var nsColor: NSColor {
+        NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
     }
 }
 
 extension Color {
-    init(hex: UInt32) { self.init(nsColor: NSColor(hex: hex)) }
+    init(rgb: RGB) { self.init(nsColor: rgb.nsColor) }
 }
 
 /// Card surface used by stat cards and panels.

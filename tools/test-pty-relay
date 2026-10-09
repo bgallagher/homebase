@@ -129,6 +129,43 @@ def run_all(ssh_host):
     s.wait()
     check("initial window size is passed on", "40 132" in out, repr(out))
 
+    # Live switching: a command that prints an IP every 150 ms; flip highlighting with SIGUSR2 / SIGUSR1.
+    ticker = "i=0; while [ $i -lt 60 ]; do printf 'tick 10.0.0.1 x\\r\\n'; sleep 0.15; i=$((i+1)); done"
+    s = Session(["--", "/bin/sh", "-c", ticker])
+    s.read(0.8)
+    on1 = len(s.out)
+    os.kill(s.pid, signal.SIGUSR2)
+    s.read(0.5)                       # let anything already in flight drain
+    off_start = len(s.out)
+    s.read(1.0)
+    off_end = len(s.out)
+    os.kill(s.pid, signal.SIGUSR1)
+    s.read(0.5)
+    on2_start = len(s.out)
+    s.read(1.0)
+    seg = lambda a, b: s.out[a:b].decode("utf-8", "replace")
+    check("starts highlighted", f"{ESC}[35m10.0.0.1" in seg(0, on1), repr(seg(0, on1)))
+    check("SIGUSR2 switches highlighting off on a running command",
+          "tick 10.0.0.1 x" in seg(off_start, off_end) and ESC not in seg(off_start, off_end), repr(seg(off_start, off_end)))
+    check("SIGUSR1 switches it back on", f"{ESC}[35m10.0.0.1" in seg(on2_start, len(s.out)), repr(seg(on2_start, len(s.out))))
+    s.write(b"\x03")
+    s.wait(3)
+
+    s = Session(["--no-highlight", "--", "/bin/sh", "-c", ticker])
+    s.read(0.6)
+    check("--no-highlight start state: plain", ESC not in s.out.decode("utf-8", "replace"), repr(s.out))
+    os.kill(s.pid, signal.SIGUSR1)
+    s.read(0.5)
+    mark = len(s.out)
+    s.read(1.0)
+    check("SIGUSR1 turns on a relay started with --no-highlight", f"{ESC}[35m10.0.0.1" in s.out[mark:].decode("utf-8", "replace"))
+    os.kill(s.pid, signal.SIGUSR1)    # idempotent
+    os.kill(s.pid, signal.SIGUSR1)
+    s.read(0.4)
+    check("repeated SIGUSR1 stays on (not a toggle)", f"{ESC}[35m10.0.0.1" in s.out[-300:].decode("utf-8", "replace"))
+    s.write(b"\x03")
+    s.wait(3)
+
     s = Session(["--", "/bin/sh", "-c", "sleep 30"])
     s.read(0.4)
     os.kill(s.pid, signal.SIGHUP)

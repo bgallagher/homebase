@@ -42,6 +42,8 @@ struct AddServerSheet: View {
         }
         .padding(24)
         .frame(width: 460)
+        .foregroundStyle(Theme.textPrimary)
+        .background(Theme.background)
         .onAppear(perform: loadConfig)
     }
 
@@ -49,7 +51,7 @@ struct AddServerSheet: View {
         Group {
             if configHosts.isEmpty {
                 Text("No hosts found in ~/.ssh/config. Use Manual to add one.")
-                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
+                    .foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
             } else {
                 ScrollView {
                     VStack(spacing: 6) {
@@ -58,7 +60,7 @@ struct AddServerSheet: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(h.alias).fontWeight(.semibold)
-                                    Text(detail(h)).font(.caption).foregroundStyle(.secondary)
+                                    Text(detail(h)).font(.caption).foregroundStyle(Theme.textMuted)
                                 }
                                 Spacer()
                                 Button(added ? "Added" : "Add") { onAdd(h.asServer()) }.disabled(added)
@@ -124,7 +126,7 @@ struct HostKeySheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Trust this server?", systemImage: "lock.shield").font(.title2.bold())
             Text(explanation)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textMuted)
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(offer.fingerprints, id: \.self) { fp in
                     Text(fp).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
@@ -139,5 +141,7 @@ struct HostKeySheet: View {
         }
         .padding(24)
         .frame(width: 560)
+        .foregroundStyle(Theme.textPrimary)
+        .background(Theme.background)
     }
 }

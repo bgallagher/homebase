@@ -169,6 +169,30 @@ final class TerminalOutputFilterTests: XCTestCase {
         }
     }
 
+    func testStateIsTrackedWhileDisabledSoEnablingMidStreamIsCorrect() {
+        var f = TerminalOutputFilter()
+        f.isEnabled = false
+        let off = run(&f, "\(ESC)[?1049h")                       // vim starts while highlighting is off
+        XCTAssertEqual(off, "\(ESC)[?1049h", "disabled output is untouched")
+        f.isEnabled = true
+        XCTAssertEqual(run(&f, "inside vim 10.0.0.1 x"), "inside vim 10.0.0.1 x", "still on the alternate screen: no colour")
+        XCTAssertTrue(run(&f, "\(ESC)[?1049l back 10.0.0.2 x").contains("\(ESC)[35m10.0.0.2"), "colour returns after vim exits")
+
+        var g = TerminalOutputFilter()
+        g.isEnabled = false
+        _ = run(&g, "\(ESC)[32m")                                // a program sets green while we are off
+        g.isEnabled = true
+        XCTAssertEqual(run(&g, "10.0.0.1 x"), "10.0.0.1 x", "the program's own colour is still respected")
+    }
+
+    func testDisabledFilterHoldsNothingBack() {
+        var f = TerminalOutputFilter()
+        f.isEnabled = false
+        let euro: [UInt8] = [0xE2, 0x82, 0xAC]
+        XCTAssertEqual(f.process(Array(euro.prefix(2))), Array(euro.prefix(2)), "no buffering when off")
+        XCTAssertEqual(f.finish(), [])
+    }
+
     func testFinishReleasesAHeldBackPartialCharacter() {
         var f = TerminalOutputFilter()
         let euro: [UInt8] = [0xE2, 0x82, 0xAC]

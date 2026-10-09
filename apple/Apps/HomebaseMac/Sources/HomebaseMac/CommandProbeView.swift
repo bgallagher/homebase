@@ -22,7 +22,7 @@ struct CommandProbeView: View {
             ScrollView {
                 Text(output.isEmpty ? "No output yet" : output)
                     .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(output.isEmpty ? .secondary : .primary)
+                    .foregroundStyle(output.isEmpty ? Theme.textMuted : Theme.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }

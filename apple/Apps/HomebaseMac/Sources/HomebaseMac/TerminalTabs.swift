@@ -5,12 +5,6 @@ import Foundation
 import Observation
 import SwiftTerm
 
-extension RGB {
-    var nsColor: NSColor {
-        NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
-    }
-}
-
 /// One terminal tab: an ssh process on a PTY, rendered by SwiftTerm. The view is owned here, not by
 /// SwiftUI, so the session survives switching screens, tabs and servers.
 @MainActor @Observable
@@ -33,13 +27,13 @@ final class TerminalTab: Identifiable {
         return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
     }
 
-    /// Whether this tab's ssh runs through the relay. Set when a tab is created and again on Reconnect.
-    var highlightOutput: Bool
+    /// True when this tab's ssh was started through the relay, which is what lets highlighting be switched live.
+    @ObservationIgnored private var viaRelay = false
+    @ObservationIgnored private var launchedAt = Date()
 
-    init(server: Server, title: String, theme: TerminalTheme, highlightOutput: Bool) {
+    init(server: Server, title: String, theme: TerminalTheme) {
         self.server = server
         self.title = title
-        self.highlightOutput = highlightOutput
         view = LocalProcessTerminalView(frame: .zero)
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         view.changeScrollback(Self.scrollbackLines)
@@ -55,11 +49,40 @@ final class TerminalTab: Identifiable {
         exitCode = nil
         let ssh = OpenSSHTransport.terminalArguments(for: server)
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
-        if highlightOutput, let relay = Self.relayURL {
-            view.startProcess(executable: relay.path, args: ["--", "/usr/bin/ssh"] + ssh, environment: environment)
+        launchedAt = Date()
+        if let relay = Self.relayURL {
+            // Always go through the relay when it exists, even with highlighting off, so the switch can be
+            // flipped later on this very tab.
+            viaRelay = true
+            let flags = AppearanceStore.shared.highlightOutput ? [] : ["--no-highlight"]
+            view.startProcess(executable: relay.path, args: flags + ["--", "/usr/bin/ssh"] + ssh, environment: environment)
         } else {
+            viaRelay = false
             view.startProcess(executable: "/usr/bin/ssh", args: ssh, environment: environment)
         }
+    }
+
+    /// Tells the running relay to switch highlighting on (SIGUSR1) or off (SIGUSR2). Both are idempotent.
+    /// The relay installs its handlers right after it starts; signalling before that would kill it (the default
+    /// action for these signals), so a brand-new tab is given a moment, then gets whatever the setting is by then.
+    func setHighlight(_ on: Bool) {
+        guard viaRelay, isRunning else { return }
+        let settle = 0.6 - Date().timeIntervalSince(launchedAt)
+        if settle > 0 {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+                guard let self else { return }
+                self.sendHighlight(AppearanceStore.shared.highlightOutput)
+            }
+        } else {
+            sendHighlight(on)
+        }
+    }
+
+    private func sendHighlight(_ on: Bool) {
+        guard viaRelay, isRunning else { return }
+        let pid = view.process.shellPid
+        if pid > 0 { kill(pid, on ? SIGUSR1 : SIGUSR2) }
     }
 
     /// Sets the ANSI palette first, then the default colours (installing a palette can reset them).
@@ -73,9 +96,8 @@ final class TerminalTab: Identifiable {
             ? theme.foregroundRGB.nsColor.withAlphaComponent(0.3) : theme.selectionRGB.nsColor
     }
 
-    func reconnect(highlightOutput: Bool) {
+    func reconnect() {
         guard !isRunning else { return }
-        self.highlightOutput = highlightOutput
         view.resetToInitialState()
         launch()
     }
@@ -115,52 +137,18 @@ final class TerminalStore {
     private(set) var selected: [String: UUID] = [:]
     @ObservationIgnored private var counters: [String: Int] = [:]
 
-    /// All bundled themes, and the one used by every terminal (one theme for all servers).
-    let themes: [TerminalTheme]
-    /// Set when themes.json could not be loaded; the drawer shows it and a plain fallback theme is used.
-    let themeError: String?
-    private(set) var theme: TerminalTheme
-
-    private static let themeKey = "terminalThemeID"
-    private static let highlightKey = "terminalHighlightOutput"
-
-    /// False when the relay executable was not built or shipped; the toggle is then disabled.
-    var highlightAvailable: Bool { TerminalTab.relayURL != nil }
-
-    /// Colour IPs, errors and warnings in terminal output. Applies to tabs opened (or reconnected) after it changes,
-    /// because it decides how ssh is launched.
-    var highlightOutput: Bool = UserDefaults.standard.object(forKey: "terminalHighlightOutput") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(highlightOutput, forKey: Self.highlightKey) }
-    }
-
     init() {
-        var loaded: [TerminalTheme] = []
-        var loadError: String?
-        do {
-            guard let url = Bundle.module.url(forResource: "themes", withExtension: "json") else {
-                throw ThemeCatalogError.invalid("themes.json is missing from the app bundle")
-            }
-            loaded = try ThemeCatalog.load(from: Data(contentsOf: url))
-        } catch {
-            loadError = error.localizedDescription
+        // The appearance switch lives in AppearanceStore; open terminals are told about changes here.
+        AppearanceStore.shared.onHighlightChange = { [weak self] on in
+            self?.allTabs.forEach { $0.setHighlight(on) }
         }
-        let fallback = TerminalTheme(
-            id: ThemeCatalog.defaultID, name: "Default", family: "Homebase", appearance: "dark",
-            background: "#000000", foreground: "#E5E5E5",
-            ansi: ["#000000", "#CD3131", "#0DBC79", "#E5E510", "#2472C8", "#BC3FBC", "#11A8CD", "#E5E5E5",
-                   "#666666", "#F14C4C", "#23D18B", "#F5F543", "#3B8EEA", "#D670D6", "#29B8DB", "#FFFFFF"])
-        themes = loaded.isEmpty ? [fallback] : loaded
-        themeError = loadError
-        let saved = UserDefaults.standard.string(forKey: Self.themeKey)
-        theme = themes.first { $0.id == saved } ?? themes.first { $0.id == ThemeCatalog.defaultID } ?? themes[0]
     }
 
-    /// Applies to every open tab now, to new tabs when they are created, and is remembered for next launch.
-    func select(theme: TerminalTheme) {
-        guard theme.id != self.theme.id else { return }
-        self.theme = theme
-        UserDefaults.standard.set(theme.id, forKey: Self.themeKey)
-        for list in tabs.values { for tab in list { tab.apply(theme) } }
+    private var allTabs: [TerminalTab] { tabs.values.flatMap { $0 } }
+
+    /// The theme changed (or macOS switched appearance under Automatic): recolour every open terminal.
+    func applyTheme(_ theme: TerminalTheme) {
+        allTabs.forEach { $0.apply(theme) }
     }
 
     func tabs(for server: Server) -> [TerminalTab] { tabs[server.id] ?? [] }
@@ -178,7 +166,7 @@ final class TerminalStore {
     func newTab(for server: Server) {
         let n = (counters[server.id] ?? 0) + 1
         counters[server.id] = n
-        let tab = TerminalTab(server: server, title: "Shell \(n)", theme: theme, highlightOutput: highlightOutput)
+        let tab = TerminalTab(server: server, title: "Shell \(n)", theme: AppearanceStore.shared.resolvedTheme)
         tabs[server.id, default: []].append(tab)
         selected[server.id] = tab.id
     }

@@ -19,6 +19,38 @@ public struct RGB: Sendable, Equatable, Hashable {
 
     public var hex: String { String(format: "#%02X%02X%02X", r, g, b) }
 
+    /// Linear blend: 0 gives `self`, 1 gives `other`.
+    public func mixed(with other: RGB, amount t: Double) -> RGB {
+        let k = min(max(t, 0), 1)
+        func mix(_ a: UInt8, _ b: UInt8) -> UInt8 { UInt8((Double(a) * (1 - k) + Double(b) * k).rounded()) }
+        return RGB(r: mix(r, other.r), g: mix(g, other.g), b: mix(b, other.b))
+    }
+
+    public static let black = RGB(r: 0, g: 0, b: 0)
+    public static let white = RGB(r: 255, g: 255, b: 255)
+
+    /// WCAG contrast ratio, 1 (identical) to 21 (black on white).
+    public func contrastRatio(with other: RGB) -> Double {
+        let a = luminance, b = other.luminance
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    /// The best contrast any colour can have against this one (black or white, whichever is further).
+    public var bestPossibleContrast: Double { max(contrastRatio(with: .black), contrastRatio(with: .white)) }
+
+    /// `self` if it already has at least `minimum` contrast against `background`; otherwise the closest
+    /// colour to `self`, moving toward white or black, that does. If even black/white cannot reach it (a
+    /// mid-grey background), returns the best that can be had.
+    public func ensuringContrast(against background: RGB, minimum: Double) -> RGB {
+        if contrastRatio(with: background) >= minimum { return self }
+        let target: RGB = background.contrastRatio(with: .white) >= background.contrastRatio(with: .black) ? .white : .black
+        for step in 1...40 {
+            let c = mixed(with: target, amount: Double(step) / 40)
+            if c.contrastRatio(with: background) >= minimum { return c }
+        }
+        return target
+    }
+
     /// WCAG relative luminance, 0 (black) to 1 (white).
     public var luminance: Double {
         func lin(_ c: UInt8) -> Double {
@@ -72,6 +104,16 @@ public enum ThemeCatalogError: Error, Equatable, LocalizedError {
 
 public enum ThemeCatalog {
     public static let defaultID = "homebase-dark"
+    public static let lightDefaultID = "homebase-light"
+    /// Selection id for "follow macOS": Homebase Dark or Light depending on the system appearance.
+    public static let automaticID = "automatic"
+
+    /// The theme actually in effect for a saved selection. `automatic` (and any unknown id) follows the system.
+    public static func resolve(selection: String, systemIsDark: Bool, in themes: [TerminalTheme]) -> TerminalTheme? {
+        if selection != automaticID, let t = themes.first(where: { $0.id == selection }) { return t }
+        let wanted = systemIsDark ? defaultID : lightDefaultID
+        return themes.first { $0.id == wanted } ?? themes.first { $0.id == defaultID } ?? themes.first
+    }
 
     /// Decodes and validates a theme list: unique ids, 16 valid ANSI colours, valid hex everywhere,
     /// and an appearance label that agrees with the background's luminance.
@@ -98,6 +140,8 @@ public enum ThemeCatalog {
             let looksDark = bg.luminance < 0.4
             guard looksDark == t.isDark else { throw bad("labelled \(t.appearance) but the background is \(looksDark ? "dark" : "light")") }
         }
-        guard seen.contains(defaultID) else { throw ThemeCatalogError.invalid("default theme \(defaultID) is missing") }
+        guard seen.contains(defaultID), seen.contains(lightDefaultID) else {
+            throw ThemeCatalogError.invalid("\(defaultID) and \(lightDefaultID) must both exist (Automatic needs them)")
+        }
     }
 }

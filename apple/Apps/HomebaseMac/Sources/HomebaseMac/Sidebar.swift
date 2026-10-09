@@ -94,12 +94,43 @@ struct Sidebar: View {
                 }
             }
             Spacer()
+            AppearanceSection()
         }
         .padding(.top, 44).padding(.bottom, 16).padding(.horizontal, 12) // top clears the traffic lights
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.sidebar)
         .foregroundStyle(Theme.textPrimary)
+    }
+}
+
+/// Fixed section at the bottom of the sidebar: shows the current theme and opens the picker.
+private struct AppearanceSection: View {
+    @State private var open = false
+    private let appearance = AppearanceStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.bottom, 8)
+            SectionLabel("Appearance")
+            Button { open.toggle() } label: {
+                HStack(spacing: 10) {
+                    ThemeThumbnail(theme: appearance.resolvedTheme, compact: true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appearance.selectionTitle).fontWeight(.medium).lineLimit(1)
+                        Text("Theme and terminal").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textMuted)
+                }
+                .padding(8)
+                .background(open ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.border))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pointer)
+            .popover(isPresented: $open, arrowEdge: .trailing) { AppearancePicker(appearance: appearance) }
+        }
     }
 }
 

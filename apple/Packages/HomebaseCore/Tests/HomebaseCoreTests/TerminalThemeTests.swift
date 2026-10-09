@@ -36,17 +36,20 @@ final class TerminalThemeTests: XCTestCase {
 
     func testValidationRejectsBrokenThemes() {
         let good = theme(id: ThemeCatalog.defaultID)
-        XCTAssertNoThrow(try ThemeCatalog.validate([good]))
+        let goodLight = theme(id: ThemeCatalog.lightDefaultID, appearance: "light", background: "#F5F5F5")
+        let base = [good, goodLight]
+        XCTAssertNoThrow(try ThemeCatalog.validate(base))
 
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, good]), "duplicate id")
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, theme(ansi: Array(repeating: "#808080", count: 15))]), "15 colours")
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, theme(background: "#GGGGGG")]), "bad hex")
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, theme(id: "x", appearance: "sepia")]), "bad appearance")
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, theme(id: "x", appearance: "light", background: "#101010")]),
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [good]), "duplicate id")
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [theme(ansi: Array(repeating: "#808080", count: 15))]), "15 colours")
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [theme(background: "#GGGGGG")]), "bad hex")
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [theme(id: "x", appearance: "sepia")]), "bad appearance")
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [theme(id: "x", appearance: "light", background: "#101010")]),
                              "labelled light but dark")
         XCTAssertThrowsError(try ThemeCatalog.validate([theme(id: "no-default")]), "default theme must exist")
+        XCTAssertThrowsError(try ThemeCatalog.validate([good]), "the light default must exist too")
         var badANSI = Array(repeating: "#808080", count: 16); badANSI[7] = "nope"
-        XCTAssertThrowsError(try ThemeCatalog.validate([good, theme(id: "y", ansi: badANSI)]), "bad ANSI entry")
+        XCTAssertThrowsError(try ThemeCatalog.validate(base + [theme(id: "y", ansi: badANSI)]), "bad ANSI entry")
     }
 
     func testMalformedJSONFailsLoudly() {
