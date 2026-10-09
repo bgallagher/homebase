@@ -21,15 +21,27 @@ struct HomebaseApp: App {
 }
 
 struct ContentView: View {
+    @State private var host = ""
+
     var body: some View {
-        NavigationSplitView {
-            List {
-                Text("No servers yet")
+        VStack(spacing: 0) {
+            HStack {
+                Text("Host").foregroundStyle(.secondary)
+                TextField("ssh host or ~/.ssh/config alias", text: $host)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 280)
+                Spacer()
             }
-            .navigationTitle("Homebase")
-        } detail: {
-            ContentUnavailableView("Select a server", systemImage: "server.rack")
+            .padding(12)
+            Divider()
+            TabView {
+                CommandProbeView(host: host)
+                    .tabItem { Text("Command") }
+                TerminalPane(host: host)
+                    .id(host)
+                    .tabItem { Text("Terminal") }
+            }
         }
-        .frame(minWidth: 700, minHeight: 450)
+        .frame(minWidth: 760, minHeight: 480)
     }
 }

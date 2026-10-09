@@ -8,6 +8,10 @@ let package = Package(
         .library(name: "HomebaseCore", targets: ["HomebaseCore"]),
         .library(name: "HomebaseSSHSystem", targets: ["HomebaseSSHSystem"]),
         .executable(name: "HomebaseMac", targets: ["HomebaseMac"]),
+        .executable(name: "homebase-probe", targets: ["HomebaseProbe"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
     ],
     targets: [
         .target(
@@ -21,8 +25,16 @@ let package = Package(
         ),
         .executableTarget(
             name: "HomebaseMac",
-            dependencies: ["HomebaseCore", "HomebaseSSHSystem"],
+            dependencies: [
+                "HomebaseCore", "HomebaseSSHSystem",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
             path: "Apps/HomebaseMac/Sources/HomebaseMac"
+        ),
+        .executableTarget(
+            name: "HomebaseProbe",
+            dependencies: ["HomebaseSSHSystem"],
+            path: "Apps/HomebaseProbe/Sources/HomebaseProbe"
         ),
         .testTarget(
             name: "HomebaseCoreTests",
