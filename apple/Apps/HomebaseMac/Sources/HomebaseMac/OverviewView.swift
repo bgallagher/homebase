@@ -48,7 +48,7 @@ struct OverviewView: View {
                     .foregroundStyle(Theme.accentText)
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: 9))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointer)
         }
     }
 

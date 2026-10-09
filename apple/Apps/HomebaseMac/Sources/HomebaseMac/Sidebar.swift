@@ -70,7 +70,7 @@ struct Sidebar: View {
                     .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointer)
                 .contextMenu { Button("Remove \(server.name)", role: .destructive) { onRemove(server) } }
             }
             Button(action: onAddServer) {
@@ -79,8 +79,9 @@ struct Sidebar: View {
                     .padding(.horizontal, 10).padding(.vertical, 9)
                     .foregroundStyle(Theme.textMuted)
                     .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointer)
             .padding(.top, 4)
 
             if let name = selectedName {
@@ -139,7 +140,7 @@ private struct NavRow: View {
             .background(selected ? Theme.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointer)
         .disabled(!screen.isAvailable)
     }
 }

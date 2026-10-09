@@ -59,3 +59,36 @@ struct CardBackground: ViewModifier {
 extension View {
     func card() -> some View { modifier(CardBackground()) }
 }
+
+/// For custom-styled buttons: the whole label area is clickable (not just its text or glyphs),
+/// the pointer becomes a hand, and the label dims while pressed.
+struct PointerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .modifier(HandCursor())
+    }
+}
+
+extension ButtonStyle where Self == PointerButtonStyle {
+    static var pointer: PointerButtonStyle { PointerButtonStyle() }
+}
+
+private struct HandCursor: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                if inside && isEnabled && !pushed {
+                    NSCursor.pointingHand.push(); pushed = true
+                } else if (!inside || !isEnabled) && pushed {
+                    NSCursor.pop(); pushed = false
+                }
+            }
+            // A view that vanishes while hovered (screen switch, sheet) must not leave the hand stuck.
+            .onDisappear { if pushed { NSCursor.pop(); pushed = false } }
+    }
+}
