@@ -8,7 +8,13 @@ import Observation
 @MainActor @Observable
 final class DockerModel {
     private(set) var state = DockerState()
-    private(set) var logs = LogBuffer()
+    /// Lines shown in the panel. Updated at most ~10 times a second so a chatty container cannot
+    /// make the UI re-render (and re-colour 2000 lines) on every chunk.
+    private(set) var logLines: [String] = []
+    @ObservationIgnored private var logBuffer = LogBuffer()
+    @ObservationIgnored private var flushScheduled = false
+    /// Everything received so far, for the Copy button.
+    var logText: String { logBuffer.text }
     private(set) var logTarget: DockerContainer?
     private(set) var logsLive = false
     private(set) var logError: String?
@@ -62,7 +68,8 @@ final class DockerModel {
         closeLogs()
         guard let command = DockerSession.logsCommand(id: container.id) else { return }
         logTarget = container
-        logs = LogBuffer()
+        logBuffer = LogBuffer()
+        logLines = []
         logError = nil
         logsLive = true
         let generation = logGeneration
@@ -71,7 +78,8 @@ final class DockerModel {
             do {
                 for try await chunk in transport.stream(command) {
                     guard let self, self.logGeneration == generation else { return }
-                    self.logs.append(chunk)
+                    self.logBuffer.append(chunk)
+                    self.scheduleFlush(generation)
                 }
             } catch {
                 guard let self, self.logGeneration == generation else { return }
@@ -82,10 +90,22 @@ final class DockerModel {
         }
     }
 
+    private func scheduleFlush(_ generation: Int) {
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard let self else { return }
+            self.flushScheduled = false
+            if self.logGeneration == generation { self.logLines = self.logBuffer.lines }
+        }
+    }
+
     func closeLogs() {
         logGeneration += 1
         logTask?.cancel(); logTask = nil   // cancelling sends Ctrl-C to the remote `docker logs -f`
         logTarget = nil
+        logLines = []
         logsLive = false
     }
 }

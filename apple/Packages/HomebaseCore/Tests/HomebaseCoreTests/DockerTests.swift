@@ -188,3 +188,33 @@ final class LogBufferTests: XCTestCase {
         XCTAssertNil(DockerSession.logsCommand(id: "abcdef012345 && reboot"))
     }
 }
+
+final class LogLineParserTests: XCTestCase {
+    func testLevels() {
+        typealias P = LogLineParser
+        XCTAssertEqual(P.level(of: #"2026/10/10 00:20:05.642147 [error] dnsproxy: exchange failed err="unexpected EOF""#), .error)
+        XCTAssertEqual(P.level(of: #"{"level":"info","time":"2026-10-09T20:39:12Z","msg":"removed 13 streams"}"#), .info)
+        XCTAssertEqual(P.level(of: #"time=2026-10-09T21:00:04Z level=WARN source=x msg="slow""#), .warn)
+        XCTAssertEqual(P.level(of: "17:50:41 WARN Retrying indexer (2/3)"), .warn)
+        XCTAssertEqual(P.level(of: "17:51:12 ERROR Database is locked"), .error)
+        XCTAssertEqual(P.level(of: "level: debug starting"), .debug)
+        XCTAssertEqual(P.level(of: "[trace] noisy"), .debug)
+        XCTAssertEqual(P.level(of: "[FATAL] gone"), .error)
+    }
+
+    func testProseIsNotGuessed() {
+        typealias P2 = LogLineParser
+        XCTAssertNil(P2.level(of: "no error occurred, nothing to warn about"))
+        XCTAssertNil(P2.level(of: "GET /api/info 200"))
+        XCTAssertNil(P2.level(of: ""))
+        XCTAssertEqual(P2.level(of: #"{"level":"info","msg":"an error was handled"}"#), .info, "explicit level beats words in the message")
+    }
+
+    func testTimestampLength() {
+        XCTAssertEqual(LogLineParser.timestampLength(in: "2026-10-09T20:39:12.454Z INFO x"), 24)
+        XCTAssertEqual(LogLineParser.timestampLength(in: "2026/10/10 00:20:05.642147 [error]"), 26)
+        XCTAssertEqual(LogLineParser.timestampLength(in: "17:51:12 ERROR Database"), 8)
+        XCTAssertEqual(LogLineParser.timestampLength(in: "no timestamp here"), 0)
+        XCTAssertEqual(LogLineParser.timestampLength(in: "level=info time=2026-10-09T20:39:12Z"), 0, "only a leading timestamp")
+    }
+}

@@ -4,12 +4,15 @@ import SwiftUI
 
 struct DockerScreen: View {
     let server: Server
+    /// The terminal theme, so logs match the terminals.
+    let theme: TerminalTheme
     @State private var model: DockerModel
     @State private var collapsed: Set<String> = []
     @State private var confirmStop: DockerContainer?
 
-    init(server: Server) {
+    init(server: Server, theme: TerminalTheme) {
         self.server = server
+        self.theme = theme
         _model = State(initialValue: DockerModel(server: server))
     }
 
@@ -41,8 +44,8 @@ struct DockerScreen: View {
             }
             .frame(minWidth: 400)
             if let target = model.logTarget {
-                LogPanel(model: model, container: target, busy: state.busy.contains(target.id))
-                    .frame(minWidth: 300, idealWidth: 460)
+                LogPanel(model: model, container: target, theme: theme, busy: state.busy.contains(target.id))
+                    .frame(minWidth: 320, idealWidth: 460)
             }
         }
         .foregroundStyle(Theme.textPrimary)
@@ -256,62 +259,84 @@ struct Badge: View {
 private struct LogPanel: View {
     let model: DockerModel
     let container: DockerContainer
+    let theme: TerminalTheme
     let busy: Bool
     @State private var copied = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Circle().fill(model.logsLive ? Theme.ok : Theme.idle).frame(width: 7, height: 7)
-                Text(container.name).fontWeight(.semibold).lineLimit(1)
+                Text(container.name).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
                 Text(model.logsLive ? "Live" : "Ended").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
-                Spacer()
-                PanelButton(title: copied ? "Copied" : "Copy") {
+                Spacer(minLength: 4)
+                IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy logs",
+                           tint: copied ? Theme.ok : Theme.textSecondary) {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(model.logs.text, forType: .string)
+                    NSPasteboard.general.setString(model.logText, forType: .string)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 }
-                PanelButton(title: busy ? "Restarting…" : "Restart") {
-                    model.perform(.restart, on: container)
+                if busy {
+                    ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                } else {
+                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)") {
+                        model.perform(.restart, on: container)
+                    }
                 }
-                .disabled(busy)
-                .help("Restart \(container.name)")
                 IconButton(symbol: "xmark", help: "Close logs", action: model.closeLogs)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Theme.sidebar)
             .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
 
             if let error = model.logError { ErrorBanner(message: error).padding(12) }
             ScrollView {
-                Text(model.logs.text.isEmpty ? "Waiting for output…" : model.logs.text)
+                Text(styled)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(model.logs.text.isEmpty ? Theme.textMuted : Theme.textSecondary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
             }
             .defaultScrollAnchor(.bottom)
-            .background(Color.black.opacity(0.35))
+            .background(Color(nsColor: theme.backgroundRGB.nsColor))
         }
-        .background(Theme.background)
     }
-}
 
-private struct PanelButton: View {
-    let title: String
-    let action: () -> Void
-    @Environment(\.isEnabled) private var enabled
-
-    var body: some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 12, weight: .medium))
-                .padding(.horizontal, 10).frame(height: 26)
-                .background(Theme.card, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.border))
-                .opacity(enabled ? 1 : 0.5)
+    /// Lines coloured from the active terminal theme: errors red, warnings yellow, debug dimmed,
+    /// timestamps muted, everything else in the theme's foreground.
+    private var styled: AttributedString {
+        let lines = model.logLines
+        guard !lines.isEmpty else {
+            var waiting = AttributedString("Waiting for output…")
+            waiting.foregroundColor = Color(nsColor: theme.foregroundRGB.nsColor).opacity(0.5)
+            return waiting
         }
-        .buttonStyle(.pointer)
+        let ansi = theme.ansiRGB
+        let fg = Color(nsColor: theme.foregroundRGB.nsColor)
+        let muted = fg.opacity(0.45)
+        var out = AttributedString()
+        for (i, line) in lines.enumerated() {
+            let level = LogLineParser.level(of: line)
+            let base: Color = switch level {
+            case .error: Color(nsColor: ansi[9].nsColor)    // bright red
+            case .warn: Color(nsColor: ansi[11].nsColor)    // bright yellow
+            case .debug: muted
+            case .info, nil: fg
+            }
+            let split = LogLineParser.timestampLength(in: line)
+            let cut = line.index(line.startIndex, offsetBy: split)
+            if split > 0 {
+                var ts = AttributedString(String(line[..<cut]))
+                ts.foregroundColor = level == .error || level == .warn ? base.opacity(0.7) : muted
+                out += ts
+            }
+            var rest = AttributedString(String(line[cut...]))
+            rest.foregroundColor = base
+            if level == .error { rest.font = .system(size: 12, weight: .medium, design: .monospaced) }
+            out += rest
+            if i < lines.count - 1 { out += AttributedString("\n") }
+        }
+        return out
     }
 }

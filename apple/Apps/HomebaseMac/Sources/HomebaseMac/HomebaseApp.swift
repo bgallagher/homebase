@@ -116,7 +116,7 @@ struct ContentView: View {
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal },
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
                 case .docker:
-                    DockerScreen(server: server).id(server.id)
+                    DockerScreen(server: server, theme: terminals.theme).id(server.id)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:
