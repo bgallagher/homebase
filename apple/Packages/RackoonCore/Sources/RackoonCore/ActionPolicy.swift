@@ -12,11 +12,15 @@ public struct Intent: Sendable, Equatable {
     public let summary: String
     public let command: String
     public let risk: Risk
+    /// What the confirmation dialog shows instead of the raw command, when the command is not readable
+    /// (a file save carries its content encoded). Part of the intent, so a confirmation only matches this exact preview.
+    public let preview: String?
 
-    public init(summary: String, command: String, risk: Risk) {
+    public init(summary: String, command: String, risk: Risk, preview: String? = nil) {
         self.summary = summary
         self.command = command
         self.risk = risk
+        self.preview = preview
     }
 }
 

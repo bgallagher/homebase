@@ -51,10 +51,8 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         guard !stack.isStandalone, DockerSession.isComposeProjectName(stack.name),
               let dir = stack.workingDir.flatMap(ShellQuote.quotePath),
               !paths.isEmpty, files.count == paths.count else { return nil }
-        return template
-            .replacingOccurrences(of: "{dir}", with: dir)
-            .replacingOccurrences(of: "{project}", with: stack.name)
-            .replacingOccurrences(of: "{files}", with: files.map { "-f " + $0 }.joined(separator: " "))
+        return Template.fill(template, ["dir": dir, "project": stack.name,
+                                        "files": files.map { "-f " + $0 }.joined(separator: " ")])
     }
 
     public func intent(for stack: DockerStack) -> Intent? {

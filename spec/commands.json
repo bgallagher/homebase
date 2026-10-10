@@ -173,6 +173,38 @@
         "debian",
         "ubuntu"
       ]
+    },
+    {
+      "id": "file_read",
+      "description": "Read one file of a stack (a compose file or <working_dir>/.env): missing, too large (over 65536 bytes), or its mtime, mode, owner, sha256 and base64 content. Read only. {file} is the quoted absolute path.",
+      "script": "F={file}; if [ ! -e \"$F\" ]; then echo '##missing'; exit 0; fi; if [ \"$(stat -c %s \"$F\")\" -gt 65536 ]; then echo '##toolarge'; exit 0; fi; echo '##meta'; stat -c '%Y %a %U:%G' \"$F\"; echo '##sha256'; sha256sum \"$F\" | cut -d' ' -f1; echo '##content'; base64 -w0 \"$F\"; echo",
+      "timeoutSeconds": 20,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "file_validate",
+      "kind": "action",
+      "description": "Check new content for one stack file without changing anything: writes it to a temp file in the stack's folder and runs docker compose config -q with the temp file standing in for the edited file (or as --env-file for .env). Exit 0 = valid; otherwise the output holds compose's errors (e.g. 'yaml: line 5: ...'); exit 7 = the folder is not writable. {args} is -f for every compose file with the edited one replaced by \"$T\". All paths are absolute and single-quoted for the shell; {b64} is the file content base64-encoded and quoted.",
+      "script": "D={dir}; T=$(mktemp \"$D/.rackoon-check.XXXXXX\") || { echo '##cannot-write'; exit 7; }; trap 'rm -f \"$T\"' EXIT; echo {b64} | base64 -d > \"$T\"; docker compose -p {project} --project-directory \"$D\" {args} config -q 2>&1",
+      "timeoutSeconds": 60,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "file_write",
+      "kind": "action",
+      "description": "Save new content over one stack file: refuses if the file's sha256 no longer matches what was opened (exit 3, ##changed; {expect} is that check, or a not-exists check for a new file), validates with docker compose config (exit 4, ##invalid, nothing written), copies the old file to <file>.rackoon.bak, keeps owner and mode, then moves the new file into place atomically (##saved and the new sha256). Exit 7 = not writable. All paths are absolute and single-quoted for the shell; {b64} is the file content base64-encoded and quoted.",
+      "script": "F={file}; D={dir}; {expect}; T=$(mktemp \"$D/.rackoon-save.XXXXXX\") || { echo '##cannot-write'; exit 7; }; trap 'rm -f \"$T\"' EXIT; echo {b64} | base64 -d > \"$T\"; if ! OUT=$(docker compose -p {project} --project-directory \"$D\" {args} config -q 2>&1); then echo '##invalid'; echo \"$OUT\"; exit 4; fi; if [ -e \"$F\" ]; then chmod --reference=\"$F\" \"$T\"; chown --reference=\"$F\" \"$T\" 2>/dev/null; cp -p \"$F\" \"$F.rackoon.bak\" || { echo '##cannot-write'; exit 7; }; else chmod 600 \"$T\"; fi; mv -f \"$T\" \"$F\"; echo '##saved'; sha256sum \"$F\" | cut -d' ' -f1",
+      "timeoutSeconds": 90,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
     }
   ]
 }

@@ -1,0 +1,8 @@
+{
+  "content": "services:\r\n  web:\r\n    # caf\u00e9 \u2615\r\n    image: nginx\r\n",
+  "mode": "644",
+  "modifiedAt": 1791500000,
+  "owner": "root:root",
+  "sha256": "d41336d919145ef2123a13b6e58d39ccd66353fff01163d7a98aa8c7d91f7ab4",
+  "state": "file"
+}

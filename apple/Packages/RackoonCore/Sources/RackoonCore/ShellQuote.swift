@@ -14,3 +14,25 @@ public enum ShellQuote {
         path.hasPrefix("/") ? quote(path) : nil
     }
 }
+
+/// Fills `{name}` placeholders in a command template in ONE pass. Inserted values are never rescanned, so a value
+/// that happens to contain `{something}` cannot be substituted again (which sequential replacement would do).
+enum Template {
+    static func fill(_ template: String, _ values: [String: String]) -> String {
+        var out = ""
+        var i = template.startIndex
+        while i < template.endIndex {
+            if template[i] == "{", let close = template[i...].firstIndex(of: "}") {
+                let name = String(template[template.index(after: i)..<close])
+                if let value = values[name] {
+                    out += value
+                    i = template.index(after: close)
+                    continue
+                }
+            }
+            out.append(template[i])
+            i = template.index(after: i)
+        }
+        return out
+    }
+}

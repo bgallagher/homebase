@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import RackoonCore
 import RackoonSSHSystem
@@ -42,6 +43,116 @@ if args.count > 2, args[2] == "hostkey" {
     exit(0)
 }
 let transport = OpenSSHTransport(host: args[1])
+if args.count > 2, args[2] == "file-test" {
+    // Exercises the REAL file read / validate / save on a throwaway stack that this probe creates and removes.
+    let project = "rackoon-probe-files"
+    let dir = "/tmp/rackoon-probe-files"
+    let compose = "\(dir)/compose.yaml"
+    func sh(_ script: String, timeout: TimeInterval = 300) async -> CommandResult {
+        (try? await transport.run(script, timeout: timeout)) ?? CommandResult(stdout: "", stderr: "ssh failed", exitCode: 255)
+    }
+    func teardown() async {
+        _ = await sh("cd \(dir) 2>/dev/null && docker compose -p \(project) -f \(compose) down -v --remove-orphans 2>&1; cd /; rm -rf \(dir)")
+    }
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+    func sha(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+
+    await teardown()
+    let original = "services:\n  web:\n    image: busybox:${TAG:?TAG is required}\n    command: sleep 3600\n"
+    let setup = await sh("""
+    mkdir -p \(dir) && cd \(dir) && printf '%s' 'TAG=1.36' > .env && \
+    printf 'services:\\n  web:\\n    image: busybox:${TAG:?TAG is required}\\n    command: sleep 3600\\n' > compose.yaml && \
+    chown nobody:nogroup compose.yaml && chmod 640 compose.yaml && docker compose -p \(project) -f \(compose) up -d 2>&1
+    """, timeout: 600)
+    check(setup.exitCode == 0, "setup stack (exit \(setup.exitCode)) \(setup.exitCode == 0 ? "" : setup.stdout.suffix(300))")
+    guard setup.exitCode == 0 else { await teardown(); exit(1) }
+    // The env file exists in this stack, so remove it for the "new file" scenario later.
+    _ = await sh("rm -f \(dir)/.env")
+
+    let policy = ActionPolicy()
+    let docker = DockerSession(transport: transport, policy: policy)
+    await docker.refresh()
+    guard let stack = await docker.state.snapshot?.stacks.first(where: { $0.name == project }) else {
+        check(false, "probe stack is listed"); await teardown(); exit(1)
+    }
+    let session = StackFileSession(transport: transport, policy: policy, stack: stack)
+    let envFile = EditableFile.env(dir + "/.env"), composeFile = EditableFile.compose(compose)
+    check(session.files == [composeFile, envFile], "editable files are compose.yaml then .env: \(session.files.map(\.fileName))")
+
+    // --- read
+    var composeState = try? await session.read(composeFile)
+    guard case .file(let f)? = composeState else { check(false, "read compose.yaml"); await teardown(); exit(1) }
+    check(f.content == original, "read returns the exact content")
+    check(f.sha256 == sha(original), "sha256 matches a local hash")
+    check(f.mode == "640" && f.owner == "nobody:nogroup", "mode and owner reported: \(f.mode) \(f.owner)")
+    let envState = try? await session.read(envFile)
+    check(envState == .missing, "missing .env is reported as missing")
+
+    // --- validate (changes nothing)
+    var r = try? await session.validate(envFile, content: "TAG=1.36")
+    check(r?.isValid == true, "env with TAG validates: \(r?.issues.map(\.message) ?? [])")
+    r = try? await session.validate(envFile, content: "")
+    check(r?.isValid == false && r?.errors.first?.message.contains("TAG is required") == true, "env without TAG is rejected via compose interpolation: \(r?.errors.map(\.message) ?? [])")
+    // --- create .env (new file)
+    let envEdit = FileEdit(file: envFile, original: nil, originalSHA: nil, content: "TAG=1.36\n")
+    var outcome = try? await session.save(envEdit, confirmation: try? session.confirm(envEdit))
+    check({ if case .saved(let h)? = outcome { return h == sha("TAG=1.36\n") }; return false }(), "new .env saved, hash returned: \(String(describing: outcome))")
+    let envInfo = await sh("stat -c '%a' \(dir)/.env; cat \(dir)/.env")
+    check(envInfo.stdout.hasPrefix("600\n") && envInfo.stdout.hasSuffix("TAG=1.36\n"), "new .env is mode 600 with the content")
+    outcome = try? await session.save(envEdit, confirmation: try? session.confirm(envEdit))
+    check(outcome == .changedOnServer, "saving a 'new' file that now exists is refused as changed")
+
+    let good = original.replacingOccurrences(of: "sleep 3600", with: "sleep 7200")
+    r = try? await session.validate(composeFile, content: good)
+    check(r?.isValid == true, "edited compose validates against the .env saved above: \(r?.errors.map(\.message) ?? [])")
+    let badYAML = "services:\n  web:\n    image busybox\n    command: sleep 3600\n"
+    r = try? await session.validate(composeFile, content: badYAML)
+    check(r?.isValid == false && r?.errors.first?.line != nil && r?.errors.first?.message.contains(".rackoon-") == false, "YAML syntax error reports a line and names the real file: \(r?.errors.map { "\($0.line.map(String.init) ?? "-"): \($0.message)" } ?? [])")
+    let badSchema = "services:\n  web:\n    imagee: busybox\n"
+    r = try? await session.validate(composeFile, content: badSchema)
+    check(r?.isValid == false, "unknown key is rejected: \(r?.errors.map(\.message) ?? [])")
+    let afterValidate = await sh("ls -A \(dir); stat -c '%a %U:%G' \(compose); sha256sum \(compose) | cut -d' ' -f1")
+    check(!afterValidate.stdout.contains("rackoon-") && afterValidate.stdout.contains(sha(original)), "validation left no temp files and changed nothing")
+
+    // --- save compose: success keeps owner/mode, writes backup
+    let edit = FileEdit(file: composeFile, original: original, originalSHA: f.sha256, content: good)
+    let intent = session.intent(for: edit)
+    check(intent?.preview?.contains("+     command: sleep 7200") == true, "confirmation preview is a readable diff")
+    outcome = try? await session.save(edit, confirmation: try? session.confirm(edit))
+    check({ if case .saved(let h)? = outcome { return h == sha(good) }; return false }(), "compose saved, new hash returned: \(String(describing: outcome))")
+    let saved = await sh("cat \(compose); echo ---; cat \(compose).rackoon.bak; echo ---; stat -c '%a %U:%G' \(compose); ls -A \(dir)")
+    let parts = saved.stdout.components(separatedBy: "---\n")
+    check(parts.count == 3 && parts[0] == good, "file on the server has the new content")
+    check(parts.count == 3 && parts[1] == original, "previous version kept as compose.yaml.rackoon.bak")
+    check(parts.count == 3 && parts[2].hasPrefix("640 nobody:nogroup"), "mode and owner preserved: \(parts.last?.prefix(20) ?? "")")
+    check(!saved.stdout.contains(".rackoon-save") && !saved.stdout.contains(".rackoon-check"), "no temp files left behind")
+
+    // --- stale hash is refused, file unchanged
+    let stale = FileEdit(file: composeFile, original: original, originalSHA: f.sha256, content: good + "# stale\n")
+    outcome = try? await session.save(stale, confirmation: try? session.confirm(stale))
+    check(outcome == .changedOnServer, "save against an outdated hash is refused: \(String(describing: outcome))")
+    check((await sh("sha256sum \(compose) | cut -d' ' -f1")).stdout.hasPrefix(sha(good)), "refused save changed nothing")
+
+    // --- invalid content is refused by the server's own check, file unchanged
+    let invalid = FileEdit(file: composeFile, original: good, originalSHA: sha(good), content: badYAML)
+    outcome = try? await session.save(invalid, confirmation: try? session.confirm(invalid))
+    check({ if case .invalid(let issues)? = outcome { return !issues.isEmpty }; return false }(), "invalid content refused with issues: \(String(describing: outcome))")
+    check((await sh("sha256sum \(compose) | cut -d' ' -f1")).stdout.hasPrefix(sha(good)), "invalid save changed nothing")
+
+    // --- read-only mode and missing confirmation
+    policy.isReadOnly = true
+    check((try? session.confirm(edit)) == nil, "read-only refuses to confirm a save")
+    policy.isReadOnly = false
+    do { _ = try await session.save(invalid, confirmation: nil); check(false, "save without confirmation is refused") }
+    catch { check(error as? PolicyError == .notConfirmed, "save without confirmation is refused") }
+
+    await teardown()
+    let leftover = await sh("ls \(dir) 2>&1 | head -1; docker ps -a --filter label=com.docker.compose.project=\(project) -q | wc -l")
+    check(leftover.stdout.contains("No such file") && leftover.stdout.hasSuffix("0\n"), "teardown removed everything")
+    print(failures == 0 ? "file-test: all passed" : "file-test: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "compose-test" {
     // Exercises the REAL compose actions end to end on a throwaway stack that this probe creates and removes.
     // It never touches your own stacks: everything lives under one temp directory and one project name.
