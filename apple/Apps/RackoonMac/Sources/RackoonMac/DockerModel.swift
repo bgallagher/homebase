@@ -28,6 +28,12 @@ final class DockerModel {
     /// Stacks created from this app that have no containers yet. `docker ps` can't see them, so they are remembered
     /// here (for this run of the app) until their containers show up in the snapshot.
     private(set) var createdStacks: [String: DockerStack] = [:]
+    /// The stack the user is deciding to delete (shown as a sheet by the Docker screen).
+    var deleting: DockerStack?
+    /// Stacks being deleted right now, kept visible (their containers vanish from `docker ps` before the run ends).
+    private(set) var removing: [String: DockerStack] = [:]
+    /// Set when a delete finished successfully, so the screen can leave the stack's page.
+    private(set) var removedStack: String?
     @ObservationIgnored private let serverName: String
     @ObservationIgnored private let serverUser: String?
     @ObservationIgnored private let session: DockerSession
@@ -49,7 +55,8 @@ final class DockerModel {
     var stacks: [DockerStack] {
         let reported = state.snapshot?.stacks ?? []
         let names = Set(reported.map(\.name))
-        return reported + createdStacks.values.filter { !names.contains($0.name) }.sorted { $0.name < $1.name }
+        let extra = createdStacks.merging(removing) { $1 }.values.filter { !names.contains($0.name) }.sorted { $0.name < $1.name }
+        return reported + extra
     }
 
     func stack(named name: String) -> DockerStack? { stacks.first { $0.name == name } }
@@ -154,6 +161,36 @@ final class DockerModel {
     /// Whether the Rebuild link applies to this container: it needs a compose service the stack can address.
     func canRebuild(_ container: DockerContainer, in stack: DockerStack) -> Bool {
         container.service.map { ComposeAction.rebuild.command(for: stack, service: $0) != nil } ?? false
+    }
+
+    func requestDelete(_ stack: DockerStack) {
+        guard composeBlockedReason(for: stack) == nil else { return }
+        deleting = stack
+    }
+
+    /// Deletes a stack after the sheet's confirmation, with the output in the stack's Output tab. On success the stack is
+    /// forgotten and the screen is told to leave its page.
+    func delete(_ stack: DockerStack, _ removal: StackRemoval) {
+        guard composeWorking == nil else { return }
+        composeWorking = "Deleting \(stack.name)…"
+        removing[stack.name] = stack
+        removedStack = nil
+        let session = session
+        output = ActionOutput.launch(
+            scope: stack.name, title: "docker compose down",
+            work: { cols, rows, onEvent in
+                let confirmation = try? session.confirm(removal, stack: stack)
+                await session.performStreaming(removal, stack: stack, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
+            },
+            completion: { [weak self] in
+                guard let self else { return }
+                self.composeWorking = nil
+                self.removing[stack.name] = nil
+                if self.output?.phase == .succeeded {
+                    self.createdStacks[stack.name] = nil
+                    self.removedStack = stack.name
+                }
+            })
     }
 
     /// Runs a stack action without its own confirmation sheet, for flows where the user already agreed to it as part

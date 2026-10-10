@@ -91,6 +91,13 @@ struct DockerScreen: View {
         }
         .onDisappear { model.stop() }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+        .sheet(item: Binding(get: { model.deleting }, set: { model.deleting = $0 })) { stack in
+            DeleteStackSheet(stack: stack, serverName: server.name, cancel: { model.deleting = nil },
+                             run: { removal in model.deleting = nil; model.delete(stack, removal) })
+        }
+        .onChange(of: model.removedStack) { _, removed in
+            if let removed, openStack == removed { openStack = nil }   // the stack is gone: back to the overview
+        }
     }
 
     private func startNewStack() {
@@ -337,6 +344,7 @@ private struct StackDetail: View {
                 Button("Update") { model.request(.up, on: stack) }
                 Divider()
                 Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
+                Button("Delete Stack…", role: .destructive) { model.requestDelete(stack) }
             } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).handCursor()
         }

@@ -262,6 +262,17 @@
       ]
     },
     {
+      "id": "compose_down",
+      "kind": "action",
+      "description": "Delete a stack: docker compose down --remove-orphans stops and removes its containers and the networks compose made (images are never removed). {volumes} is empty or ` -v` (also remove the named volumes the compose file declares). {folder} is empty, or ` && cd / && [ -f {file} ] && rm -rf -- {dir}`: delete the stack's folder, but only after down succeeded and only if its compose file is still there; the app offers it only for a folder that is not a system or home folder and that holds every compose file of the stack. {project} must match ^[a-z0-9][a-z0-9_-]*$; all paths are absolute and single-quoted for the shell.",
+      "script": "cd {dir} && docker compose -p {project} {files} down --remove-orphans{volumes}{folder}",
+      "timeoutSeconds": 600,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "boot_id",
       "description": "The kernel's boot id: a random id that changes on every boot. Used after a reboot to tell the server has really restarted, not just kept its old connection.",
       "script": "cat /proc/sys/kernel/random/boot_id",

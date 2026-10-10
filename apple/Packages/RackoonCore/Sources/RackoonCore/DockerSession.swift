@@ -61,7 +61,7 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         return Self.fill(Self.rebuildServiceTemplate, stack: stack, extra: ["service": service])
     }
 
-    private static func fill(_ template: String, stack: DockerStack, extra: [String: String]) -> String? {
+    static func fill(_ template: String, stack: DockerStack, extra: [String: String]) -> String? {
         let paths = stack.configFiles.isEmpty ? (stack.configFile.map { [$0] } ?? []) : stack.configFiles
         // A comma inside a real path would have been split by the label parser, leaving a non-absolute piece,
         // which quotePath refuses, so a mangled list never reaches the shell.
@@ -258,6 +258,25 @@ public actor DockerSession {
         let scoped = service == nil ? stack.containers : stack.containers.filter { $0.service == service }
         await stream(intent, confirmation: confirmation, ids: Set(scoped.map(\.id)), stackName: stack.name,
                      label: "docker compose \(action.rawValue)", cols: cols, rows: rows, onEvent: onEvent)
+    }
+
+    public nonisolated func confirm(_ removal: StackRemoval, stack: DockerStack) throws -> Confirmation {
+        guard let intent = removal.intent(for: stack) else { throw PolicyError.invalidTarget }
+        return try policy.confirm(intent)
+    }
+
+    /// Deletes the stack (see `StackRemoval`) with live output, then refreshes. Same pty streaming as the other stack actions.
+    public func performStreaming(_ removal: StackRemoval, stack: DockerStack, confirmation: Confirmation?,
+                                 cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
+        guard let intent = removal.intent(for: stack) else {
+            var next = state
+            next.actionError = "Refusing to delete \(stack.name): it has no usable compose project, or its folder can't be deleted safely."
+            publish(next)
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        await stream(intent, confirmation: confirmation, ids: Set(stack.containers.map(\.id)), stackName: stack.name,
+                     label: "docker compose down", cols: cols, rows: rows, onEvent: onEvent)
     }
 
     /// The same for one container's start, stop or restart, so every action shows up in the same live output.
