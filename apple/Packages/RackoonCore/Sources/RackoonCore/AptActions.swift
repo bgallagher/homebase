@@ -9,8 +9,10 @@ public enum AptAction: Sendable, Equatable {
     /// Upgrade only these packages (used for "install security updates").
     case upgrade(packages: [String])
 
-    static let prefix = "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get "
+    static let prefix = "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get "
     static let options = "-y -o Dpkg::Options::=--force-confold"
+
+    public static let maxPackages = 200
 
     public var timeout: TimeInterval { self == .refresh ? 300 : 1800 }
 
@@ -20,8 +22,11 @@ public enum AptAction: Sendable, Equatable {
         case .refresh: return Self.prefix + "update"
         case .upgradeAll: return Self.prefix + "upgrade " + Self.options
         case .upgrade(let packages):
-            guard !packages.isEmpty, packages.allSatisfy(Self.isPackageName) else { return nil }
-            return Self.prefix + "install --only-upgrade " + Self.options + " " + packages.joined(separator: " ")
+            var seen = Set<String>()
+            let unique = packages.filter { seen.insert($0).inserted }
+            // The cap keeps the command far below any argument-length limit; callers fall back to upgradeAll.
+            guard !unique.isEmpty, unique.count <= Self.maxPackages, unique.allSatisfy(Self.isPackageName) else { return nil }
+            return Self.prefix + "install --only-upgrade " + Self.options + " " + unique.joined(separator: " ")
         }
     }
 
@@ -42,16 +47,22 @@ public enum AptAction: Sendable, Equatable {
         return name.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || "+-.".contains($0)) }
     }
 
-    /// Turns sudo's complaint into something a person can act on.
-    static func explain(stderr: String, exitCode: Int32) -> String {
-        let lines = stderr.split(separator: "\n").map(String.init)
-        if lines.contains(where: { $0.contains("a password is required") || $0.contains("not in the sudoers") || $0.contains("may not run sudo") }) {
+    /// Turns a failure into something a person can act on. apt runs with LC_ALL=C so its messages are English;
+    /// sudo's are not, but they always start with "sudo:", which is what we key on. Looks at both streams.
+    static func explain(stdout: String = "", stderr: String, exitCode: Int32) -> String {
+        let lines = (stderr + "\n" + stdout).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if lines.contains(where: { $0.hasPrefix("sudo:") }) {
             return "This user can't run apt with sudo without a password. Use root, or allow passwordless sudo for apt-get."
         }
         if lines.contains(where: { $0.contains("Could not get lock") || $0.contains("Unable to acquire the dpkg") }) {
             return "Another package manager is running on the server (apt lock held). Try again in a minute."
         }
-        let tail = lines.suffix(3).joined(separator: "\n")
-        return tail.isEmpty ? "apt-get failed (exit \(exitCode))" : tail
+        if lines.contains(where: { $0.contains("dpkg was interrupted") }) {
+            return "A previous install was interrupted. Run `sudo dpkg --configure -a` on the server, then try again."
+        }
+        // apt's own errors start with "E:"; show those first, otherwise the last lines.
+        let errors = lines.filter { $0.hasPrefix("E:") }
+        let shown = errors.isEmpty ? Array(lines.suffix(3)) : Array(errors.suffix(3))
+        return shown.isEmpty ? "apt-get failed (exit \(exitCode))" : shown.joined(separator: "\n")
     }
 }

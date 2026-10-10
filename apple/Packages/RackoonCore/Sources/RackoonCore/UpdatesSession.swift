@@ -42,6 +42,8 @@ public actor UpdatesSession {
     /// Runs an apt action, then re-reads the update list. Ignored while another action is running.
     public func perform(_ action: AptAction, confirmation: Confirmation?) async {
         guard !state.isWorking else { return }
+        state.actionError = nil
+        state.actionOutput = nil
         guard let intent = action.intent else {
             state.actionError = "Refusing to run apt: invalid package name."
             return
@@ -51,14 +53,12 @@ public actor UpdatesSession {
             return
         }
         state.isWorking = true
-        state.actionError = nil
-        state.actionOutput = nil
         do {
             let result = try await transport.run(intent.command, timeout: action.timeout)
             if result.exitCode == 0 {
                 state.actionOutput = result.stdout.split(separator: "\n").suffix(5).joined(separator: "\n")
             } else {
-                state.actionError = AptAction.explain(stderr: result.stderr, exitCode: result.exitCode)
+                state.actionError = AptAction.explain(stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode)
             }
         } catch {
             state.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"

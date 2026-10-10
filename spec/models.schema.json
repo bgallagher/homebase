@@ -296,6 +296,13 @@
               },
               "memoryLimitBytes": {
                 "type": "integer"
+              },
+              "configFiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "All compose files from the config_files label, in order. configFile is the first."
               }
             }
           }

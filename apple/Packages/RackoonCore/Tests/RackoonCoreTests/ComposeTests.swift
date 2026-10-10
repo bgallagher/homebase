@@ -35,10 +35,10 @@ final class ComposeActionTests: XCTestCase {
     }
 
     private func stack(name: String = "media", dir: String? = "/srv/media", file: String? = "/srv/media/compose.yaml",
-                       standalone: Bool = false) -> DockerStack {
+                       files: [String] = [], standalone: Bool = false) -> DockerStack {
         let c = DockerContainer(id: "abcdef012345", name: "media-web-1", image: "nginx", state: "running", health: "none",
                                 status: "Up", ports: [], project: name, service: "web", workingDir: dir, configFile: file)
-        return DockerStack(name: name, workingDir: dir, configFile: file, containers: [c], isStandalone: standalone)
+        return DockerStack(name: name, workingDir: dir, configFile: file, configFiles: files, containers: [c], isStandalone: standalone)
     }
 
     func testCommandsMatchSpecTemplates() throws {
@@ -53,6 +53,39 @@ final class ComposeActionTests: XCTestCase {
                        "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' pull")
         XCTAssertEqual(ComposeAction.recreate.command(for: stack()),
                        "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' up -d --force-recreate")
+    }
+
+    func testEveryComposeFileIsPassedInOrder() {
+        let s = stack(files: ["/srv/media/compose.yaml", "/srv/media/compose.override.yaml"])
+        XCTAssertEqual(ComposeAction.up.command(for: s),
+                       "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' -f '/srv/media/compose.override.yaml' up -d")
+    }
+
+    func testParserKeepsAllFilesAndAMangledListIsRefused() throws {
+        func row(_ files: String) -> String {
+            #"{"ID":"abcdef012345","Names":"a-web-1","Image":"i","State":"running","Status":"Up","Labels":"com.docker.compose.project=a,com.docker.compose.project.working_dir=/srv/a,com.docker.compose.project.config_files=\#(files),com.docker.compose.service=web"}"#
+        }
+        func stack(_ files: String) throws -> DockerStack {
+            try XCTUnwrap(DockerParser.parse("##docker\nok\n##ps\n\(row(files))\n##stats\n").stacks.first)
+        }
+        let multi = try stack("/srv/a/compose.yml,/srv/a/compose.override.yml")
+        XCTAssertEqual(multi.configFiles, ["/srv/a/compose.yml", "/srv/a/compose.override.yml"])
+        XCTAssertEqual(multi.configFile, "/srv/a/compose.yml")
+        XCTAssertNotNil(ComposeAction.up.command(for: multi))
+        // A comma inside a path splits it into a piece that is not absolute: refuse rather than send a wrong -f.
+        let mangled = try stack("/srv/a,b/compose.yml")
+        XCTAssertEqual(mangled.configFiles, ["/srv/a", "b/compose.yml"])
+        XCTAssertNil(ComposeAction.up.command(for: mangled))
+    }
+
+    func testContainersThatDisagreeOnTheComposeFilesGetNoCommand() throws {
+        func row(_ id: String, _ files: String) -> String {
+            #"{"ID":"\#(id)","Names":"n\#(id)","Image":"i","State":"running","Status":"Up","Labels":"com.docker.compose.project=a,com.docker.compose.project.working_dir=/srv/a,com.docker.compose.project.config_files=\#(files),com.docker.compose.service=s\#(id)"}"#
+        }
+        let out = "##docker\nok\n##ps\n\(row("abcdef012345", "/srv/a/compose.yml"))\n\(row("abcdef012346", "/srv/a/old.yml"))\n##stats\n"
+        let s = try XCTUnwrap(DockerParser.parse(out).stacks.first)
+        XCTAssertNil(s.workingDir)
+        XCTAssertNil(ComposeAction.up.command(for: s))
     }
 
     func testUnsafeOrMissingStackDataIsRefused() {

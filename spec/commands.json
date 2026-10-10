@@ -78,8 +78,8 @@
     {
       "id": "compose_pull",
       "kind": "action",
-      "description": "docker compose pull for one stack: downloads newer images, changes no containers. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} and {file} are absolute paths from the project's compose labels, single-quoted for the shell (' becomes '\\'').",
-      "script": "cd {dir} && docker compose -p {project} -f {file} pull",
+      "description": "docker compose pull for one stack: downloads newer images, changes no containers. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",
+      "script": "cd {dir} && docker compose -p {project} {files} pull",
       "timeoutSeconds": 900,
       "distros": [
         "debian",
@@ -89,8 +89,8 @@
     {
       "id": "compose_up",
       "kind": "action",
-      "description": "docker compose up -d for one stack: recreates only containers whose image or config changed, starts stopped ones. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} and {file} are absolute paths from the project's compose labels, single-quoted for the shell (' becomes '\\'').",
-      "script": "cd {dir} && docker compose -p {project} -f {file} up -d",
+      "description": "docker compose up -d for one stack: recreates only containers whose image or config changed, starts stopped ones. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",
+      "script": "cd {dir} && docker compose -p {project} {files} up -d",
       "timeoutSeconds": 600,
       "distros": [
         "debian",
@@ -100,8 +100,8 @@
     {
       "id": "compose_recreate",
       "kind": "action",
-      "description": "docker compose up -d --force-recreate for one stack: recreates every container. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} and {file} are absolute paths from the project's compose labels, single-quoted for the shell (' becomes '\\'').",
-      "script": "cd {dir} && docker compose -p {project} -f {file} up -d --force-recreate",
+      "description": "docker compose up -d --force-recreate for one stack: recreates every container. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",
+      "script": "cd {dir} && docker compose -p {project} {files} up -d --force-recreate",
       "timeoutSeconds": 600,
       "distros": [
         "debian",
@@ -112,7 +112,7 @@
       "id": "apt_refresh",
       "kind": "action",
       "description": "apt-get update: refresh the package lists. Installs nothing. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
-      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get update",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get update",
       "timeoutSeconds": 300,
       "distros": [
         "debian",
@@ -123,7 +123,7 @@
       "id": "apt_upgrade",
       "kind": "action",
       "description": "apt-get upgrade: install every available upgrade. Never installs new packages or removes any, and held packages stay. Keeps existing config files. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
-      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confold",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get upgrade -y -o Dpkg::Options::=--force-confold",
       "timeoutSeconds": 1800,
       "distros": [
         "debian",
@@ -133,8 +133,8 @@
     {
       "id": "apt_upgrade_packages",
       "kind": "action",
-      "description": "apt-get install --only-upgrade for the named packages only (used for security updates). {packages} is a space-separated list; each must match ^[a-z0-9][a-z0-9+.-]+$. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
-      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -o Dpkg::Options::=--force-confold {packages}",
+      "description": "apt-get install --only-upgrade for the named packages only (used for security updates). {packages} is a space-separated list; at most 200 names, each must match ^[a-z0-9][a-z0-9+.-]+$. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install --only-upgrade -y -o Dpkg::Options::=--force-confold {packages}",
       "timeoutSeconds": 1800,
       "distros": [
         "debian",

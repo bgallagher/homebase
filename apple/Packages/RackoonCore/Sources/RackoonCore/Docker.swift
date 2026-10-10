@@ -15,15 +15,29 @@ public struct DockerSnapshot: Sendable, Codable, Equatable {
         }
         var result = byProject.keys.sorted().map { name -> DockerStack in
             let members = byProject[name]!.sorted { ($0.service ?? $0.name) < ($1.service ?? $1.name) }
-            return DockerStack(name: name, workingDir: members.compactMap(\.workingDir).first,
-                               configFile: members.compactMap(\.configFile).first, containers: members, isStandalone: false)
+            // Every container in a project carries the same compose labels. If they disagree (a container made by
+            // an older file, a moved directory), there is no single file set to run against, so the stack gets none
+            // and compose actions are refused instead of guessing.
+            let layouts = Set(members.compactMap { c -> ComposeLayout? in
+                guard let dir = c.workingDir else { return nil }
+                return ComposeLayout(workingDir: dir, files: c.configFiles.isEmpty ? (c.configFile.map { [$0] } ?? []) : c.configFiles)
+            })
+            let layout = layouts.count == 1 ? layouts.first : nil
+            return DockerStack(name: name, workingDir: layout?.workingDir,
+                               configFile: layout?.files.first, configFiles: layout?.files ?? [],
+                               containers: members, isStandalone: false)
         }
         if !standalone.isEmpty {
-            result.append(DockerStack(name: "Standalone", workingDir: nil, configFile: nil,
+            result.append(DockerStack(name: "Standalone", workingDir: nil, configFile: nil, configFiles: [],
                                       containers: standalone.sorted { $0.name < $1.name }, isStandalone: true))
         }
         return result
     }
+}
+
+private struct ComposeLayout: Hashable {
+    var workingDir: String
+    var files: [String]
 }
 
 public struct DockerContainer: Sendable, Codable, Equatable, Identifiable {
@@ -48,7 +62,10 @@ public struct DockerContainer: Sendable, Codable, Equatable, Identifiable {
     public var project: String?
     public var service: String?
     public var workingDir: String?
+    /// First compose file (for display).
     public var configFile: String?
+    /// All compose files, in the order compose merges them (the label is a comma-separated list).
+    public var configFiles: [String] = []
     public var cpuPercent: Double?
     public var memoryUsedBytes: Int64?
     public var memoryLimitBytes: Int64?
@@ -61,6 +78,7 @@ public struct DockerStack: Sendable, Equatable, Identifiable {
     public var name: String
     public var workingDir: String?
     public var configFile: String?
+    public var configFiles: [String]
     public var containers: [DockerContainer]
     public var isStandalone: Bool
     public var id: String { name }

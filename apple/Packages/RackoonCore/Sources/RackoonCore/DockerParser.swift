@@ -27,13 +27,14 @@ public enum DockerParser {
             catch { throw DockerParseError.malformed("ps row: \(error.localizedDescription)") }
             let labels = parseLabels(row.Labels ?? "")
             let s = stats[row.ID]
+            let configFiles = (labels["com.docker.compose.project.config_files"] ?? "").split(separator: ",").map(String.init)
             containers.append(DockerContainer(
                 id: row.ID, name: row.Names, image: row.Image,
                 state: row.State, health: health(row.HealthStatus, status: row.Status), status: row.Status,
                 ports: parsePorts(row.Ports ?? ""),
                 project: labels["com.docker.compose.project"], service: labels["com.docker.compose.service"],
                 workingDir: labels["com.docker.compose.project.working_dir"],
-                configFile: labels["com.docker.compose.project.config_files"]?.split(separator: ",").first.map(String.init),
+                configFile: configFiles.first, configFiles: configFiles,
                 cpuPercent: s?.cpu, memoryUsedBytes: s?.used, memoryLimitBytes: s?.limit))
         }
         return DockerSnapshot(containers: containers)

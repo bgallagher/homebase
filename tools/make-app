@@ -48,6 +48,8 @@ cat > "$out/Contents/Info.plist" <<PLIST
 PLIST
 plutil -lint "$out/Contents/Info.plist" >/dev/null
 
-codesign --force --deep --sign - "$out" 2>&1 | grep -v "replacing existing signature" || true
-codesign --verify --deep --strict "$out"
+# Sign inside-out without the deprecated --deep: the relay first, then the app. Any failure stops the script.
+codesign --force --sign - "$out/Contents/MacOS/rackoon-pty"
+codesign --force --sign - "$out"
+codesign --verify --strict --verbose=2 "$out"
 echo "built $out (version $version, build $build_number)"

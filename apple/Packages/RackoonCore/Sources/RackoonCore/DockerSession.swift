@@ -17,9 +17,9 @@ public enum ComposeAction: String, Sendable, CaseIterable {
     var commandID: String { "compose_\(rawValue)" }
     var template: String {
         switch self {
-        case .pull: "cd {dir} && docker compose -p {project} -f {file} pull"
-        case .up: "cd {dir} && docker compose -p {project} -f {file} up -d"
-        case .recreate: "cd {dir} && docker compose -p {project} -f {file} up -d --force-recreate"
+        case .pull: "cd {dir} && docker compose -p {project} {files} pull"
+        case .up: "cd {dir} && docker compose -p {project} {files} up -d"
+        case .recreate: "cd {dir} && docker compose -p {project} {files} up -d --force-recreate"
         }
     }
     var verb: String {
@@ -34,13 +34,17 @@ public enum ComposeAction: String, Sendable, CaseIterable {
 
     /// The exact command, or nil if the stack has no compose project/paths or any of them is unsafe to send.
     public func command(for stack: DockerStack) -> String? {
+        let paths = stack.configFiles.isEmpty ? (stack.configFile.map { [$0] } ?? []) : stack.configFiles
+        // A comma inside a real path would have been split by the label parser, leaving a non-absolute piece,
+        // which quotePath refuses, so a mangled list never reaches the shell.
+        let files = paths.compactMap(ShellQuote.quotePath)
         guard !stack.isStandalone, DockerSession.isComposeProjectName(stack.name),
               let dir = stack.workingDir.flatMap(ShellQuote.quotePath),
-              let file = stack.configFile.flatMap(ShellQuote.quotePath) else { return nil }
+              !paths.isEmpty, files.count == paths.count else { return nil }
         return template
             .replacingOccurrences(of: "{dir}", with: dir)
             .replacingOccurrences(of: "{project}", with: stack.name)
-            .replacingOccurrences(of: "{file}", with: file)
+            .replacingOccurrences(of: "{files}", with: files.map { "-f " + $0 }.joined(separator: " "))
     }
 
     public func intent(for stack: DockerStack) -> Intent? {

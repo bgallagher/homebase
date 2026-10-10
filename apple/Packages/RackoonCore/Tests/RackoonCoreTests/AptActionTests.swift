@@ -29,6 +29,16 @@ final class AptActionTests: XCTestCase {
         }
     }
 
+    func testDuplicatesAreRemovedAndTheListIsCapped() throws {
+        let c = try XCTUnwrap(AptAction.upgrade(packages: ["openssl", "curl", "openssl"]).command)
+        XCTAssertTrue(c.hasSuffix(" openssl curl"))
+        let many = (0..<AptAction.maxPackages).map { "pkg-\($0)" }
+        XCTAssertNotNil(AptAction.upgrade(packages: many).command)
+        XCTAssertNil(AptAction.upgrade(packages: many + ["one-more"]).command)
+        XCTAssertLessThan(try XCTUnwrap(AptAction.upgrade(packages: many).command).utf8.count, 8_000)
+        XCTAssertTrue(try XCTUnwrap(AptAction.refresh.command).contains("LC_ALL=C"))
+    }
+
     func testPackageNamesAreValidated() {
         for bad in ["", "a", "Openssl", "-o", "foo;reboot", "foo bar", "$(id)", "a\nb", "foo|bar", "a`b`", "ünï"] {
             XCTAssertNil(AptAction.upgrade(packages: [bad]).command, bad.debugDescription)
@@ -60,7 +70,7 @@ final class AptActionTests: XCTestCase {
         if getuid() == 0 {
             XCTAssertEqual(out, "apt-get update\n")
         } else {
-            XCTAssertTrue(out.contains("sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update"), out)
+            XCTAssertTrue(out.contains("sudo -n env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get update"), out)
         }
     }
 
@@ -68,6 +78,11 @@ final class AptActionTests: XCTestCase {
         XCTAssertTrue(AptAction.explain(stderr: "sudo: a password is required", exitCode: 1).contains("passwordless sudo"))
         XCTAssertTrue(AptAction.explain(stderr: "E: Could not get lock /var/lib/dpkg/lock-frontend", exitCode: 100).contains("lock"))
         XCTAssertEqual(AptAction.explain(stderr: "a\nb\nc\nd", exitCode: 100), "b\nc\nd")
+        // sudo's text is localised but always starts with "sudo:"; apt's real errors can arrive on stdout.
+        XCTAssertTrue(AptAction.explain(stderr: "sudo: un mot de passe est nécessaire", exitCode: 1).contains("passwordless sudo"))
+        XCTAssertTrue(AptAction.explain(stdout: "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'", stderr: "", exitCode: 100).contains("dpkg --configure -a"))
+        XCTAssertEqual(AptAction.explain(stdout: "noise\nE: Unable to correct problems, you have held broken packages.", stderr: "", exitCode: 100),
+                       "E: Unable to correct problems, you have held broken packages.")
         XCTAssertEqual(AptAction.explain(stderr: "", exitCode: 7), "apt-get failed (exit 7)")
     }
 }
@@ -120,6 +135,21 @@ final class UpdatesSessionActionTests: XCTestCase {
         let state = await session.state
         XCTAssertTrue(state.actionError?.contains("passwordless sudo") == true)
         XCTAssertEqual(state.snapshot?.securityCount, 3)
+    }
+
+    func testStaleOutputIsClearedWhenALaterActionIsRefused() async throws {
+        let transport = FakeTransport([
+            .success(CommandResult(stdout: "done\n")),
+            .success(CommandResult(stdout: try read("ubuntu-24.04-current"))),
+        ])
+        let session = UpdatesSession(transport: transport)
+        await session.perform(.refresh, confirmation: try session.confirm(.refresh))
+        var state = await session.state
+        XCTAssertEqual(state.actionOutput, "done")
+        await session.perform(.upgradeAll, confirmation: nil)
+        state = await session.state
+        XCTAssertNil(state.actionOutput, "no 'done' beside a new error")
+        XCTAssertNotNil(state.actionError)
     }
 
     func testInvalidPackageNameNeverRuns() async {

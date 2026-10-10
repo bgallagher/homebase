@@ -12,6 +12,9 @@ enum AppResources {
            let bundle = Bundle(url: inApp) {
             return bundle.url(forResource: name, withExtension: ext)
         }
+        // Inside a real .app a missing resource bundle must come back as nil (the callers show an error), not
+        // reach `Bundle.module`, whose accessor traps.
+        guard Bundle.main.bundleURL.pathExtension != "app" else { return nil }
         return Bundle.module.url(forResource: name, withExtension: ext)
     }
 }
