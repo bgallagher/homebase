@@ -11,6 +11,8 @@ import SwiftTerm
 final class TerminalTab: Identifiable {
     nonisolated let id = UUID()
     var title: String
+    /// What the tab was called when it opened ("Shell 2", "Shell · web"), restored when a rename is left empty.
+    @ObservationIgnored let defaultTitle: String
     private(set) var isRunning = true
     private(set) var exitCode: Int32?
     /// While an automatic reconnect is pending or under way: which attempt (1-based) and when it starts.
@@ -51,6 +53,7 @@ final class TerminalTab: Identifiable {
         self.server = server
         self.remoteCommand = remoteCommand
         self.title = title
+        defaultTitle = title
         view = LocalProcessTerminalView(frame: .zero)
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         view.changeScrollback(Self.scrollbackLines)
@@ -104,6 +107,15 @@ final class TerminalTab: Identifiable {
     private static func readyMarker(pid: pid_t) -> String { "/tmp/rk-\(getuid())/relay-\(pid).ready" }
 
     func apply(_ theme: TerminalTheme) { view.applyRackoonTheme(theme) }
+
+    /// Names the tab so several can be told apart. Blank text puts the original name back; very long names are cut.
+    func rename(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        title = trimmed.isEmpty ? defaultTitle : String(trimmed.prefix(40))
+    }
+
+    /// Puts the keyboard back in the terminal (after typing a name).
+    func focusTerminal() { view.window?.makeFirstResponder(view) }
 
     /// Manual reconnect (the button): starts a fresh screen and a fresh retry budget.
     func reconnect() {
