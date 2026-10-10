@@ -304,6 +304,116 @@
         "debian",
         "ubuntu"
       ]
+    },
+    {
+      "id": "files_list",
+      "kind": "query",
+      "description": "List one folder for the Files screen. {dir} is an absolute path, single-quoted. Exit 3: the folder doesn't exist; exit 4: it isn't readable. Output is NUL separated: the folder's real path (symlinks resolved), then eight fields per entry: type (f d l ...), type after following a link (d for a link to a folder, N broken), size in bytes, modified as epoch seconds, permissions as ls prints them, owner, name, link target (empty unless a link). Needs GNU find. NUL separation keeps any file name intact. The app shows at most 5000 entries.",
+      "script": "cd -P -- {dir} 2>/dev/null || exit 3; [ -r . ] && [ -x . ] || exit 4; printf '%s\\0' \"$PWD\"; find . -mindepth 1 -maxdepth 1 -printf '%y\\0%Y\\0%s\\0%T@\\0%M\\0%u\\0%f\\0%l\\0' 2>/dev/null",
+      "timeoutSeconds": 20,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_home",
+      "kind": "query",
+      "description": "The ssh user's home folder as an absolute real path, where the Files screen starts.",
+      "script": "pwd -P",
+      "timeoutSeconds": 10,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_upload_file",
+      "kind": "action",
+      "description": "Upload one file: the content arrives on stdin. {dest} and {tmp} are absolute single-quoted paths (tmp is `.<name>.rackoon-part` beside dest) and {bytes} is the exact size being sent. Written to tmp first and moved into place only if tmp is exactly {bytes} long (a cancelled or dropped upload looks like a normal end of input to cat, so without the check a half file would be moved into place); an existing file keeps its owner and mode; a folder with that name is refused (exit 5).",
+      "script": "D={dest}; T={tmp}; if [ -d \"$D\" ]; then echo 'A folder with that name already exists.' >&2; exit 5; fi; cat > \"$T\" || { rm -f -- \"$T\"; exit 1; }; if [ \"$(wc -c < \"$T\")\" -ne {bytes} ]; then rm -f -- \"$T\"; echo 'The upload was interrupted, so nothing was changed.' >&2; exit 1; fi; if [ -e \"$D\" ]; then chmod --reference=\"$D\" \"$T\" 2>/dev/null; chown --reference=\"$D\" \"$T\" 2>/dev/null; fi; mv -f -- \"$T\" \"$D\" || { rm -f -- \"$T\"; exit 1; }",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_upload_folder",
+      "kind": "action",
+      "description": "Upload a folder: a tar stream on stdin holding {src}/... is received into a scratch folder ({tmpdir}, a mktemp template inside the destination folder), checked to be exactly {bytes} long (else nothing is touched, exit 1), unpacked, then moved to {dest}; if {dest} is already a folder its contents are merged in. Files are owned by the ssh user (--no-same-owner). The scratch folder is always removed.",
+      "script": "T=$(mktemp -d {tmpdir}) || exit 1; mkdir \"$T/x\"; cat > \"$T/in.tar\"; if [ \"$(wc -c < \"$T/in.tar\")\" -ne {bytes} ]; then echo 'The upload was interrupted, so nothing was changed.' >&2; rc=1; else tar -xf \"$T/in.tar\" -C \"$T/x\" --no-same-owner; rc=$?; if [ $rc -eq 0 ]; then if [ -d {dest} ]; then cp -a -- \"$T\"/x/{src}/. {dest}/; else mv -- \"$T\"/x/{src} {dest}; fi; rc=$?; fi; fi; rm -rf -- \"$T\"; exit $rc",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_download_file",
+      "kind": "query",
+      "description": "Download one file: the content leaves on stdout. {path} is absolute and single-quoted.",
+      "script": "cat -- {path}",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_download_folder",
+      "kind": "query",
+      "description": "Download a folder as a tar stream on stdout (<name>/...). {parent} is the absolute folder, {name} the single-quoted entry name.",
+      "script": "tar -C {parent} -cf - -- {name}",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_mkdir",
+      "kind": "action",
+      "description": "Create one folder. {path} is absolute and single-quoted. Refuses a name that is taken (exit 5); never creates parents.",
+      "script": "if [ -e {path} ] || [ -L {path} ]; then echo 'That name is already taken.' >&2; exit 5; fi; mkdir -- {path}",
+      "timeoutSeconds": 120,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_rename",
+      "kind": "action",
+      "description": "Rename or move within one folder. {from} and {to} are absolute single-quoted paths. Refuses when {to} exists (exit 5).",
+      "script": "if [ -e {to} ] || [ -L {to} ]; then echo 'That name is already taken.' >&2; exit 5; fi; mv -- {from} {to}",
+      "timeoutSeconds": 120,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_delete_file",
+      "kind": "action",
+      "description": "Delete one file, or a symlink itself (a link is never followed).",
+      "script": "rm -f -- {path}",
+      "timeoutSeconds": 120,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "files_delete_folder",
+      "kind": "action",
+      "description": "Delete a folder and everything in it. Offered only for folders that are not system trees, mount points, home folders or shallower than three levels (checked by the app and again before the command is built).",
+      "script": "rm -rf -- {path}",
+      "timeoutSeconds": 120,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
     }
   ]
 }

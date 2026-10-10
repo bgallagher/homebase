@@ -47,6 +47,11 @@
 - The Bookmarks screen lists them by group, with Open, Copy, Edit and Remove.
 - Each site's favicon is fetched and cached, and shown in Bookmarks and on the stack's card in the Docker overview. Click an icon to fetch a fresh one.
 
+**Files**
+- A split-pane file browser: this Mac on the left, the server on the right, with name, date, size and kind columns, breadcrumbs, back and forward, filter and sort.
+- Copy by dragging between the panes or from Finder (or with the Upload and Download buttons), with a progress list and Cancel. Uploads go through the server's own shell over the existing SSH connection (no SFTP subsystem needed), are written under a temporary name and moved into place only when complete, and ask first.
+- New folder, rename and delete on the server (typed confirmation for folders, system folders refused); on the Mac, deletes go to the Trash.
+
 **Commands**
 - A library of ready-made commands grouped by topic: disk, performance, Docker, network, logs, security and maintenance. Read-only ones run on one click with live output; ones that change the server (prune Docker, clear the apt cache, trim the journal, restart a service) show a dry-run preview and ask first. Some open in a terminal tab (top, follow the system log).
 - A custom command box that always asks before running, with a history of this session's commands (never saved to disk, since a command can contain a password).

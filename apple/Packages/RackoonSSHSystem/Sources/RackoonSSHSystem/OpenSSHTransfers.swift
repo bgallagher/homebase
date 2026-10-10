@@ -1,0 +1,161 @@
+import Foundation
+import RackoonCore
+
+/// File transfers over the same multiplexed ssh connection as everything else: the bytes go through the remote
+/// command's stdin (upload) or stdout (download), so nothing needs to be installed and nothing depends on the
+/// server's sftp subsystem. Folders travel as tar streams. Cancelling the task stops both ends.
+extension OpenSSHTransport: FileTransferring {
+    public func upload(_ source: LocalSource, remoteCommand: String, progress: @escaping @Sendable (Int64) -> Void) async throws {
+        let run = TransferRun()
+        try await withTaskCancellationHandler {
+            try await Task.detached { try Self.pumpUp(source, args: baseArguments() + [remoteCommand], run: run, progress: progress) }.value
+        } onCancel: { run.cancel() }
+    }
+
+    public func download(remoteCommand: String, to sink: LocalSink, progress: @escaping @Sendable (Int64) -> Void) async throws {
+        let run = TransferRun()
+        try await withTaskCancellationHandler {
+            try await Task.detached { try Self.pumpDown(sink, args: baseArguments() + [remoteCommand], run: run, progress: progress) }.value
+        } onCancel: { run.cancel() }
+    }
+
+    private static let chunk = 256 * 1024
+
+    private static func ssh(_ args: [String]) -> Process {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        p.arguments = args
+        return p
+    }
+
+    private static func tar(_ args: [String]) -> Process {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        p.arguments = args
+        p.environment = ProcessInfo.processInfo.environment.merging(["COPYFILE_DISABLE": "1"]) { $1 }
+        return p
+    }
+
+    private static func pumpUp(_ source: LocalSource, args: [String], run: TransferRun, progress: @Sendable (Int64) -> Void) throws {
+        signal(SIGPIPE, SIG_IGN)
+        let remote = ssh(args)
+        let toRemote = Pipe(), errors = Pipe()
+        remote.standardInput = toRemote
+        remote.standardOutput = FileHandle.nullDevice
+        remote.standardError = errors
+        let reader: FileHandle
+        var packer: Process?
+        switch source {
+        case .file(let url, _):
+            do { reader = try FileHandle(forReadingFrom: url) }
+            catch { throw TransferError.failed("Couldn't read \(url.lastPathComponent): \(error.localizedDescription)") }
+        case .folder(let url, _):
+            let p = LocalArchive.tarProcess(for: url)
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = FileHandle.nullDevice
+            packer = p
+            reader = out.fileHandleForReading
+        }
+        run.add(remote)
+        if let packer { run.add(packer) }
+        let errorText = Task.detached { errors.fileHandleForReading.readDataToEndOfFile() }
+        do { try remote.run() } catch { throw TransferError.failed("Could not launch ssh: \(error.localizedDescription)") }
+        do { try packer?.run() } catch { remote.terminate(); throw TransferError.failed("Could not launch tar: \(error.localizedDescription)") }
+
+        var sent: Int64 = 0
+        var writeFailed = false
+        while !run.cancelled {
+            guard let data = try? reader.read(upToCount: chunk), !data.isEmpty else { break }
+            do { try toRemote.fileHandleForWriting.write(contentsOf: data) } catch { writeFailed = true; break }
+            sent += Int64(data.count)
+            progress(sent)
+        }
+        try? toRemote.fileHandleForWriting.close()
+        try? reader.close()
+        if run.cancelled { remote.terminate(); packer?.terminate() }
+        remote.waitUntilExit()
+        packer?.waitUntilExit()
+        let message = String(decoding: await_(errorText), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if run.cancelled { throw CancellationError() }
+        if remote.terminationStatus != 0 || writeFailed {
+            throw TransferError.failed(message.isEmpty ? "The server stopped the upload (status \(remote.terminationStatus))." : message)
+        }
+        if let packer, packer.terminationStatus != 0 { throw TransferError.failed("Couldn't read the folder to send it.") }
+    }
+
+    private static func pumpDown(_ sink: LocalSink, args: [String], run: TransferRun, progress: @Sendable (Int64) -> Void) throws {
+        signal(SIGPIPE, SIG_IGN)
+        let remote = ssh(args)
+        let fromRemote = Pipe(), errors = Pipe()
+        remote.standardInput = FileHandle.nullDevice
+        remote.standardOutput = fromRemote
+        remote.standardError = errors
+        let writer: FileHandle
+        var unpacker: Process?
+        switch sink {
+        case .file(let url):
+            guard FileManager.default.createFile(atPath: url.path, contents: nil), let h = try? FileHandle(forWritingTo: url) else {
+                throw TransferError.failed("Couldn't create \(url.lastPathComponent) on this Mac.")
+            }
+            writer = h
+        case .folder(let into):
+            let p = tar(["-xf", "-", "-C", into.path])
+            let input = Pipe()
+            p.standardInput = input
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            unpacker = p
+            writer = input.fileHandleForWriting
+        }
+        run.add(remote)
+        if let unpacker { run.add(unpacker) }
+        let errorText = Task.detached { errors.fileHandleForReading.readDataToEndOfFile() }
+        do { try remote.run() } catch { throw TransferError.failed("Could not launch ssh: \(error.localizedDescription)") }
+        do { try unpacker?.run() } catch { remote.terminate(); throw TransferError.failed("Could not launch tar: \(error.localizedDescription)") }
+
+        var received: Int64 = 0
+        var writeFailed = false
+        while !run.cancelled {
+            guard let data = try? fromRemote.fileHandleForReading.read(upToCount: chunk), !data.isEmpty else { break }
+            do { try writer.write(contentsOf: data) } catch { writeFailed = true; break }
+            received += Int64(data.count)
+            progress(received)
+        }
+        try? writer.close()
+        if run.cancelled || writeFailed { remote.terminate() }
+        remote.waitUntilExit()
+        unpacker?.waitUntilExit()
+        let message = String(decoding: await_(errorText), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if run.cancelled { throw CancellationError() }
+        if remote.terminationStatus != 0 || writeFailed {
+            throw TransferError.failed(message.isEmpty ? "The transfer failed (status \(remote.terminationStatus))." : message)
+        }
+        if let unpacker, unpacker.terminationStatus != 0 { throw TransferError.failed("Couldn't unpack the folder on this Mac.") }
+    }
+
+    /// Waits for a detached task from a blocking (non-async) context.
+    private static func await_(_ task: Task<Data, Never>) -> Data {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = DataBox()
+        Task { box.data = await task.value; semaphore.signal() }
+        semaphore.wait()
+        return box.data
+    }
+}
+
+private final class DataBox: @unchecked Sendable { var data = Data() }
+
+/// The processes of one transfer, so cancelling the task can stop all of them.
+private final class TransferRun: @unchecked Sendable {
+    private let lock = NSLock()
+    private var processes: [Process] = []
+    private var isCancelled = false
+
+    func add(_ p: Process) { lock.withLock { processes.append(p) } }
+    var cancelled: Bool { lock.withLock { isCancelled } }
+    func cancel() {
+        let all: [Process] = lock.withLock { isCancelled = true; return processes }
+        for p in all where p.isRunning { p.terminate() }
+    }
+}

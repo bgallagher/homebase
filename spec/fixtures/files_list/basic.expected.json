@@ -1,0 +1,66 @@
+{
+  "path": "/srv/data",
+  "truncated": false,
+  "entries": [
+    {
+      "name": "monitoring",
+      "kind": "directory",
+      "linkTarget": null,
+      "linksToDirectory": false,
+      "size": 4096,
+      "modified": 1791628065.6021783,
+      "permissions": "drwxr-xr-x",
+      "owner": "root"
+    },
+    {
+      "name": "compose.yaml",
+      "kind": "file",
+      "linkTarget": null,
+      "linksToDirectory": false,
+      "size": 1432,
+      "modified": 1791628003.15464,
+      "permissions": "-rw-r--r--",
+      "owner": "root"
+    },
+    {
+      "name": "name with spaces & 'quotes'",
+      "kind": "file",
+      "linkTarget": null,
+      "linksToDirectory": false,
+      "size": 0,
+      "modified": 1791627814.0,
+      "permissions": "-rw-------",
+      "owner": "brian"
+    },
+    {
+      "name": "two\nlines",
+      "kind": "file",
+      "linkTarget": null,
+      "linksToDirectory": false,
+      "size": 7,
+      "modified": 1791627814.0,
+      "permissions": "-rw-r--r--",
+      "owner": "brian"
+    },
+    {
+      "name": "current",
+      "kind": "symlink",
+      "linkTarget": "releases/42",
+      "linksToDirectory": true,
+      "size": 9,
+      "modified": 1791373705.0,
+      "permissions": "lrwxrwxrwx",
+      "owner": "root"
+    },
+    {
+      "name": "dangling",
+      "kind": "symlink",
+      "linkTarget": "nowhere",
+      "linksToDirectory": false,
+      "size": 4,
+      "modified": 1772301507.0,
+      "permissions": "lrwxrwxrwx",
+      "owner": "root"
+    }
+  ]
+}

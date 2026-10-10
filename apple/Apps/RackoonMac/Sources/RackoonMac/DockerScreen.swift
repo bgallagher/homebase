@@ -25,6 +25,7 @@ final class DockerWorkspace {
         models[serverID] = nil
         commands[serverID]?.cancelOutput()
         commands[serverID] = nil
+        files[serverID] = nil
         openStack[serverID] = nil
         drafts[serverID] = nil
     }
@@ -36,6 +37,16 @@ final class DockerWorkspace {
         if let existing = commands[server.id] { return existing }
         let model = CommandsModel(server: server)
         commands[server.id] = model
+        return model
+    }
+
+    /// One Files-screen model per server (the folders you were in survive switching screens).
+    @ObservationIgnored private var files: [String: FilesModel] = [:]
+
+    func filesModel(for server: Server) -> FilesModel {
+        if let existing = files[server.id] { return existing }
+        let model = FilesModel(server: server)
+        files[server.id] = model
         return model
     }
 

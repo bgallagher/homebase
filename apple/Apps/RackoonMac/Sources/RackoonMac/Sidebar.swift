@@ -2,7 +2,7 @@ import RackoonCore
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
-    case overview, docker, updates, bookmarks, terminal, command, alerts, security
+    case overview, docker, updates, bookmarks, files, terminal, command, alerts, security
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum Screen: String, CaseIterable, Identifiable {
         case .docker: "Docker"
         case .updates: "Updates"
         case .bookmarks: "Bookmarks"
+        case .files: "Files"
         case .terminal: "Terminals"
         case .command: "Commands"
         case .alerts: "Alerts"
@@ -25,6 +26,7 @@ enum Screen: String, CaseIterable, Identifiable {
         case .docker: "shippingbox"
         case .updates: "arrow.down.circle"
         case .bookmarks: "bookmark"
+        case .files: "folder"
         case .terminal: "terminal"
         case .command: "chevron.left.forwardslash.chevron.right"
         case .alerts: "bell"
@@ -35,7 +37,7 @@ enum Screen: String, CaseIterable, Identifiable {
     /// Screens that exist today. The rest are shown as "Soon" so the layout matches the design.
     var isAvailable: Bool {
         switch self {
-        case .overview, .docker, .updates, .bookmarks, .terminal, .command: true
+        case .overview, .docker, .updates, .bookmarks, .files, .terminal, .command: true
         default: false
         }
     }

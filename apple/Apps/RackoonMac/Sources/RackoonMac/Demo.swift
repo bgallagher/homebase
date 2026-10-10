@@ -251,6 +251,8 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
         if command.contains("##created") { return CommandResult(stdout: "##created\n") }
         if command.contains("docker compose") && command.contains("config -q") { return CommandResult(stdout: "") }
         if command.contains("docker manifest inspect") { return CommandResult(stdout: "found\n") }
+        if command == RemoteFiles.homeCommand { return CommandResult(stdout: DemoFiles.home + "\n") }
+        if let listing = DemoFiles.answer(for: command) { return CommandResult(stdout: listing) }
         if command.contains("ss -H -tln") { return CommandResult(stdout: DemoLibrary.listening) }
         if let output = DemoLibrary.output(for: command, profile: profile) { return CommandResult(stdout: output) }
         return CommandResult(stdout: "")

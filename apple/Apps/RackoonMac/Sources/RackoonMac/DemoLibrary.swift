@@ -212,3 +212,44 @@ enum DemoLibrary {
         }
     }
 }
+
+/// A small made-up file tree for the Files screen in demo mode, answered in the format of spec `files_list`.
+enum DemoFiles {
+    static let home = "/home/demo"
+
+    private struct Item { let name: String; let dir: Bool; let size: Int; let mode: String; let ago: Double }
+    private static let tree: [String: [Item]] = [
+        "/": [Item(name: "home", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 90 * 86400),
+              Item(name: "opt", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 40 * 86400),
+              Item(name: "srv", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 120 * 86400),
+              Item(name: "etc", dir: true, size: 12288, mode: "drwxr-xr-x", ago: 2 * 86400)],
+        "/home": [Item(name: "demo", dir: true, size: 4096, mode: "drwxr-x---", ago: 3600)],
+        "/home/demo": [Item(name: "backups", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 86400),
+                       Item(name: ".bashrc", dir: false, size: 3771, mode: "-rw-r--r--", ago: 200 * 86400),
+                       Item(name: "notes.txt", dir: false, size: 812, mode: "-rw-r--r--", ago: 5 * 86400),
+                       Item(name: "docker-cleanup.sh", dir: false, size: 1290, mode: "-rwxr-xr-x", ago: 12 * 86400)],
+        "/home/demo/backups": [Item(name: "photos-2026-09.tar.gz", dir: false, size: 482_344_192, mode: "-rw-r--r--", ago: 30 * 86400),
+                               Item(name: "stacks-2026-10-01.tar.gz", dir: false, size: 3_145_728, mode: "-rw-r--r--", ago: 9 * 86400)],
+        "/opt": [Item(name: "stacks", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 3600)],
+        "/opt/stacks": ["jellyfin", "immich", "homepage", "uptime-kuma", "vaultwarden", "adguard", "paperless", "traefik"]
+            .enumerated().map { Item(name: $1, dir: true, size: 4096, mode: "drwxr-xr-x", ago: Double($0 + 1) * 86400) },
+        "/opt/stacks/jellyfin": [Item(name: "compose.yaml", dir: false, size: 1432, mode: "-rw-r--r--", ago: 4 * 86400),
+                                 Item(name: ".env", dir: false, size: 96, mode: "-rw-------", ago: 4 * 86400),
+                                 Item(name: "config", dir: true, size: 4096, mode: "drwxr-xr-x", ago: 86400)],
+    ]
+
+    static func answer(for command: String) -> String? {
+        guard command.hasPrefix("cd -P -- '") else { return nil }
+        let rest = command.dropFirst("cd -P -- '".count)
+        guard let end = rest.firstIndex(of: "'") else { return nil }
+        let path = String(rest[..<end])
+        guard let items = tree[path] else { return path + "\0" }
+        let now = Date().timeIntervalSince1970
+        var out = path + "\0"
+        for i in items {
+            out += ["\(i.dir ? "d" : "f")", "\(i.dir ? "d" : "f")", "\(i.size)", String(format: "%.1f", now - i.ago), i.mode, "demo", i.name, ""]
+                .joined(separator: "\0") + "\0"
+        }
+        return out
+    }
+}

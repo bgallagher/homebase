@@ -130,7 +130,7 @@ struct GoCommands: Commands {
     @FocusedValue(\.appActions) private var actions
 
     private static let screens: [(Screen, KeyEquivalent)] = [
-        (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.terminal, "5"), (.command, "6"),
+        (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"),
     ]
 
     var body: some Commands {
@@ -373,6 +373,12 @@ struct ContentView: View {
                 case .bookmarks:
                     BookmarksScreen(server: server, workspace: dockerWorkspace,
                                     openStack: { name in dockerWorkspace.openStack[server.id] = name; selection = .docker }).id(server.id)
+                case .files:
+                    FilesScreen(server: server, workspace: dockerWorkspace, openTerminal: { directory in
+                        guard let command = RemoteFiles.terminalCommand(in: directory) else { return }
+                        terminals.newTab(for: server, title: "Files · \((directory as NSString).lastPathComponent)", command: command)
+                        selection = .terminal
+                    }).id(server.id)
                 case .updates:
                     UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
                 case .terminal:

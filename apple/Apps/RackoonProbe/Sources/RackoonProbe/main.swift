@@ -445,6 +445,112 @@ if args.count > 2, args[2] == "compose-test" {
     print(failures == 0 ? "compose-test: all passed" : "compose-test: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "files-test" {
+    // REAL uploads, downloads, listings and a cancel on a throwaway folder under /tmp (removed at the end).
+    let remoteDir = "/tmp/rackoon-files-test-\(getpid())"
+    let localDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("rackoon-files-test-\(getpid())")
+    try? FileManager.default.createDirectory(at: localDir, withIntermediateDirectories: true)
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+    func sh(_ script: String) async -> CommandResult { (try? await transport.run(script, timeout: 60)) ?? CommandResult(stdout: "", stderr: "failed to run", exitCode: -1) }
+    func sha(_ url: URL) -> String { SHA256.hash(data: (try? Data(contentsOf: url)) ?? Data()).map { String(format: "%02x", $0) }.joined() }
+    final class Counter: @unchecked Sendable { private let l = NSLock(); private var v: Int64 = 0; func set(_ x: Int64) { l.withLock { v = max(v, x) } }; var value: Int64 { l.withLock { v } } }
+
+    _ = await sh("mkdir -p \(remoteDir)")
+    let policy = ActionPolicy()
+    let session = FilesSession(transport: transport, transfers: OpenSSHTransport(host: args[1]), policy: policy)
+    func fileSource(_ url: URL) -> LocalSource { .file(url, bytes: Int64((try? Data(contentsOf: url).count) ?? 0)) }
+    func folderSource(_ url: URL) -> LocalSource { .folder(url, bytes: (try? LocalArchive.size(of: url)) ?? 0) }
+    func up(_ source: LocalSource, as name: String, progress: @escaping @Sendable (Int64) -> Void = { _ in }) async throws {
+        guard let intent = session.uploadIntent(source, toDirectory: remoteDir, as: name) else { throw TransferError.badName(name) }
+        try await session.upload(source, toDirectory: remoteDir, as: name, confirmation: try session.confirm(intent), progress: progress)
+    }
+
+    // 1. a 3 MB binary file with an awkward name
+    let big = localDir.appendingPathComponent("my file; $(touch pwned) 'q'.bin")
+    try Data((0..<3_000_000).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ 7) }).write(to: big)
+    let counter = Counter()
+    do { try await up(fileSource(big), as: big.lastPathComponent, progress: { counter.set($0) }) } catch { check(false, "upload failed: \(error)") }
+    let remoteSum = await sh("sha256sum \(ShellQuote.quotePath(remoteDir + "/" + big.lastPathComponent) ?? "") | cut -d' ' -f1")
+    check(remoteSum.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == sha(big), "uploaded file has the same SHA-256 on the server")
+    check(counter.value == 3_000_000, "progress reached the file size: \(counter.value)")
+    check((await sh("ls \(remoteDir)/pwned 2>&1 | head -1")).stdout.contains("No such file"), "the shell metacharacters in the name did nothing")
+    check((await sh("ls -A \(remoteDir) | grep -c rackoon-part")).stdout.hasPrefix("0"), "no .rackoon-part left")
+
+    // 2. overwrite keeps owner and mode
+    _ = await sh("chmod 600 \(ShellQuote.quotePath(remoteDir + "/" + big.lastPathComponent) ?? "")")
+    try Data("replaced".utf8).write(to: big)
+    do { try await up(fileSource(big), as: big.lastPathComponent) } catch { check(false, "overwrite failed: \(error)") }
+    let mode = await sh("stat -c %a \(ShellQuote.quotePath(remoteDir + "/" + big.lastPathComponent) ?? "")")
+    check(mode.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "600", "overwriting keeps mode 600: \(mode.stdout.trimmingCharacters(in: .whitespacesAndNewlines))")
+
+    // 3. download and compare
+    let back = localDir.appendingPathComponent("back")
+    try? FileManager.default.createDirectory(at: back, withIntermediateDirectories: true)
+    do { try await session.download(name: big.lastPathComponent, isDirectory: false, from: remoteDir, toLocalDirectory: back, as: big.lastPathComponent, replacing: false, progress: { _ in }) }
+    catch { check(false, "download failed: \(error)") }
+    check(sha(back.appendingPathComponent(big.lastPathComponent)) == sha(big), "downloaded file matches")
+
+    // 4. a folder with nested and odd names, both ways
+    let tree = localDir.appendingPathComponent("tree dir")
+    try FileManager.default.createDirectory(at: tree.appendingPathComponent("sub"), withIntermediateDirectories: true)
+    try Data("one".utf8).write(to: tree.appendingPathComponent("a b.txt"))
+    try Data("two".utf8).write(to: tree.appendingPathComponent("sub/it's.txt"))
+    do { try await up(folderSource(tree), as: "tree dir") } catch { check(false, "folder upload failed: \(error)") }
+    let listing = try? await session.list(remoteDir + "/tree dir")
+    check(Set(listing?.entries.map(\.name) ?? []) == ["a b.txt", "sub"], "the server lists the uploaded folder: \(listing?.entries.map(\.name) ?? [])")
+    check((await sh("ls -A \(remoteDir) | grep -c '^.rackoon-'")).stdout.hasPrefix("0"), "scratch folder removed")
+    do { try await session.download(name: "tree dir", isDirectory: true, from: remoteDir, toLocalDirectory: back, as: "tree dir", replacing: false, progress: { _ in }) }
+    catch { check(false, "folder download failed: \(error)") }
+    check((try? String(contentsOf: back.appendingPathComponent("tree dir/sub/it's.txt"), encoding: .utf8)) == "two", "folder came back intact")
+    check(!FileManager.default.fileExists(atPath: back.appendingPathComponent("tree dir/._a b.txt").path), "no ._ files in the archive")
+
+    // 5. cancel mid-upload leaves nothing behind
+    let huge = localDir.appendingPathComponent("huge.bin")
+    try Data(count: 80_000_000).write(to: huge)
+    let task = Task { try await up(fileSource(huge), as: "huge.bin") }
+    try? await Task.sleep(for: .milliseconds(700))
+    task.cancel()
+    let outcome = await task.result
+    if case .failure = outcome { check(true, "a cancelled upload ends with an error") } else { check(false, "a cancelled upload should not succeed") }
+    try? await Task.sleep(for: .seconds(1))
+    let listed = await sh("ls -A \(remoteDir)")
+    check(!listed.stdout.contains("huge.bin") && !listed.stdout.contains("rackoon-part"), "no huge.bin or .rackoon-part on the server")
+    check((await sh("pgrep -f 'rackoon-files-test-\(getpid())/\\.huge' | wc -l")).stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "0", "no leftover remote process")
+
+    // 5b. a stream cut short (what a dropped connection looks like to the server) must not replace the real file
+    let cut = await sh("printf 'ORIGINAL' > \(remoteDir)/cut.txt; printf 'abc' | (\(FileTransferCommands.uploadFile(directory: remoteDir, newName: "cut.txt", bytes: 999) ?? "false")); echo rc=$?; cat \(remoteDir)/cut.txt; ls -A \(remoteDir) | grep -c part")
+    check(cut.stdout.contains("rc=1") && cut.stdout.contains("ORIGINAL"), "a short stream is refused and the old file is untouched: \(cut.stdout.replacingOccurrences(of: "\n", with: " | "))")
+
+    // 5c. new folder, rename, delete on the server
+    func change(_ op: FileOperation) async -> String? {
+        guard let intent = session.intent(for: op) else { return "refused locally" }
+        do { try await session.perform(op, confirmation: try session.confirm(intent)); return nil } catch { return "\(error)" }
+    }
+    check(await change(.makeFolder(in: remoteDir, name: "made dir 'x'")) == nil, "new folder")
+    check((await change(.makeFolder(in: remoteDir, name: "made dir 'x'"))) != nil, "a taken folder name is refused")
+    check(await change(.rename(in: remoteDir, from: "made dir 'x'", to: "renamed")) == nil, "rename")
+    check((await change(.rename(in: remoteDir, from: "renamed", to: "tree dir"))) != nil, "rename onto an existing name is refused")
+    check((await sh("test -d \(remoteDir)/renamed && test -d '\(remoteDir)/tree dir/sub' && echo ok")).stdout.contains("ok"), "the existing folder was not touched")
+    check(await change(.delete(in: remoteDir, name: "cut.txt", isFolder: false)) == nil, "delete a file")
+    check(await change(.delete(in: remoteDir, name: "tree dir", isFolder: true)) == nil, "delete a folder with contents")
+    check((await sh("ls \(remoteDir)")).stdout.contains("tree dir") == false, "the folder is gone")
+    check(await change(.delete(in: "/opt", name: "stacks", isFolder: true)) != nil, "deleting /opt/stacks is refused before anything runs")
+
+    // 6. read-only blocks uploads, and a missing confirmation does too
+    policy.isReadOnly = true
+    do { try await up(fileSource(big), as: "blocked.txt"); check(false, "read-only should refuse") } catch { check((error as? PolicyError) == .readOnly, "read-only refuses an upload") }
+    policy.isReadOnly = false
+    do { try await session.upload(fileSource(big), toDirectory: remoteDir, as: "blocked.txt", confirmation: nil, progress: { _ in }); check(false, "needs confirmation") }
+    catch { check((error as? PolicyError) == .notConfirmed, "an unconfirmed upload is refused") }
+    check((await sh("ls \(remoteDir)/blocked.txt 2>&1 | head -1")).stdout.contains("No such file"), "nothing was written")
+
+    _ = await sh("rm -rf \(remoteDir)")
+    try? FileManager.default.removeItem(at: localDir)
+    check((await sh("ls \(remoteDir) 2>&1 | head -1")).stdout.contains("No such file"), "teardown removed the remote folder")
+    print(failures == 0 ? "files-test: all passed" : "files-test: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "apt-stream-check" {
     // Streams apt through the app's own wrapper and runner. `-s` SIMULATES: nothing is installed or changed.
     final class Sink: @unchecked Sendable {
