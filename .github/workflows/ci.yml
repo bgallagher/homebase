@@ -14,3 +14,5 @@ jobs:
         working-directory: apple
       - run: swift build --product RackoonMac
         working-directory: apple
+      - name: Build the app bundle
+        run: tools/make-app
