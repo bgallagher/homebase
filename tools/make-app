@@ -1,0 +1,53 @@
+#!/bin/bash
+# Build an unsigned (ad-hoc signed) Rackoon.app into build/. Signing and notarizing for distribution need
+# an Apple Developer account and are not done here.
+#   usage: tools/make-app [version]      version defaults to 0.1.0
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+version="${1:-0.1.0}"
+build_number="$(git -C "$root" rev-list --count HEAD 2>/dev/null || echo 1)"
+out="$root/build/Rackoon.app"
+bundle_id="com.bgallagher.rackoon"
+
+cd "$root/apple"
+swift build -c release --product RackoonMac
+swift build -c release --product rackoon-pty
+bin="$(swift build -c release --show-bin-path)"
+
+rm -rf "$out"
+mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
+cp "$bin/RackoonMac" "$out/Contents/MacOS/RackoonMac"
+cp "$bin/rackoon-pty" "$out/Contents/MacOS/rackoon-pty"          # the relay must sit next to the app executable
+cp -R "$bin/Rackoon_RackoonMac.bundle" "$out/Contents/Resources/"   # themes + artwork (SwiftPM resource bundle)
+
+iconset="$root/build/AppIcon.iconset"
+rm -rf "$iconset"
+swift "$root/tools/make-icns.swift" "$root/apple/Apps/RackoonMac/Resources/rackoon-icon.png" "$iconset"
+iconutil -c icns "$iconset" -o "$out/Contents/Resources/AppIcon.icns"
+rm -rf "$iconset"
+
+cat > "$out/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>RackoonMac</string>
+  <key>CFBundleIdentifier</key><string>$bundle_id</string>
+  <key>CFBundleName</key><string>Rackoon</string>
+  <key>CFBundleDisplayName</key><string>Rackoon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$version</string>
+  <key>CFBundleVersion</key><string>$build_number</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+plutil -lint "$out/Contents/Info.plist" >/dev/null
+
+codesign --force --deep --sign - "$out" 2>&1 | grep -v "replacing existing signature" || true
+codesign --verify --deep --strict "$out"
+echo "built $out (version $version, build $build_number)"
