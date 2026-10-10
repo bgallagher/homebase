@@ -63,6 +63,8 @@ public struct AppPalette: Sendable, Equatable {
         }
         let accentSource = ansi[4].contrastRatio(with: bg) >= ansi[12].contrastRatio(with: bg) ? ansi[4] : ansi[12]
         let accent = accentSource.ensuringContrast(against: bg, minimum: Contrast.accent)
+        // Black or white, whichever reads better. No clamp is needed: for ANY colour the better of the two has at
+        // least sqrt(21) - 0.05 (about 4.53) contrast, which clears the 4.5 floor. AppPaletteTests sweeps this.
         let accentText: RGB = accent.contrastRatio(with: .black) >= accent.contrastRatio(with: .white) ? .black : .white
         let warn = pick(3, 11)
 

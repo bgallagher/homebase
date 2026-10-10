@@ -44,6 +44,20 @@ final class AppPaletteTests: XCTestCase {
                                     "an unreachable floor falls back to the best possible")
     }
 
+    func testBlackOrWhiteAlwaysClearsTheOnAccentFloor() {
+        // Why accentText needs no clamping: the better of black/white is >= 4.5 against EVERY colour.
+        var worst = Double.infinity
+        for r in stride(from: 0, through: 255, by: 15) {
+            for g in stride(from: 0, through: 255, by: 15) {
+                for b in stride(from: 0, through: 255, by: 15) {
+                    let c = RGB(r: UInt8(r), g: UInt8(g), b: UInt8(b))
+                    worst = min(worst, c.bestPossibleContrast)
+                }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(worst, AppPalette.Contrast.onAccent)
+    }
+
     // MARK: Automatic
 
     func testAutomaticResolution() throws {

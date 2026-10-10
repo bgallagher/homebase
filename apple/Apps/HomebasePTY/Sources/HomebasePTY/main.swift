@@ -18,6 +18,13 @@ nonisolated(unsafe) var winchPending: sig_atomic_t = 0
 nonisolated(unsafe) var hangupPending: sig_atomic_t = 0
 nonisolated(unsafe) var highlightOnPending: sig_atomic_t = 0   // SIGUSR1
 nonisolated(unsafe) var highlightOffPending: sig_atomic_t = 0  // SIGUSR2
+nonisolated(unsafe) var wakeWriteFD: Int32 = -1                  // self-pipe: handlers poke it so poll() wakes at once
+
+/// Called from signal handlers: sets nothing itself, just wakes the poll loop (write is async-signal-safe).
+func wake() {
+    var byte: UInt8 = 1
+    _ = write(wakeWriteFD, &byte, 1)
+}
 
 func usage() -> Never {
     FileHandle.standardError.write(Data("usage: homebase-pty [--no-highlight] -- <command> [args...]\n".utf8))
@@ -43,11 +50,24 @@ guard args.first == "--", args.count >= 2 else { usage() }
 args.removeFirst()
 
 // Handlers go in first: SIGUSR1/2 would otherwise terminate us (their default action) if they arrived early.
-signal(SIGWINCH) { _ in winchPending = 1 }
-signal(SIGHUP) { _ in hangupPending = 1 }
-signal(SIGTERM) { _ in hangupPending = 1 }
-signal(SIGUSR1) { _ in highlightOnPending = 1 }
-signal(SIGUSR2) { _ in highlightOffPending = 1 }
+var wakePipe: [Int32] = [-1, -1]
+if pipe(&wakePipe) == 0 {
+    for fd in wakePipe { _ = fcntl(fd, F_SETFL, O_NONBLOCK); _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
+    wakeWriteFD = wakePipe[1]
+}
+signal(SIGWINCH) { _ in winchPending = 1; wake() }
+signal(SIGHUP) { _ in hangupPending = 1; wake() }
+signal(SIGTERM) { _ in hangupPending = 1; wake() }
+signal(SIGUSR1) { _ in highlightOnPending = 1; wake() }
+signal(SIGUSR2) { _ in highlightOffPending = 1; wake() }
+
+// Readiness marker: the app only signals a relay once this file exists, because before the handlers above are
+// installed SIGUSR1/SIGUSR2 would terminate the process. Created after the handlers, removed on exit.
+let readyDir = "/tmp/hb-\(getuid())"
+mkdir(readyDir, 0o700)
+let readyPath = "\(readyDir)/relay-\(getpid()).ready"
+FileManager.default.createFile(atPath: readyPath, contents: nil)
+atexit { unlink("/tmp/hb-\(getuid())/relay-\(getpid()).ready") }
 
 // Everything the child needs is built before forkpty: after fork only async-signal-safe calls are allowed.
 let cArgs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
@@ -106,11 +126,17 @@ mainLoop: while true {
     }
 
     var fds = [pollfd(fd: STDIN_FILENO, events: stdinOpen ? Int16(POLLIN) : 0, revents: 0),
-               pollfd(fd: master, events: Int16(POLLIN), revents: 0)]
-    let ready = poll(&fds, 2, 200)
+               pollfd(fd: master, events: Int16(POLLIN), revents: 0),
+               pollfd(fd: wakePipe[0], events: Int16(POLLIN), revents: 0)]
+    let ready = poll(&fds, 3, 200)
     if ready < 0 {
         if errno == EINTR { continue }
         break
+    }
+    if fds[2].revents & Int16(POLLIN) != 0 {
+        var drain = [UInt8](repeating: 0, count: 64)
+        while read(wakePipe[0], &drain, drain.count) > 0 {}   // a signal arrived: flags are applied at the top of the loop
+        continue
     }
     if fds[0].revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 {
         let n = read(STDIN_FILENO, &buffer, buffer.count)

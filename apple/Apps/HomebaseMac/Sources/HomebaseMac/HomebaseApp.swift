@@ -75,6 +75,7 @@ struct ContentView: View {
         .tint(Theme.accent)
         .preferredColorScheme(appearance.fixedColorScheme)
         .onChange(of: appearance.resolvedTheme) { _, theme in terminals.applyTheme(theme) }
+        .onChange(of: appearance.highlightOutput) { _, _ in terminals.highlightSettingChanged() }
         .onAppear {
             appearance.applyWindowAppearance()
             model.start()

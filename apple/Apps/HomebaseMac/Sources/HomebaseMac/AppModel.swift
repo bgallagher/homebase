@@ -35,15 +35,19 @@ final class AppModel {
         servers = store.loadServers()
         let last = UserDefaults.standard.string(forKey: "selectedServerID")
         selectedID = servers.contains { $0.id == last } ? last : servers.first?.id
-        // After sleep the SSH connection is usually dead: poll straight away instead of waiting for the next tick.
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
     }
 
     func start() {
+        // Registered here, not in init: `@State private var model = AppModel()` runs init on every parent
+        // re-evaluation and discards all but the first instance, which would leak an observer each time.
+        if wakeObserver == nil {
+            // After sleep the SSH connection is usually dead: poll straight away instead of waiting for the next tick.
+            wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refresh() }
+            }
+        }
         if let selected { connect(selected) }
     }
 

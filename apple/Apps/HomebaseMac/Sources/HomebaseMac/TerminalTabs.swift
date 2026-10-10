@@ -29,7 +29,8 @@ final class TerminalTab: Identifiable {
 
     /// True when this tab's ssh was started through the relay, which is what lets highlighting be switched live.
     @ObservationIgnored private var viaRelay = false
-    @ObservationIgnored private var launchedAt = Date()
+    /// Bumped on every launch, so a delayed signal meant for an earlier session can never reach a newer relay.
+    @ObservationIgnored private var launchGeneration = 0
 
     init(server: Server, title: String, theme: TerminalTheme) {
         self.server = server
@@ -49,7 +50,7 @@ final class TerminalTab: Identifiable {
         exitCode = nil
         let ssh = OpenSSHTransport.terminalArguments(for: server)
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
-        launchedAt = Date()
+        launchGeneration += 1
         if let relay = Self.relayURL {
             // Always go through the relay when it exists, even with highlighting off, so the switch can be
             // flipped later on this very tab.
@@ -63,27 +64,27 @@ final class TerminalTab: Identifiable {
     }
 
     /// Tells the running relay to switch highlighting on (SIGUSR1) or off (SIGUSR2). Both are idempotent.
-    /// The relay installs its handlers right after it starts; signalling before that would kill it (the default
-    /// action for these signals), so a brand-new tab is given a moment, then gets whatever the setting is by then.
-    func setHighlight(_ on: Bool) {
+    ///
+    /// Those signals terminate a process that has not installed handlers yet, so a relay is only signalled once
+    /// it has published its ready marker (written after its handlers are installed). A relay that is still
+    /// starting is retried briefly; the value sent is always the setting as it is at that moment.
+    func setHighlight() {
         guard viaRelay, isRunning else { return }
-        let settle = 0.6 - Date().timeIntervalSince(launchedAt)
-        if settle > 0 {
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
-                guard let self else { return }
-                self.sendHighlight(AppearanceStore.shared.highlightOutput)
+        let generation = launchGeneration
+        Task { [weak self] in
+            for _ in 0..<50 {   // up to ~5 s for a relay that is still starting
+                guard let self, self.launchGeneration == generation, self.isRunning else { return }
+                let pid = self.view.process.shellPid
+                if pid > 0, FileManager.default.fileExists(atPath: Self.readyMarker(pid: pid)) {
+                    kill(pid, AppearanceStore.shared.highlightOutput ? SIGUSR1 : SIGUSR2)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
             }
-        } else {
-            sendHighlight(on)
         }
     }
 
-    private func sendHighlight(_ on: Bool) {
-        guard viaRelay, isRunning else { return }
-        let pid = view.process.shellPid
-        if pid > 0 { kill(pid, on ? SIGUSR1 : SIGUSR2) }
-    }
+    private static func readyMarker(pid: pid_t) -> String { "/tmp/hb-\(getuid())/relay-\(pid).ready" }
 
     /// Sets the ANSI palette first, then the default colours (installing a palette can reset them).
     func apply(_ theme: TerminalTheme) {
@@ -137,14 +138,12 @@ final class TerminalStore {
     private(set) var selected: [String: UUID] = [:]
     @ObservationIgnored private var counters: [String: Int] = [:]
 
-    init() {
-        // The appearance switch lives in AppearanceStore; open terminals are told about changes here.
-        AppearanceStore.shared.onHighlightChange = { [weak self] on in
-            self?.allTabs.forEach { $0.setHighlight(on) }
-        }
-    }
-
     private var allTabs: [TerminalTab] { tabs.values.flatMap { $0 } }
+
+    /// The Highlight output setting changed: tell every open relay.
+    func highlightSettingChanged() {
+        allTabs.forEach { $0.setHighlight() }
+    }
 
     /// The theme changed (or macOS switched appearance under Automatic): recolour every open terminal.
     func applyTheme(_ theme: TerminalTheme) {

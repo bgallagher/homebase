@@ -41,6 +41,14 @@ public struct TerminalOutputFilter {
     private static let resetForeground = Array("\u{1B}[39m".utf8)
 
     public mutating func process(_ input: [UInt8]) -> [UInt8] {
+        // Fast path for the common "off" case: with highlighting disabled and no escape byte in this chunk
+        // (and none half-parsed from the last one), nothing can change our state or the output, so hand the
+        // bytes straight back instead of running the per-byte state machine over, say, `cat bigfile`.
+        if !isEnabled, mode == .text, carry.isEmpty, !input.contains(0x1B) {
+            if let last = input.last, !(last < 0x20 || last == 0x7F) { endsWithTokenByte = Self.isTokenByte(last) }
+            else if !input.isEmpty { endsWithTokenByte = false }
+            return input
+        }
         let data = carry + input
         carry = []
         var out: [UInt8] = []

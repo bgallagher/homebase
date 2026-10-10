@@ -185,6 +185,30 @@ final class TerminalOutputFilterTests: XCTestCase {
         XCTAssertEqual(run(&g, "10.0.0.1 x"), "10.0.0.1 x", "the program's own colour is still respected")
     }
 
+    /// The strongest "off" guarantee: for ANY bytes, a disabled filter returns exactly what it was given.
+    func testDisabledFilterIsAnExactIdentityForArbitraryBytes() {
+        var rng = SystemRandomNumberGenerator()
+        var f = TerminalOutputFilter()
+        f.isEnabled = false
+        var specials: [UInt8] = Array("\u{1B}[0m\u{1B}]0;t\u{07}\u{1B}[?1049h 10.0.0.1 error 99%\r\n".utf8)
+        for _ in 0..<3000 {
+            let n = Int.random(in: 0...80, using: &rng)
+            let chunk = (0..<n).map { _ in Bool.random(using: &rng) ? specials.randomElement(using: &rng)! : UInt8.random(in: 0...255, using: &rng) }
+            XCTAssertEqual(f.process(chunk), chunk)
+        }
+        specials.removeAll()
+    }
+
+    func testFastPathDoesNotLoseStateAcrossAnEscapeLater() {
+        var f = TerminalOutputFilter()
+        f.isEnabled = false
+        XCTAssertEqual(run(&f, "plain text with no escapes at all\r\n"), "plain text with no escapes at all\r\n")
+        _ = run(&f, "\(ESC)[?1049h")                     // slow path: tracks the alternate screen
+        XCTAssertEqual(run(&f, "10.0.0.1 more plain bytes"), "10.0.0.1 more plain bytes")   // fast path again
+        f.isEnabled = true
+        XCTAssertEqual(run(&f, "10.0.0.1 x"), "10.0.0.1 x", "the alternate screen was remembered through the fast path")
+    }
+
     func testDisabledFilterHoldsNothingBack() {
         var f = TerminalOutputFilter()
         f.isEnabled = false

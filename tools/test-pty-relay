@@ -86,6 +86,15 @@ def run_all(ssh_host):
     s.wait()
     check("--no-highlight leaves output untouched", ESC not in out and "ip 10.0.0.1 error" in out, repr(out))
 
+    s = Session(["--", "/bin/sh", "-c", "sleep 2"])
+    marker = f"/tmp/hb-{os.getuid()}/relay-{s.pid}.ready"
+    t0 = time.time()
+    while not os.path.exists(marker) and time.time() - t0 < 3:
+        s.read(0.05)
+    check("relay publishes a ready marker (handlers installed) at startup", os.path.exists(marker), marker)
+    s.wait(5)
+    check("ready marker is removed when the relay exits", not os.path.exists(marker), marker)
+
     s = Session(["--", "/bin/sh", "-c", "exit 7"])
     check("non-zero exit code propagates", s.wait() == 7)
 

@@ -19,9 +19,7 @@ final class AppearanceStore {
     private(set) var palette: AppPalette
     private(set) var highlightOutput: Bool
 
-    /// Called when the highlight switch changes, so open terminals can be told straight away.
-    @ObservationIgnored var onHighlightChange: ((Bool) -> Void)?
-    @ObservationIgnored private var systemObserver: NSObjectProtocol?
+    @ObservationIgnored private var appearanceObservation: NSKeyValueObservation?
 
     private static let selectionKey = "appearanceSelection"
     private static let legacyThemeKey = "terminalThemeID"   // from when the theme only styled terminals
@@ -32,8 +30,12 @@ final class AppearanceStore {
     /// False when the relay executable was not built or shipped; the highlight switch is then disabled.
     var highlightAvailable: Bool { TerminalTab.relayURL != nil }
 
-    /// nil in Automatic (follow macOS), otherwise forced to match the chosen theme.
-    var fixedColorScheme: ColorScheme? { isAutomatic ? nil : (resolvedTheme.isDark ? .dark : .light) }
+    /// True when the app should follow macOS. Not when themes failed to load: the built-in fallback is a single
+    /// dark theme, so system-drawn controls must be forced dark to match it.
+    private var followsSystem: Bool { isAutomatic && themeError == nil }
+
+    /// nil when following macOS, otherwise forced to match the resolved theme.
+    var fixedColorScheme: ColorScheme? { followsSystem ? nil : (resolvedTheme.isDark ? .dark : .light) }
 
     /// "Automatic" shows which theme it currently resolves to.
     var selectionTitle: String { isAutomatic ? "Automatic · \(resolvedTheme.name)" : resolvedTheme.name }
@@ -63,21 +65,20 @@ final class AppearanceStore {
 
         themes = all
         themeError = loadError
-        selectionID = all.contains { $0.id == saved } ? saved : ThemeCatalog.automaticID
+        // A saved id that no longer exists (a theme removed from the bundle) becomes Automatic, and is rewritten.
+        let valid = saved == ThemeCatalog.automaticID || all.contains { $0.id == saved }
+        selectionID = valid ? saved : ThemeCatalog.automaticID
+        if !valid { defaults.set(ThemeCatalog.automaticID, forKey: Self.selectionKey) }
         systemIsDark = dark
         resolvedTheme = resolved
         palette = AppPalette.derive(from: resolved)
         highlightOutput = defaults.object(forKey: Self.highlightKey) as? Bool ?? true
 
-        // Fires when the user flips macOS between light and dark (also on the automatic schedule).
-        systemObserver = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main
-        ) { [weak self] _ in
-            // The preference is written just after the notification; give it a moment.
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                self?.systemAppearanceChanged()
-            }
+        // While following macOS, NSApp.appearance is nil, so effectiveAppearance IS the system appearance and
+        // changes to it are delivered reliably. (When a theme is fixed we do not need the system state at all:
+        // choosing Automatic again clears the override and reads it fresh.)
+        appearanceObservation = NSApplication.shared.observe(\.effectiveAppearance) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.recompute() }
         }
     }
 
@@ -93,31 +94,27 @@ final class AppearanceStore {
         guard on != highlightOutput else { return }
         highlightOutput = on
         UserDefaults.standard.set(on, forKey: Self.highlightKey)
-        onHighlightChange?(on)
     }
 
     /// Makes system-drawn parts (sheets, popovers, alerts, text fields) match the theme. Call after any change.
     func applyWindowAppearance() {
-        NSApplication.shared.appearance = isAutomatic ? nil : NSAppearance(named: resolvedTheme.isDark ? .darkAqua : .aqua)
+        let wanted: NSAppearance? = followsSystem ? nil : NSAppearance(named: resolvedTheme.isDark ? .darkAqua : .aqua)
+        // Only touch it when it differs: setting it fires the effectiveAppearance observer.
+        if NSApplication.shared.appearance?.name != wanted?.name { NSApplication.shared.appearance = wanted }
     }
 
-    private func systemAppearanceChanged() {
-        let dark = Self.readSystemIsDark()
-        guard dark != systemIsDark else { return }
-        systemIsDark = dark
-        recompute()
-    }
-
+    /// Re-resolves the theme. Order matters: clear or set the override first, and only then read the system
+    /// appearance, because it is only readable from effectiveAppearance while nothing overrides it.
     private func recompute() {
-        if let t = ThemeCatalog.resolve(selection: selectionID, systemIsDark: systemIsDark, in: themes) {
+        applyWindowAppearance()
+        if followsSystem { systemIsDark = Self.readSystemIsDark() }
+        if let t = ThemeCatalog.resolve(selection: selectionID, systemIsDark: systemIsDark, in: themes), t != resolvedTheme {
             resolvedTheme = t
             palette = AppPalette.derive(from: t)
         }
-        applyWindowAppearance()
     }
 
-    /// macOS stores "Dark" under AppleInterfaceStyle only while dark mode is on.
     private static func readSystemIsDark() -> Bool {
-        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 }
