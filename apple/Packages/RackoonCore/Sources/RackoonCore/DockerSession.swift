@@ -236,6 +236,26 @@ public actor DockerSession {
             onEvent(.finished(exitCode: nil))
             return
         }
+        await stream(intent, confirmation: confirmation, ids: Set(stack.containers.map(\.id)), stackName: stack.name,
+                     label: "docker compose \(action.rawValue)", cols: cols, rows: rows, onEvent: onEvent)
+    }
+
+    /// The same for one container's start, stop or restart, so every action shows up in the same live output.
+    public func performStreaming(_ action: DockerAction, containerID: String, confirmation: Confirmation?,
+                                 cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
+        guard let intent = action.intent(containerID: containerID) else {
+            var next = state
+            next.actionError = "Refusing to run \(action.rawValue): invalid container id."
+            publish(next)
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        await stream(intent, confirmation: confirmation, ids: [containerID], stackName: nil,
+                     label: "docker \(action.rawValue)", cols: cols, rows: rows, onEvent: onEvent)
+    }
+
+    private func stream(_ intent: Intent, confirmation: Confirmation?, ids: Set<String>, stackName: String?, label: String,
+                        cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
         do { try policy.authorize(intent, with: confirmation) } catch {
             var next = state
             next.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
@@ -243,10 +263,9 @@ public actor DockerSession {
             onEvent(.finished(exitCode: nil))
             return
         }
-        let ids = Set(stack.containers.map(\.id))
         var working = state
         working.busy.formUnion(ids)
-        working.busyStacks.insert(stack.name)
+        if let stackName { working.busyStacks.insert(stackName) }
         working.actionError = nil
         publish(working)
 
@@ -264,16 +283,16 @@ public actor DockerSession {
         if !rest.text.isEmpty { onEvent(.output(rest.text)) }
         let cancelled = Task.isCancelled
         if let code = rest.exitCode, code != 0 {
-            failure = "docker compose \(action.rawValue) failed (exit \(code)). The output shows why."
+            failure = "\(label) failed (exit \(code)). The output shows why."
         } else if rest.exitCode == nil, failure == nil {
             failure = cancelled ? "Cancelled. The command was interrupted on the server."
-                                : "The connection ended before docker compose reported a result."
+                                : "The connection ended before \(label) reported a result."
         }
         onEvent(.finished(exitCode: rest.exitCode))
 
         var done = state
         done.busy.subtract(ids)
-        done.busyStacks.remove(stack.name)
+        if let stackName { done.busyStacks.remove(stackName) }
         done.actionError = failure
         publish(done)
         await refresh()

@@ -167,7 +167,7 @@ final class StreamingActionTests: XCTestCase {
         let (got, session) = try await runStreaming(t, action: .up)
         XCTAssertEqual(got.events.last, .finished(exitCode: nil))
         let error = await session.state.actionError
-        XCTAssertEqual(error, "The connection ended before docker compose reported a result.")
+        XCTAssertEqual(error, "The connection ended before docker compose up reported a result.")
     }
 
     func testNothingStartsWithoutConfirmationOrInReadOnlyMode() async throws {
@@ -183,6 +183,35 @@ final class StreamingActionTests: XCTestCase {
         XCTAssertTrue(t.streamedCommands.isEmpty)
         error = await session.state.actionError
         XCTAssertEqual(error, PolicyError.readOnly.errorDescription)
+    }
+
+    func testContainerActionsStreamToo() async throws {
+        let t = FakeTransport([.success(CommandResult(stdout: try snapshot()))])
+        t.streamChunks = ["abcdef012345\r\n", "\r\n##rackoon-exit:0\r\n"]
+        let session = DockerSession(transport: t)
+        let got = Collector()
+        let confirmation = try session.confirm(.restart, containerID: "abcdef012345")
+        await session.performStreaming(.restart, containerID: "abcdef012345", confirmation: confirmation, cols: 90, rows: 20, onEvent: { got.add($0) })
+        XCTAssertEqual(t.streamedCommands, [StreamedCommand.wrap("docker restart abcdef012345", cols: 90, rows: 20)])
+        XCTAssertEqual(got.text, "abcdef012345\r\n\r\n")
+        XCTAssertEqual(got.events.last, .finished(exitCode: 0))
+        let state = await session.state
+        XCTAssertTrue(state.busy.isEmpty)
+        XCTAssertNil(state.actionError)
+        XCTAssertEqual(t.commands.count, 1, "refreshed afterwards")
+    }
+
+    func testContainerStreamingRefusesBadIdsAndMissingConfirmation() async throws {
+        let t = FakeTransport([])
+        t.streamChunks = ["should never run"]
+        let session = DockerSession(transport: t)
+        let got = Collector()
+        await session.performStreaming(.stop, containerID: "x; reboot", confirmation: nil, cols: 80, rows: 24, onEvent: { got.add($0) })
+        await session.performStreaming(.stop, containerID: "abcdef012345", confirmation: nil, cols: 80, rows: 24, onEvent: { got.add($0) })
+        XCTAssertTrue(t.streamedCommands.isEmpty)
+        XCTAssertEqual(got.events, [.finished(exitCode: nil), .finished(exitCode: nil)])
+        let error = await session.state.actionError
+        XCTAssertEqual(error, PolicyError.notConfirmed.errorDescription)
     }
 
     func testSentinelLookalikesInOutputDoNotEndTheRunEarly() async throws {

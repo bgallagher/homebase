@@ -225,6 +225,16 @@ if args.count > 2, args[2] == "compose-test" {
         check(after.busyStacks.isEmpty && after.actionError == nil, "\(action.rawValue): busy cleared, no error")
         if let refreshed = await theStack() { current = refreshed }
     }
+    // One container's own restart streams too (so every action shows up in the same Output tab).
+    if let container = current.containers.first {
+        let sink = Sink()
+        await session.performStreaming(.restart, containerID: container.id, confirmation: try? session.confirm(.restart, containerID: container.id),
+                                       cols: 100, rows: 24, onEvent: { sink.add($0) })
+        check(sink.exitCode == .some(0), "streamed container restart finishes with exit 0: \(String(describing: sink.exitCode))")
+        check(sink.output.contains(container.id.prefix(12)) || sink.output.contains(container.name), "its output names the container: \(sink.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))")
+        check(!sink.output.contains("##rackoon-exit"), "no marker leaks into a container run either")
+        if let refreshed = await theStack() { current = refreshed }
+    }
     // A failing command reports its real exit code.
     do {
         let sink = Sink()

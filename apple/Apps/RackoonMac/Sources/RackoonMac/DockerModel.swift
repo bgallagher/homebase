@@ -158,10 +158,28 @@ final class DockerModel {
         output = nil
     }
 
+    /// Start, stop or restart one container, with its output in the same live Output tab as the stack actions.
     func perform(_ action: DockerAction, on container: DockerContainer) {
+        guard composeWorking == nil else { return }
+        composeWorking = "\(action.rawValue.capitalized) \(container.name)…"
+        let run = StackOutput(stackName: container.project ?? "Standalone", title: "docker \(action.rawValue) \(container.name)")
+        run.apply(.output("\u{1B}[2m$ docker \(action.rawValue) \(container.name)\u{1B}[0m\r\n"))
+        output = run
         let session = session
-        let confirmation = try? session.confirm(action, containerID: container.id)
-        Task { await session.perform(action, containerID: container.id, confirmation: confirmation) }
+        let (events, continuation) = AsyncStream<ActionStreamEvent>.makeStream()
+        let consumer = Task { @MainActor in
+            for await event in events { run.apply(event) }
+        }
+        run.task = Task { @MainActor in
+            await run.waitForTerminalSize()
+            let confirmation = try? session.confirm(action, containerID: container.id)
+            await session.performStreaming(action, containerID: container.id, confirmation: confirmation,
+                                           cols: run.cols, rows: run.rows, onEvent: { continuation.yield($0) })
+            continuation.finish()
+            await consumer.value
+            run.finish(cancelled: Task.isCancelled)
+            composeWorking = nil
+        }
     }
 
     /// Clicking the container that is already open closes its logs.
