@@ -91,6 +91,18 @@ final class ComposeActionTests: XCTestCase {
         XCTAssertNil(ComposeAction.up.command(for: s))
     }
 
+    func testRestartAndShellCommands() throws {
+        XCTAssertEqual(ComposeAction.restart.command(for: stack()),
+                       "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' restart")
+        let data = try Data(contentsOf: specDir.appendingPathComponent("commands.json"))
+        let commands = (try JSONSerialization.jsonObject(with: data) as! [String: Any])["commands"] as! [[String: Any]]
+        let shell = try XCTUnwrap(commands.first { $0["id"] as? String == "docker_shell" }?["script"] as? String)
+        XCTAssertEqual(DockerSession.shellCommand(id: "abcdef012345"), shell.replacingOccurrences(of: "{id}", with: "abcdef012345"))
+        for bad in ["", "abc", "abcdef012345; reboot", "$(id)abcdef012345", "ABCDEF012345"] {
+            XCTAssertNil(DockerSession.shellCommand(id: bad), bad)
+        }
+    }
+
     func testUnsafeOrMissingStackDataIsRefused() {
         for action in ComposeAction.allCases {
             XCTAssertNil(action.command(for: stack(name: "media; reboot")))

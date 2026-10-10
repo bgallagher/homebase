@@ -1,3 +1,4 @@
+import RackoonCore
 import SwiftUI
 
 /// `swift run` launches a bare executable with no .app bundle, so macOS treats it as a
@@ -173,7 +174,11 @@ struct ContentView: View {
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal },
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
                 case .docker:
-                    DockerScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
+                    DockerScreen(server: server, theme: appearance.resolvedTheme, openShell: { container in
+                        guard let command = DockerSession.shellCommand(id: container.id) else { return }
+                        terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: command)
+                        selection = .terminal
+                    }).id(server.id)
                 case .updates:
                     UpdatesScreen(server: server).id(server.id)
                 case .terminal:

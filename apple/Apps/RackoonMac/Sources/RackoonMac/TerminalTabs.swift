@@ -15,6 +15,8 @@ final class TerminalTab: Identifiable {
     private(set) var exitCode: Int32?
     @ObservationIgnored let view: LocalProcessTerminalView
     @ObservationIgnored private let server: Server
+    /// Run instead of a login shell (e.g. `docker exec` for a container shell); nil for a normal shell.
+    @ObservationIgnored private let remoteCommand: String?
     @ObservationIgnored private var proxy: DelegateProxy?
 
     static let scrollbackLines = 10_000
@@ -32,8 +34,9 @@ final class TerminalTab: Identifiable {
     /// Bumped on every launch, so a delayed signal meant for an earlier session can never reach a newer relay.
     @ObservationIgnored private var launchGeneration = 0
 
-    init(server: Server, title: String, theme: TerminalTheme) {
+    init(server: Server, title: String, theme: TerminalTheme, remoteCommand: String? = nil) {
         self.server = server
+        self.remoteCommand = remoteCommand
         self.title = title
         view = LocalProcessTerminalView(frame: .zero)
         view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -48,7 +51,7 @@ final class TerminalTab: Identifiable {
     private func launch() {
         isRunning = true
         exitCode = nil
-        let ssh = OpenSSHTransport.terminalArguments(for: server)
+        let ssh = OpenSSHTransport.terminalArguments(for: server) + (remoteCommand.map { [$0] } ?? [])
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
         launchGeneration += 1
         if let relay = Self.relayURL {
@@ -162,10 +165,12 @@ final class TerminalStore {
         if tabs(for: server).isEmpty { newTab(for: server) }
     }
 
-    func newTab(for server: Server) {
+    /// A tab that runs `command` on the server instead of a login shell, titled `title` (e.g. "Shell · web").
+    func newTab(for server: Server, title: String? = nil, command: String? = nil) {
         let n = (counters[server.id] ?? 0) + 1
         counters[server.id] = n
-        let tab = TerminalTab(server: server, title: "Shell \(n)", theme: AppearanceStore.shared.resolvedTheme)
+        let tab = TerminalTab(server: server, title: title ?? "Shell \(n)", theme: AppearanceStore.shared.resolvedTheme,
+                              remoteCommand: command)
         tabs[server.id, default: []].append(tab)
         selected[server.id] = tab.id
     }

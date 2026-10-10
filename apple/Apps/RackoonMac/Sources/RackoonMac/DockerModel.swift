@@ -99,6 +99,10 @@ final class DockerModel {
             ("Update \(stack.name)?",
              "Recreates only the containers whose image or settings changed, and starts any that are stopped.",
              "Updating \(stack.name)…")
+        case .restart:
+            ("Restart all \(n) container\(n == 1 ? "" : "s") in \(stack.name)?",
+             "Restarts the containers in place. They are not recreated, so image and settings changes are not applied; use Update for that.",
+             "Restarting \(stack.name)…")
         case .rebuild:
             ("Rebuild \(stack.name)?",
              "Rebuilds images from the stack's Dockerfiles (services with a build section), then recreates the containers that changed. Services that only use pulled images are left alone. Building can take a while.",

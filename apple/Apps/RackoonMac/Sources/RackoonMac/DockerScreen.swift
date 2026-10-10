@@ -2,51 +2,64 @@ import AppKit
 import RackoonCore
 import SwiftUI
 
+/// The tallest card's natural height, so every card can be drawn at the same height.
+private struct TileHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Docker: a grid of stack cards, and a detail page for one stack (its containers, actions and logs).
 struct DockerScreen: View {
     let server: Server
     /// The terminal theme, so logs match the terminals.
     let theme: TerminalTheme
+    /// Opens a shell inside a container (a terminal tab running `docker exec`).
+    let openShell: (DockerContainer) -> Void
     @State private var model: DockerModel
-    @State private var collapsed: Set<String> = []
+    @State private var openStack: String?
+    @State private var tileHeight: CGFloat = 0
 
-    init(server: Server, theme: TerminalTheme) {
+    init(server: Server, theme: TerminalTheme, openShell: @escaping (DockerContainer) -> Void) {
         self.server = server
         self.theme = theme
+        self.openShell = openShell
         _model = State(initialValue: DockerModel(server: server))
     }
 
     var body: some View {
         let state = model.state
-        HSplitView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header(state.snapshot)
-                    if let working = model.composeWorking { ComposeBanner(text: working) }
-                    if let error = state.actionError { ErrorBanner(message: error) }
-                    if let error = state.error { ErrorBanner(message: error) }
+        let stack = openStack.flatMap { name in state.snapshot?.stacks.first { $0.name == name } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let stack {
+                    StackDetail(stack: stack, model: model, theme: theme, busy: state.busy,
+                                back: { model.closeLogs(); openStack = nil }, openShell: openShell)
+                } else {
+                    overviewHeader(state.snapshot)
+                }
+                if let working = model.composeWorking { ComposeBanner(text: working) }
+                if let error = state.actionError { ErrorBanner(message: error) }
+                if let error = state.error { ErrorBanner(message: error) }
+                if stack == nil {
                     if let snapshot = state.snapshot {
                         if snapshot.containers.isEmpty {
                             Text("No containers on this server.").foregroundStyle(Theme.textMuted)
                         }
-                        ForEach(snapshot.stacks) { stack in
-                            StackCard(stack: stack, collapsed: collapsed.contains(stack.id),
-                                      toggle: { toggle(stack.id) }, model: model,
-                                      selectedID: model.logTarget?.id, compact: model.logTarget != nil,
-                                      busy: state.busy)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
+                            ForEach(snapshot.stacks) { stack in
+                                StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name),
+                                          height: tileHeight) { openStack = stack.name }
+                            }
                         }
+                        .onPreferenceChange(TileHeightKey.self) { tileHeight = $0 }
                     } else if state.error == nil {
                         HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading containers…") }
                             .foregroundStyle(Theme.textMuted)
                     }
                 }
-                .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minWidth: 440)
-            if let target = model.logTarget {
-                LogPanel(model: model, container: target, theme: theme, busy: state.busy.contains(target.id))
-                    .frame(minWidth: 320, idealWidth: 460)
-            }
+            .padding(.horizontal, 32).padding(.top, 40).padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
         .onAppear { model.start() }
@@ -54,11 +67,7 @@ struct DockerScreen: View {
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
     }
 
-    private func toggle(_ id: String) {
-        if collapsed.contains(id) { collapsed.remove(id) } else { collapsed.insert(id) }
-    }
-
-    private func header(_ snapshot: DockerSnapshot?) -> some View {
+    private func overviewHeader(_ snapshot: DockerSnapshot?) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Docker").font(.system(size: 26, weight: .bold)).tracking(-0.4)
@@ -72,186 +81,324 @@ struct DockerScreen: View {
                 }
             }
             Spacer()
-            Button(action: model.refresh) {
-                Label("Refresh", systemImage: "arrow.clockwise").fontWeight(.medium)
-                    .padding(.horizontal, 12).frame(height: 32)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 9))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.border))
-            }
-            .buttonStyle(.pointer)
+            Button(action: model.refresh) { Label("Refresh", systemImage: "arrow.clockwise") }
+                .buttonStyle(.bordered).controlSize(.large).handCursor()
         }
     }
 }
 
-private struct StackCard: View {
+// MARK: - Overview card
+
+/// One stack as a card: containers with their CPU and memory, and a memory bar along the bottom.
+private struct StackTile: View {
     let stack: DockerStack
-    let collapsed: Bool
-    let toggle: () -> Void
-    let model: DockerModel
-    let selectedID: String?
-    let compact: Bool
     let busy: Set<String>
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Button(action: toggle) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
-                            .rotationEffect(.degrees(collapsed ? 0 : 90)).foregroundStyle(Theme.textMuted)
-                        Text(stack.name).fontWeight(.semibold)
-                        Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textMuted)
-                        Spacer()
-                        summaryBadge
-                    }
-                    .padding(.vertical, 14).padding(.leading, 14).padding(.trailing, 10)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.pointer)
-                if !stack.isStandalone { stackMenu }
-            }
-
-            if !collapsed {
-                Divider().overlay(Theme.border)
-                ForEach(stack.containers) { c in
-                    ContainerRow(container: c, selected: c.id == selectedID, compact: compact, busy: busy.contains(c.id) || stackBusy,
-                                 model: model)
-                    if c.id != stack.containers.last?.id { Divider().overlay(Theme.border).padding(.leading, 14) }
-                }
-            }
-        }
-        .card()
-    }
-
-    /// Whole-stack actions. A native menu: items are disabled with the reason shown first when they cannot run.
-    private var stackMenu: some View {
-        let reason = model.composeBlockedReason(for: stack)
-        let working = stackBusy || stack.containers.contains { busy.contains($0.id) }
-        return Group {
-            if working {
-                ProgressView().controlSize(.small).frame(width: 28, height: 28)
-            } else {
-                Menu {
-                    if let reason { Text(reason) }
-                    Button("Pull Images") { model.request(.pull, on: stack) }
-                    Button("Update") { model.request(.up, on: stack) }
-                    Button("Rebuild") { model.request(.rebuild, on: stack) }
-                    Divider()
-                    Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                .disabled(reason != nil)
-                .foregroundStyle(Theme.textSecondary)
-                .help(reason ?? "Pull, update, rebuild or recreate \(stack.name)")
-                .handCursor()
-            }
-        }
-        .padding(.trailing, 12)
-    }
-
-    /// A whole-stack compose action is running on this stack (matched by project name, see DockerState.busyStacks).
-    private var stackBusy: Bool { model.state.busyStacks.contains(stack.name) }
-
-    private var subtitle: String {
-        let n = stack.containers.count
-        let count = "\(n) container\(n == 1 ? "" : "s")"
-        return [stack.configFileName, count].compactMap { $0 }.joined(separator: " · ")
-    }
-
-    @ViewBuilder private var summaryBadge: some View {
-        if stack.unhealthyCount > 0 {
-            Badge(text: "\(stack.unhealthyCount) unhealthy", color: Theme.danger)
-        } else if stack.stoppedCount > 0 {
-            Badge(text: "\(stack.stoppedCount) stopped", color: Theme.textMuted)
-        } else {
-            Badge(text: "All running", color: Theme.ok)
-        }
-    }
-}
-
-private struct ContainerRow: View {
-    let container: DockerContainer
-    let selected: Bool
-    let compact: Bool
-    let busy: Bool
-    let model: DockerModel
+    let busyStack: Bool
+    /// Height every card is drawn at (the tallest one's natural height).
+    let height: CGFloat
+    let open: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(container.service ?? container.name).fontWeight(.medium).lineLimit(1)
-                Text(container.image).font(.system(size: 11)).foregroundStyle(Theme.textMuted).lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            statusBadge.frame(width: compact ? 90 : 110, alignment: .leading)
-
-            Text(resources).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.textSecondary)
-                .lineLimit(1).frame(width: compact ? 100 : 130, alignment: .leading)
-
-            if !compact {
-                Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
-                    .lineLimit(1).frame(width: 130, alignment: .leading)
-            }
-
-            HStack(spacing: 2) {
-                IconButton(symbol: "text.alignleft", help: "Logs for \(container.name)",
-                           tint: selected ? Theme.accent : Theme.textSecondary) {
-                    model.toggleLogs(for: container)
-                }
-                if busy {
-                    ProgressView().controlSize(.small).frame(width: 28, height: 28)
-                } else {
-                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)", mutates: true) {
-                        model.request(.restart, on: container)
-                    }
-                    if container.isRunning {
-                        IconButton(symbol: "stop.fill", help: "Stop \(container.name)", mutates: true) { model.request(.stop, on: container) }
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(stack.configFileName ?? "").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
+                    Spacer(minLength: 4)
+                    if busyStack || stack.containers.contains(where: { busy.contains($0.id) }) {
+                        ProgressView().controlSize(.mini)
                     } else {
-                        IconButton(symbol: "play.fill", help: "Start \(container.name)", mutates: true) {
-                            model.request(.start, on: container)
+                        if !status.text.isEmpty { Text(status.text).font(.system(size: 12)).foregroundStyle(status.color) }
+                        Circle().fill(status.dot).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(stack.containers) { c in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(c.service ?? c.name).lineLimit(1).truncationMode(.tail)
+                                .foregroundStyle(problem(c) ? Theme.danger : Theme.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(usage(c)).font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(problem(c) ? Theme.danger : Theme.textMuted)
                         }
                     }
                 }
+                Spacer(minLength: 0)
+                VStack(spacing: 0) {
+                    Divider().overlay(Theme.border).padding(.bottom, 12)
+                    HStack(spacing: 10) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Theme.border)
+                                Capsule().fill(unhealthy ? Theme.danger : Theme.ok.opacity(0.8))
+                                    .frame(width: max(0, min(1, memoryFraction)) * geo.size.width)
+                            }
+                        }
+                        .frame(height: 3)
+                        Text(memoryText).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
+                    }
+                }
             }
-            .frame(width: 94, alignment: .trailing)
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 16)
+            // Natural height, measured before the uniform height is applied (so cards can shrink again too).
+            .background(GeometryReader { Color.clear.preference(key: TileHeightKey.self, value: $0.size.height) })
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(unhealthy ? Theme.danger.opacity(0.5) : (hovering ? Theme.textMuted.opacity(0.5) : Theme.border)))
+            .overlay(CornerTicks().stroke(Theme.border, lineWidth: 1.5).padding(5))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(selected ? Theme.accent.opacity(0.12) : (hovering ? Theme.selection.opacity(0.5) : .clear))
-        .contentShape(Rectangle())
+        .buttonStyle(.pointer)
         .onHover { hovering = $0 }
-        .handCursor()
-        .onTapGesture { model.toggleLogs(for: container) }
-        .help("Click to follow logs")
+        .help("Open \(stack.name)")
     }
 
-    private var statusBadge: some View {
-        let (text, color): (String, Color) = {
-            if container.isUnhealthy { return ("Unhealthy", Theme.danger) }
-            switch container.state {
-            case "running": return (container.health == "starting" ? "Starting" : "Running", container.health == "starting" ? Theme.warn : Theme.ok)
-            case "restarting": return ("Restarting", Theme.warn)
-            case "paused": return ("Paused", Theme.warn)
-            default: return (container.state.capitalized, Theme.textMuted)
-            }
-        }()
-        return Badge(text: text, color: color)
-    }
+    private var unhealthy: Bool { stack.unhealthyCount > 0 }
 
-    private var resources: String {
-        guard container.isRunning, let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
+    private func problem(_ c: DockerContainer) -> Bool { c.isUnhealthy }
+
+    private func usage(_ c: DockerContainer) -> String {
+        guard c.isRunning else { return c.state }
+        guard let cpu = c.cpuPercent, let mem = c.memoryUsedBytes else { return "—" }
         return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
     }
 
-    private var ports: String {
-        // TCP and UDP on the same port are separate mappings but read the same here.
-        var seen = Set<String>()
-        return container.ports.map { "\($0.hostPort)→\($0.containerPort)" }
-            .filter { seen.insert($0).inserted }.joined(separator: ", ")
+    private var status: (text: String, color: Color, dot: Color) {
+        if stack.unhealthyCount > 0 { return ("\(stack.unhealthyCount) unhealthy", Theme.danger, Theme.danger) }
+        if stack.runningCount == 0 { return ("Stopped", Theme.textMuted, Theme.idle) }
+        if stack.stoppedCount > 0 { return ("\(stack.stoppedCount) stopped", Theme.warn, Theme.warn) }
+        return ("", Theme.ok, Theme.ok)
+    }
+
+    private var memoryUsed: Int64 { stack.containers.compactMap(\.memoryUsedBytes).reduce(0, +) }
+    /// Docker reports the host's memory as the limit for containers without one, so the largest limit is the host total.
+    private var memoryFraction: Double {
+        guard let limit = stack.containers.compactMap(\.memoryLimitBytes).max(), limit > 0 else { return 0 }
+        return Double(memoryUsed) / Double(limit)
+    }
+    private var memoryText: String { stack.runningCount == 0 ? "—" : Format.bytes(memoryUsed) }
+}
+
+/// Four small corner ticks, the card's signature detail from the design.
+private struct CornerTicks: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let n: CGFloat = 6
+        for (x, y, dx, dy) in [(rect.minX, rect.minY, 1.0, 1.0), (rect.maxX, rect.minY, -1.0, 1.0),
+                               (rect.minX, rect.maxY, 1.0, -1.0), (rect.maxX, rect.maxY, -1.0, -1.0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+            p.move(to: CGPoint(x: x + dx * n, y: y)); p.addLine(to: CGPoint(x: x, y: y)); p.addLine(to: CGPoint(x: x, y: y + dy * n))
+        }
+        return p
+    }
+}
+
+// MARK: - Stack detail
+
+private struct StackDetail: View {
+    let stack: DockerStack
+    let model: DockerModel
+    let theme: TerminalTheme
+    let busy: Set<String>
+    let back: () -> Void
+    let openShell: (DockerContainer) -> Void
+    private let safety = SafetyStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            header
+            HStack(alignment: .top, spacing: 20) {
+                containers.frame(width: 320)
+                panel.frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Button(action: back) { Text("Docker").foregroundStyle(Theme.accent) }.buttonStyle(.pointer)
+                Text("/").foregroundStyle(Theme.textMuted)
+                Text(stack.name).foregroundStyle(Theme.textSecondary)
+            }
+            .font(.system(size: 13))
+            HStack(alignment: .center, spacing: 10) {
+                Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
+                Text(summary.text).foregroundStyle(summary.color)
+                Spacer()
+                if !stack.isStandalone { actions }
+            }
+        }
+    }
+
+    private var summary: (text: String, color: Color) {
+        let n = stack.containers.count
+        if stack.unhealthyCount > 0 { return ("\(stack.unhealthyCount) unhealthy", Theme.danger) }
+        if stack.runningCount == n { return (n == 1 ? "Running" : "All \(n) running", Theme.ok) }
+        if stack.runningCount == 0 { return ("Stopped", Theme.textMuted) }
+        return ("\(stack.runningCount) of \(n) running", Theme.warn)
+    }
+
+    @ViewBuilder private var actions: some View {
+        let reason = model.composeBlockedReason(for: stack)
+        let working = busy.contains { id in stack.containers.contains { $0.id == id } } || model.composeWorking != nil
+        HStack(spacing: 8) {
+            if working { ProgressView().controlSize(.small) }
+            Button("Pull Images") { model.request(.pull, on: stack) }
+            Button("Rebuild") { model.request(.rebuild, on: stack) }
+            Button("Restart") { model.request(.restart, on: stack) }
+            Menu {
+                Button("Update") { model.request(.up, on: stack) }
+                Divider()
+                Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
+            } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+        }
+        .buttonStyle(.bordered).controlSize(.large)
+        .disabled(reason != nil)
+        .help(reason ?? "Actions for the whole \(stack.name) stack")
+        .handCursor()
+    }
+
+    // MARK: containers
+
+    private var containers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("CONTAINERS").font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+            VStack(spacing: 0) {
+                ForEach(stack.containers) { c in
+                    ContainerCard(container: c, busy: busy.contains(c.id), model: model, openShell: openShell)
+                    if c.id != stack.containers.last?.id { Divider().overlay(Theme.border) }
+                }
+            }
+            .card()
+        }
+    }
+
+    // MARK: right panel
+
+    private var panel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                PanelTab(label: "Logs", selected: true, soon: false)
+                if !stack.isStandalone {
+                    PanelTab(label: stack.configFileName ?? "compose.yaml", selected: false, soon: true)
+                    PanelTab(label: ".env", selected: false, soon: true)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 42)
+            .background(Theme.sidebar)
+            .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
+
+            if let target = model.logTarget, stack.containers.contains(where: { $0.id == target.id }) {
+                LogPanel(model: model, container: target, theme: theme, busy: busy.contains(target.id))
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "text.alignleft").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
+                    Text("Choose Logs on a container to follow its output.").foregroundStyle(Theme.textMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: theme.backgroundRGB.nsColor))
+            }
+        }
+        .frame(minHeight: 460)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
+    }
+}
+
+private struct PanelTab: View {
+    let label: String
+    let selected: Bool
+    let soon: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label).font(.system(size: 12, design: .monospaced))
+            if soon { Text("Soon").font(.system(size: 10, weight: .medium)).padding(.horizontal, 5).background(Theme.border, in: Capsule()) }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .foregroundStyle(selected ? Theme.textPrimary : Theme.textMuted)
+        .background(selected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// One container in the detail list: status dot, name, usage, image, and text actions.
+private struct ContainerCard: View {
+    let container: DockerContainer
+    let busy: Bool
+    let model: DockerModel
+    let openShell: (DockerContainer) -> Void
+
+    var body: some View {
+        let showingLogs = model.logTarget?.id == container.id
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Circle().fill(dot).frame(width: 7, height: 7)
+                Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(usage).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
+            }
+            Text(container.image).font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                .lineLimit(1).truncationMode(.middle).padding(.top, 4).padding(.leading, 15)
+            HStack(spacing: 14) {
+                LinkAction(title: "Logs", tint: showingLogs ? Theme.accent : Theme.textSecondary) { model.toggleLogs(for: container) }
+                LinkAction(title: "Shell", enabled: container.isRunning) { openShell(container) }
+                if busy {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    LinkAction(title: "Restart", mutates: true) { model.request(.restart, on: container) }
+                    if container.isRunning {
+                        LinkAction(title: "Stop", mutates: true) { model.request(.stop, on: container) }
+                    } else {
+                        LinkAction(title: "Start", mutates: true) { model.request(.start, on: container) }
+                    }
+                }
+            }
+            .padding(.top, 10).padding(.leading, 15)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(showingLogs ? Theme.accent.opacity(0.08) : .clear)
+    }
+
+    private var dot: Color {
+        if container.isUnhealthy { return Theme.danger }
+        switch container.state {
+        case "running": return container.health == "starting" ? Theme.warn : Theme.ok
+        case "restarting", "paused": return Theme.warn
+        default: return Theme.idle
+        }
+    }
+
+    private var usage: String {
+        guard container.isRunning else { return container.state }
+        guard let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
+        return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
+    }
+}
+
+/// A small text action under a container. Mutating ones disable themselves in read-only mode.
+private struct LinkAction: View {
+    let title: String
+    var tint: Color = Theme.textSecondary
+    var mutates = false
+    var enabled = true
+    let action: () -> Void
+
+    var body: some View {
+        let blocked = (mutates && SafetyStore.shared.readOnly) || !enabled
+        Button(action: action) {
+            Text(title).font(.system(size: 12)).padding(.vertical, 3).contentShape(Rectangle())
+        }
+        .buttonStyle(.pointer)
+        .foregroundStyle(tint)
+        .disabled(blocked)
+        .opacity(blocked ? 0.4 : 1)
+        .help(mutates && SafetyStore.shared.readOnly ? "Read-only mode is on" : (!enabled ? "The container is not running" : title))
     }
 }
 

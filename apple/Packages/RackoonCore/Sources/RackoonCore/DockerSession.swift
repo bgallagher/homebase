@@ -12,13 +12,14 @@ public enum DockerAction: String, Sendable, CaseIterable {
 
 /// Whole-stack actions, run with `docker compose` from the stack's own compose file.
 public enum ComposeAction: String, Sendable, CaseIterable {
-    case pull, up, rebuild, recreate
+    case pull, up, restart, rebuild, recreate
 
     var commandID: String { "compose_\(rawValue)" }
     var template: String {
         switch self {
         case .pull: "cd {dir} && docker compose -p {project} {files} pull"
         case .up: "cd {dir} && docker compose -p {project} {files} up -d"
+        case .restart: "cd {dir} && docker compose -p {project} {files} restart"
         case .rebuild: "cd {dir} && docker compose -p {project} {files} up -d --build"
         case .recreate: "cd {dir} && docker compose -p {project} {files} up -d --force-recreate"
         }
@@ -27,6 +28,7 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         switch self {
         case .pull: "Pull images for"
         case .up: "Update"
+        case .restart: "Restart"
         case .rebuild: "Rebuild"
         case .recreate: "Recreate"
         }
@@ -36,7 +38,7 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         switch self {
         case .pull: 900
         case .rebuild: 1800   // building images from source can be slow
-        case .up, .recreate: 600
+        case .up, .restart, .recreate: 600
         }
     }
 
@@ -90,6 +92,12 @@ public actor DockerSession {
     public static func actionCommand(_ action: DockerAction, id: String) -> String? {
         guard isContainerID(id) else { return nil }
         return "docker \(action.rawValue) \(id)"
+    }
+
+    /// An interactive shell inside a container, for a terminal tab (`ssh -t host <this>`). Prefers bash, falls back to sh.
+    public static func shellCommand(id: String) -> String? {
+        isContainerID(id)
+            ? "docker exec -it \(id) sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'" : nil
     }
 
     /// Follow a container's logs (last 100 lines first). Same id validation as actions.

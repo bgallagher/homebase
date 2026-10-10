@@ -98,6 +98,17 @@
       ]
     },
     {
+      "id": "compose_restart",
+      "kind": "action",
+      "description": "docker compose restart for one stack: restarts every container without recreating it. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order. All paths are absolute, from the project's labels, single-quoted for the shell.",
+      "script": "cd {dir} && docker compose -p {project} {files} restart",
+      "timeoutSeconds": 600,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "compose_rebuild",
       "kind": "action",
       "description": "docker compose up -d --build for one stack: rebuilds images for services with a build section (from their Dockerfiles), then recreates the containers whose image or config changed. Services that only use pulled images are untouched. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order. All paths are absolute, from the project's labels, single-quoted for the shell.",
@@ -147,6 +158,17 @@
       "description": "apt-get install --only-upgrade for the named packages only (used for security updates). {packages} is a space-separated list; at most 200 names, each must match ^[a-z0-9][a-z0-9+.-]+$. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
       "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install --only-upgrade -y -o Dpkg::Options::=--force-confold {packages}",
       "timeoutSeconds": 1800,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_shell",
+      "kind": "interactive",
+      "description": "Interactive shell in one container, run as the remote command of an ssh -t terminal tab (not through the transport). {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker exec -it {id} sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'",
+      "timeoutSeconds": 0,
       "distros": [
         "debian",
         "ubuntu"
