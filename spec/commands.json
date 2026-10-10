@@ -4,7 +4,7 @@
     {
       "id": "overview",
       "description": "One batched read of host, OS, uptime, load, CPU counters, memory, disks and reboot flag and the names of unhealthy containers (empty if docker is absent). Sections start with a '##name' line.",
-      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; echo '##security'; apt list --upgradable 2>/dev/null | grep -c -E '^[^/ ]+/[^ ]*-security'; echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null",
+      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; U=$(apt list --upgradable 2>/dev/null); echo '##updates'; echo \"$U\" | grep -c -E '^[^/ ]+/'; echo '##security'; echo \"$U\" | grep -c -E '^[^/ ]+/[^ ]*-security'; echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null",
       "timeoutSeconds": 10,
       "distros": [
         "debian",

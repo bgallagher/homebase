@@ -55,6 +55,7 @@
         "disks",
         "rebootRequired",
         "unhealthyContainers",
+        "pendingUpdates",
         "securityUpdates"
       ],
       "properties": {
@@ -172,6 +173,10 @@
         "securityUpdates": {
           "type": "integer",
           "description": "Packages apt can upgrade from a security suite (0 if apt is absent)."
+        },
+        "pendingUpdates": {
+          "type": "integer",
+          "description": "Packages apt can upgrade, from apt's local cache (0 if apt is absent)."
         }
       }
     },

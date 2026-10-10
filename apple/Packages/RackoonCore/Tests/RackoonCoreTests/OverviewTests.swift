@@ -46,6 +46,7 @@ final class OverviewTests: XCTestCase {
         let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/overview/synthetic-security-updates.out.txt"), encoding: .utf8)
         var o = try OverviewParser.parse(text)
         XCTAssertEqual(o.securityUpdates, 3)
+        XCTAssertEqual(o.pendingUpdates, 5)
         o.rebootRequired = false
         let items = Attention.evaluate(o)
         XCTAssertEqual(items.map(\.id), ["security_updates"])

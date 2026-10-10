@@ -35,9 +35,20 @@ enum Screen: String, CaseIterable, Identifiable {
     /// Screens that exist today. The rest are shown as "Soon" so the layout matches the design.
     var isAvailable: Bool {
         switch self {
-        case .overview, .docker, .terminal, .command: true
+        case .overview, .docker, .updates, .terminal, .command: true
         default: false
         }
+    }
+}
+
+/// Pending package updates for the selected server, from the Overview poll. Drives the dot on the Updates row.
+struct UpdateBadge: Equatable {
+    var total: Int
+    var security: Int
+    var isVisible: Bool { total > 0 || security > 0 }
+    var help: String {
+        let base = "\(total) update\(total == 1 ? "" : "s") pending"
+        return security > 0 ? "\(base), \(security) security" : base
     }
 }
 
@@ -48,6 +59,7 @@ struct Sidebar: View {
     let servers: [Server]
     let selectedID: String?
     let status: ConnectionStatus
+    var updates: UpdateBadge?
     let onSelect: (Server) -> Void
     let onRemove: (Server) -> Void
     let onAddServer: () -> Void
@@ -88,7 +100,8 @@ struct Sidebar: View {
                 Divider().padding(.vertical, 12)
                 SectionLabel(name)
                 ForEach(Screen.allCases) { screen in
-                    NavRow(screen: screen, selected: selection == screen) {
+                    NavRow(screen: screen, selected: selection == screen,
+                           badge: screen == .updates ? updates : nil) {
                         if screen.isAvailable { selection = screen }
                     }
                 }
@@ -179,6 +192,7 @@ private struct SectionLabel: View {
 private struct NavRow: View {
     let screen: Screen
     let selected: Bool
+    var badge: UpdateBadge?
     let action: () -> Void
 
     var body: some View {
@@ -189,6 +203,13 @@ private struct NavRow: View {
                     .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
                 Text(screen.title).fontWeight(selected ? .semibold : .regular)
                 Spacer()
+                if let badge, badge.isVisible {
+                    // Amber when any pending update is a security one, otherwise the accent colour.
+                    Circle().fill(badge.security > 0 ? Theme.warn : Theme.accent)
+                        .frame(width: 8, height: 8)
+                        .help(badge.help)
+                        .accessibilityLabel(badge.help)
+                }
                 if !screen.isAvailable {
                     Text("Soon").font(.system(size: 10, weight: .medium))
                         .padding(.horizontal, 6).padding(.vertical, 1)

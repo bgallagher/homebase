@@ -34,6 +34,7 @@
     "prettyName": "Ubuntu 24.04.5 LTS",
     "version": "24.04"
   },
+  "pendingUpdates": 0,
   "rebootRequired": false,
   "securityUpdates": 0,
   "unhealthyContainers": [],

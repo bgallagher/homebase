@@ -59,13 +59,14 @@ public enum OverviewParser {
         let reboot = try section("reboot").first == "yes"
         // Optional: older output and hosts without docker have no names here.
         let unhealthy = sections["unhealthy"] ?? []
+        let pending = sections["updates"]?.first.flatMap { Int($0) } ?? 0
         let security = sections["security"]?.first.flatMap { Int($0) } ?? 0
 
         return Overview(
             hostname: hostname, os: os, uptimeSeconds: uptime,
             load1: load[0], load5: load[1], load15: load[2], cores: cores,
             cpu: cpu, memory: memory, disks: disks, rebootRequired: reboot, unhealthyContainers: unhealthy,
-            securityUpdates: security)
+            pendingUpdates: pending, securityUpdates: security)
     }
 
     static func splitSections(_ output: String) -> [String: [String]] {

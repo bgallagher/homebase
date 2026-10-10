@@ -1,0 +1,241 @@
+import RackoonCore
+import SwiftUI
+
+struct UpdatesScreen: View {
+    let server: Server
+    @State private var model: UpdatesModel
+    @State private var securityOnly = false
+    private let safety = SafetyStore.shared
+
+    init(server: Server) {
+        self.server = server
+        _model = State(initialValue: UpdatesModel(server: server))
+    }
+
+    var body: some View {
+        let state = model.state
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header(state.snapshot)
+                if let working = model.working { WorkingBanner(text: working) }
+                if let error = state.actionError { ErrorBanner(message: error) }
+                if let output = state.actionOutput, model.working == nil { DoneBanner(output: output, dismiss: model.dismissResult) }
+                if let error = state.error { ErrorBanner(message: error) }
+                if let snapshot = state.snapshot {
+                    if snapshot.rebootRequired { RebootBanner() }
+                    summary(snapshot)
+                    packageList
+                    if !snapshot.held.isEmpty { held(snapshot.held) }
+                } else if state.error == nil {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading updates…") }
+                        .foregroundStyle(Theme.textMuted)
+                }
+            }
+            .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .foregroundStyle(Theme.textPrimary)
+        .onAppear { model.load() }
+        .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+    }
+
+    // MARK: header
+
+    private func header(_ snapshot: UpdatesSnapshot?) -> some View {
+        let busy = model.working != nil || safety.readOnly
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Updates").font(.system(size: 26, weight: .bold)).tracking(-0.4)
+                if let snapshot {
+                    Text(subtitle(snapshot)).font(.system(size: 13))
+                        .foregroundStyle(snapshot.securityCount > 0 ? Theme.warn : Theme.textMuted)
+                    if let stale = staleness(snapshot) {
+                        Text(stale).font(.system(size: 12)).foregroundStyle(Theme.warn)
+                    }
+                }
+            }
+            Spacer()
+            Button { model.load() } label: {
+                if model.loading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+            }
+            .help("Read the update list again")
+            .disabled(model.loading || model.working != nil)
+
+            Button("Refresh Lists") { model.request(.refresh) }
+                .help(safety.readOnly ? "Read-only mode is on" : "Run apt-get update on the server")
+                .disabled(busy)
+            Button("Install All") { model.request(.upgradeAll) }
+                .help(safety.readOnly ? "Read-only mode is on" : "Install every available update")
+                .disabled(busy || model.packages.isEmpty)
+            Button("Install Security Updates") { model.request(.upgrade(packages: model.securityNames)) }
+                .buttonStyle(.borderedProminent)
+                .help(safety.readOnly ? "Read-only mode is on"
+                      : model.canInstallSecurity || model.securityNames.isEmpty ? "Install only the security updates"
+                      : "Too many to list one by one; use Install All")
+                .disabled(busy || !model.canInstallSecurity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+    }
+
+    private func subtitle(_ s: UpdatesSnapshot) -> String {
+        if s.packages.isEmpty { return "Everything is up to date" }
+        let n = s.packages.count
+        let base = "\(n) update\(n == 1 ? "" : "s") available"
+        return s.securityCount > 0 ? "\(base), \(s.securityCount) security" : base
+    }
+
+    /// Updates are read from apt's local cache, so an old cache means the list may be missing newer updates.
+    private func staleness(_ s: UpdatesSnapshot) -> String? {
+        guard let t = s.refreshedAt else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(t))
+        let age = date.formatted(.relative(presentation: .named))
+        return Date().timeIntervalSince(date) > 3 * 86_400
+            ? "Package lists were refreshed \(age). Refresh them to see newer updates."
+            : nil
+    }
+
+    // MARK: summary + list
+
+    private func summary(_ s: UpdatesSnapshot) -> some View {
+        HStack(spacing: 14) {
+            SummaryTile(title: "Available", value: "\(s.packages.count)", tint: nil)
+            SummaryTile(title: "Security", value: "\(s.securityCount)", tint: s.securityCount > 0 ? Theme.warn : Theme.ok)
+            SummaryTile(title: "Held back", value: "\(s.held.count)", tint: nil)
+            SummaryTile(title: "Lists refreshed", value: s.refreshedAt.map {
+                Date(timeIntervalSince1970: TimeInterval($0)).formatted(.relative(presentation: .named))
+            } ?? "unknown", tint: nil, small: true)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var packageList: some View {
+        let shown = securityOnly ? model.packages.filter(\.isSecurity) : model.packages
+        if model.packages.isEmpty {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+                Text("No updates are waiting. This list comes from the server's last package refresh.")
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading).card()
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Packages").fontWeight(.semibold)
+                    Spacer()
+                    Picker("Show", selection: $securityOnly) {
+                        Text("All").tag(false)
+                        Text("Security").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 150)
+                }
+                .padding(14)
+                Divider().overlay(Theme.border)
+                ForEach(shown) { pkg in
+                    PackageRow(pkg: pkg)
+                    if pkg.id != shown.last?.id { Divider().overlay(Theme.border).padding(.leading, 14) }
+                }
+                if shown.isEmpty {
+                    Text("No security updates.").foregroundStyle(Theme.textMuted).padding(14)
+                }
+            }
+            .card()
+        }
+    }
+
+    private func held(_ names: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Held back").fontWeight(.semibold)
+            Text("These packages are pinned with apt-mark hold, so updates skip them: \(names.joined(separator: ", ")).")
+                .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+}
+
+private struct SummaryTile: View {
+    let title: String
+    let value: String
+    let tint: Color?
+    var small = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+            Text(value).font(.system(size: small ? 16 : 26, weight: .bold).monospacedDigit())
+                .foregroundStyle(tint ?? Theme.textPrimary).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
+    }
+}
+
+private struct PackageRow: View {
+    let pkg: PendingUpdate
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pkg.name).fontWeight(.medium).lineLimit(1)
+                Text(pkg.suite).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if pkg.isSecurity { Badge(text: "Security", color: Theme.warn) }
+            HStack(spacing: 6) {
+                if let old = pkg.oldVersion {
+                    Text(old).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(Theme.textMuted)
+                }
+                Text(pkg.newVersion).foregroundStyle(Theme.textPrimary)
+            }
+            .font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            .frame(maxWidth: 320, alignment: .trailing)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+    }
+}
+
+private struct WorkingBanner: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(text).fontWeight(.medium)
+                Text("This can take a few minutes. It keeps running on the server if you leave this screen.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+            }
+            Spacer()
+        }
+        .padding(12).background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct DoneBanner: View {
+    let output: String
+    let dismiss: () -> Void
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Done").fontWeight(.medium)
+                if !output.isEmpty {
+                    Text(output).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
+                        .textSelection(.enabled).lineLimit(5)
+                }
+            }
+            Spacer()
+            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 11)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Dismiss")
+        }
+        .padding(12).background(Theme.ok.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct RebootBanner: View {
+    var body: some View {
+        Label("A reboot is needed to finish applying earlier updates.", systemImage: "arrow.triangle.2.circlepath")
+            .foregroundStyle(Theme.warn)
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}

@@ -100,6 +100,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
+                    updates: updateBadge,
                     onSelect: { selection = .overview; model.select($0) },
                     onRemove: { terminals.closeAll(for: $0); model.remove($0) },
                     onAddServer: { showingAdd = true })
@@ -141,6 +142,13 @@ struct ContentView: View {
             closeTab: { if let tab = terminals.selectedTab(for: server) { terminals.close(tab, for: server) } })
     }
 
+    private var updateBadge: UpdateBadge? {
+        // RACKOON_DEMO_UPDATES=1 pretends there are updates (see UpdatesModel), so the dot can be seen.
+        if ProcessInfo.processInfo.environment["RACKOON_DEMO_UPDATES"] != nil { return UpdateBadge(total: 5, security: 2) }
+        guard let o = model.state.overview else { return nil }
+        return UpdateBadge(total: o.pendingUpdates, security: o.securityUpdates)
+    }
+
     private var pendingTrust: Binding<Bool> {
         Binding(
             get: { if case .needsTrust = model.phase { true } else { false } },
@@ -166,6 +174,8 @@ struct ContentView: View {
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
                 case .docker:
                     DockerScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
+                case .updates:
+                    UpdatesScreen(server: server).id(server.id)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:

@@ -44,6 +44,8 @@ public struct Overview: Sendable, Codable, Equatable {
     public var rebootRequired: Bool
     /// Names of containers whose health check is failing (empty if docker is absent).
     public var unhealthyContainers: [String]
+    /// Packages apt can upgrade (from apt's local cache; 0 if apt is absent).
+    public var pendingUpdates: Int
     /// Packages apt can upgrade from a security suite (0 if apt is absent).
     public var securityUpdates: Int
 
