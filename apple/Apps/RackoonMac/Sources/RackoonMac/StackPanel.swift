@@ -198,18 +198,22 @@ private struct FileEditorBody: View {
                        : "Checked on \(serverName) before anything is written.")
                 .font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(2)
             Spacer()
+            // The cursor modifier must sit inside `.disabled` (before it) to see that the button is off.
             Button("Revert") { editor.revert(file) }
+                .handCursor()
                 .disabled(!dirty || editor.saving)
             Button("Save") { editor.requestSave(file, redeploy: false) }
+                .handCursor()
                 .disabled(!editor.canSave(file)).help(blocked ?? "Save \(file.fileName) on the server")
             if !file.isEnv || true {
                 Button("Save and Redeploy") { editor.requestSave(file, redeploy: true) }
                     .buttonStyle(.borderedProminent)
+                    .handCursor()
                     .disabled(!editor.canRedeploy(file))
                     .help(blocked ?? "Save, then update the stack with docker compose up -d")
             }
         }
-        .buttonStyle(.bordered).controlSize(.large).handCursor()
+        .buttonStyle(.bordered).controlSize(.large)
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(Theme.sidebar)
         .overlay(alignment: .top) { Theme.border.frame(height: 1) }

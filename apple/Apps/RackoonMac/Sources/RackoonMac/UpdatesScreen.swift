@@ -59,24 +59,27 @@ struct UpdatesScreen: View {
                 if model.loading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
             }
             .help("Read the update list again")
+            .handCursor()
             .disabled(model.loading || model.working != nil)
 
             Button("Refresh Lists") { model.request(.refresh) }
                 .help(safety.readOnly ? "Read-only mode is on" : "Run apt-get update on the server")
+                .handCursor()
                 .disabled(busy)
             Button("Install All") { model.request(.upgradeAll) }
                 .help(safety.readOnly ? "Read-only mode is on" : "Install every available update")
+                .handCursor()
                 .disabled(busy || model.packages.isEmpty)
             Button("Install Security Updates") { model.request(.upgrade(packages: model.securityNames)) }
                 .buttonStyle(.borderedProminent)
                 .help(safety.readOnly ? "Read-only mode is on"
                       : model.canInstallSecurity || model.securityNames.isEmpty ? "Install only the security updates"
                       : "Too many to list one by one; use Install All")
+                .handCursor()
                 .disabled(busy || !model.canInstallSecurity)
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
-        .handCursor()
     }
 
     private func subtitle(_ s: UpdatesSnapshot) -> String {

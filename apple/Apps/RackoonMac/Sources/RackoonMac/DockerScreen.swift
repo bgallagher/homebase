@@ -271,20 +271,19 @@ private struct StackDetail: View {
         let working = busy.contains { id in stack.containers.contains { $0.id == id } } || model.composeWorking != nil
         HStack(spacing: 8) {
             if working { ProgressView().controlSize(.small) }
-            Button("Pull Images") { model.request(.pull, on: stack) }
-            Button("Rebuild") { model.request(.rebuild, on: stack) }
-            Button("Restart") { model.request(.restart, on: stack) }
+            Button("Pull Images") { model.request(.pull, on: stack) }.handCursor()
+            Button("Rebuild") { model.request(.rebuild, on: stack) }.handCursor()
+            Button("Restart") { model.request(.restart, on: stack) }.handCursor()
             Menu {
                 Button("Update") { model.request(.up, on: stack) }
                 Divider()
                 Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
             } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).handCursor()
         }
         .buttonStyle(.bordered).controlSize(.large)
         .disabled(reason != nil)
         .help(reason ?? "Actions for the whole \(stack.name) stack")
-        .handCursor()
     }
 
     // MARK: containers
