@@ -73,13 +73,13 @@
 - 45 themes (two of them Rackoon's own) that drive the whole app and its terminals, with Automatic following macOS light and dark.
 
 **Keyboard**
-- ⌘1–6 switch screens, ⌘[ / ⌘] switch servers (⌥⌘1–9 pick one), ⌘R refreshes the current screen (on Updates it re-reads the update list), ⇧⌘R toggles Read-only, ⌘N adds a container or bookmark, ⌘T / ⌘W open and close terminal tabs, ⇧⌘E renames a tab, ⇧⌘[ / ⇧⌘] move between tabs.
+- ⌘1–7 switch screens, ⌘[ / ⌘] switch servers (⌥⌘1–9 pick one), ⌘R refreshes the current screen (on Updates it re-reads the update list), ⇧⌘R toggles Read-only, ⌘N adds a container or bookmark, ⌘T / ⌘W open and close terminal tabs, ⇧⌘E renames a tab, ⇧⌘[ / ⇧⌘] move between tabs.
 
 ## Roadmap
 
 - Alerts and Security (shown as "Soon" in the sidebar), and bookmark links derived automatically from Traefik host rules or published ports.
 - Keychain-stored secrets and password logins (today: keys and ssh-agent).
-- Editing saved servers, stacks that exist only as files, notarized builds.
+- Editing saved servers, stacks that exist only as files, notarized builds, and in Files: dropping onto a folder row, sudo retries and resumable transfers.
 - iPhone, then Android, sharing the same spec (see below).
 
 ## Install
