@@ -44,7 +44,7 @@ final class AppearanceStore {
         var loaded: [TerminalTheme] = []
         var loadError: String?
         do {
-            guard let url = Bundle.module.url(forResource: "themes", withExtension: "json") else {
+            guard let url = AppResources.url(forResource: "themes", withExtension: "json") else {
                 throw ThemeCatalogError.invalid("themes.json is missing from the app bundle")
             }
             loaded = try ThemeCatalog.load(from: Data(contentsOf: url))

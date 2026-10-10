@@ -4,7 +4,7 @@ import SwiftUI
 /// The Rackoon mascot. Source of truth is assets/icon/rackoon-icon.svg; the bundled PNG is a 1024 px render of it.
 @MainActor
 enum AppIcon {
-    static let artwork: NSImage? = Bundle.module.url(forResource: "rackoon-icon", withExtension: "png")
+    static let artwork: NSImage? = AppResources.url(forResource: "rackoon-icon", withExtension: "png")
         .flatMap { NSImage(contentsOf: $0) }
 
     /// The artwork is a full-bleed square. The Dock expects the macOS shape: a rounded square inset on a
@@ -22,6 +22,8 @@ enum AppIcon {
 
     /// Dock icon for `swift run`, where there is no bundle icon.
     static func installDockIcon() {
+        // A built app already has its .icns; leave that alone.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") != nil { return }
         if let image = dockImage() { NSApp.applicationIconImage = image }
     }
 }

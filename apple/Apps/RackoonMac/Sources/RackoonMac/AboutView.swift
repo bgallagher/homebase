@@ -2,8 +2,12 @@ import SwiftUI
 
 struct AboutView: View {
     static let windowID = "about"
-    // No bundle yet, so there is no Info.plist version to read. Replace with the bundle version once there is an Xcode project.
-    static let version = "0.1 (development build)"
+    /// From Info.plist in a built app (tools/make-app); `swift run` has no bundle, so it says so.
+    static var version: String {
+        let info = Bundle.main.infoDictionary
+        guard let short = info?["CFBundleShortVersionString"] as? String else { return "development build" }
+        return (info?["CFBundleVersion"] as? String).map { "\(short) (\($0))" } ?? short
+    }
 
     var body: some View {
         VStack(spacing: 14) {

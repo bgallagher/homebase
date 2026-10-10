@@ -18,15 +18,19 @@ struct RackoonApp: App {
         Self.migrateLegacyDefaults()
     }
 
-    /// The app has no bundle id, so its defaults domain is the executable name: `HomebaseMac` became `RackoonMac`.
-    /// Copy the old keys once, before anything reads them.
+    /// Without a bundle the defaults domain is the executable name, with one it is the bundle id. Copy the keys
+    /// across once from the earlier domains (`HomebaseMac`, then `RackoonMac` under `swift run`), before anything reads them.
     private static func migrateLegacyDefaults() {
         let defaults = UserDefaults.standard
         guard defaults.object(forKey: "selectedServerID") == nil,
-              defaults.object(forKey: "appearanceSelection") == nil,
-              let old = defaults.persistentDomain(forName: "HomebaseMac") else { return }
-        for key in ["selectedServerID", "appearanceSelection", "terminalThemeID", "terminalHighlightOutput"] {
-            if let value = old[key] { defaults.set(value, forKey: key) }
+              defaults.object(forKey: "appearanceSelection") == nil else { return }
+        let own = Bundle.main.bundleIdentifier
+        for domain in ["RackoonMac", "HomebaseMac"] where domain != own {
+            guard let old = defaults.persistentDomain(forName: domain) else { continue }
+            for key in ["selectedServerID", "appearanceSelection", "terminalThemeID", "terminalHighlightOutput"] {
+                if let value = old[key] { defaults.set(value, forKey: key) }
+            }
+            return
         }
     }
 
