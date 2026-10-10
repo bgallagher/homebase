@@ -59,8 +59,8 @@ final class RebootFlow {
     init(server: Server) {
         // RACKOON_DEMO_REBOOT=1 swift run RackoonMac: pretend to reboot (nothing is sent to the server) and come back
         // after about 15 seconds, so the waiting banner can be seen without taking a real server down.
-        let transport: SSHTransport = ProcessInfo.processInfo.environment["RACKOON_DEMO_REBOOT"] != nil
-            ? DemoRebootTransport() : OpenSSHTransport(server: server)
+        let transport: SSHTransport = ProcessInfo.processInfo.environment["RACKOON_DEMO_REBOOT"] != nil || Demo.isOn
+            ? DemoRebootTransport() : makeTransport(for: server)
         session = RebootSession(transport: transport, policy: SafetyStore.shared.policy)
     }
 
@@ -107,7 +107,7 @@ final class AppModel {
 
     var selected: Server? { servers.first { $0.id == selectedID } }
 
-    init(store: ServerStore = .defaultStore()) {
+    init(store: ServerStore = Demo.isOn ? Demo.store() : .defaultStore()) {
         self.store = store
         servers = store.loadServers()
         let last = UserDefaults.standard.string(forKey: "selectedServerID")
@@ -131,7 +131,7 @@ final class AppModel {
     func select(_ server: Server) {
         guard server.id != selectedID else { return }
         selectedID = server.id
-        UserDefaults.standard.set(server.id, forKey: "selectedServerID")
+        if !Demo.isOn { UserDefaults.standard.set(server.id, forKey: "selectedServerID") }
         connect(server)
     }
 
@@ -212,7 +212,7 @@ final class AppModel {
         phase = .checkingHostKey
         connecting = Task { [weak self] in
             guard let self else { return }
-            let status = await verifier.check(server)
+            let status: HostKeyStatus = Demo.isOn ? .trusted : await verifier.check(server)
             if Task.isCancelled { return }
             switch status {
             case .trusted:
@@ -234,7 +234,7 @@ final class AppModel {
         let store = store, id = server.id
         let cached = state.overview.flatMap { o in state.updatedAt.map { (overview: o, savedAt: $0) } }
         let session = ServerSession(
-            transport: OpenSSHTransport(server: server),
+            transport: makeTransport(for: server),
             cached: cached,
             onSnapshot: { overview in try? store.saveSnapshot(overview, serverID: id) })
         self.session = session

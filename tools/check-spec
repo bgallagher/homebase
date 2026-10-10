@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the shared spec: JSON parses, every command has fixtures, every fixture has expected output."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -45,6 +46,35 @@ for c in commands:
 for d in (spec / "fixtures").iterdir():
     if d.is_dir() and d.name not in ids:
         errors.append(f"fixtures/{d.name}: no matching command in commands.json")
+
+# Command library (the Commands tab): shape, unique ids, known groups, every mutating entry has a dry-run preview.
+library = load("command-library.json")
+lib_groups = library.get("groups", [])
+lib_ids = []
+for c in library.get("commands", []):
+    cid = c.get("id", "?")
+    lib_ids.append(cid)
+    for key in ("id", "title", "group", "summary", "script", "risk"):
+        if not c.get(key):
+            errors.append(f"command-library.json: {cid} missing '{key}'")
+    if c.get("group") not in lib_groups:
+        errors.append(f"command-library.json: {cid} has unknown group {c.get('group')!r}")
+    if c.get("risk") not in ("read", "mutate"):
+        errors.append(f"command-library.json: {cid} risk must be read or mutate")
+    if c.get("risk") == "mutate" and not c.get("preview"):
+        errors.append(f"command-library.json: {cid} changes the server, so it needs a read-only 'preview'")
+    if c.get("risk") == "read" and (c.get("preview") or c.get("warning")):
+        errors.append(f"command-library.json: {cid} is read-only, so it has no preview or warning")
+    if c.get("root") and "$S" not in c.get("script", ""):
+        errors.append(f"command-library.json: {cid} is marked root but its script never uses $S")
+    used = set(re.findall(r"\{([a-z]+)\}", c.get("script", ""))) - {"Names", "Status", "Image"}
+    declared = {p.get("id") for p in c.get("params", [])}
+    if used != declared:
+        errors.append(f"command-library.json: {cid} placeholders {sorted(used)} do not match params {sorted(declared)}")
+    if c.get("needs") and not re.fullmatch(r"[a-z0-9-]+", c["needs"]):
+        errors.append(f"command-library.json: {cid} has an unsafe 'needs' value")
+if len(lib_ids) != len(set(lib_ids)):
+    errors.append("command-library.json: duplicate ids")
 
 # Terminal themes (app resource, same rules as ThemeCatalog.validate in Swift)
 import re

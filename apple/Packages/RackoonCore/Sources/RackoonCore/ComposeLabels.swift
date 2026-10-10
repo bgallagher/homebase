@@ -49,8 +49,13 @@ public enum ComposeLabels {
         if !rest.trimmingCharacters(in: .whitespaces).isEmpty { throw ComposeLabelsError.flowLabels(name) }
 
         // The labels block: lines deeper than the `labels:` key.
+        // YAML also allows the list's dashes at the key's own indent, so a line at that indent still belongs to the block
+        // while it starts with `-`.
         var blockEnd = end
-        for i in labelsLine + 1..<end where isContent(lines[i]) && indent(lines[i]) <= keyIndent { blockEnd = i; break }
+        for i in labelsLine + 1..<end where isContent(lines[i]) {
+            let d = indent(lines[i])
+            if d < keyIndent || (d == keyIndent && !trimmed(lines[i]).hasPrefix("-")) { blockEnd = i; break }
+        }
         let items = (labelsLine + 1..<blockEnd).filter { isContent(lines[$0]) }
         let isList = items.first.map { trimmed(lines[$0]).hasPrefix("- ") || trimmed(lines[$0]) == "-" } ?? true
         let itemIndent = items.first.map { indent(lines[$0]) } ?? keyIndent + unit

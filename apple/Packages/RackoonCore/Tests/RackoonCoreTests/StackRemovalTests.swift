@@ -27,8 +27,10 @@ final class StackRemovalTests: XCTestCase {
         XCTAssertEqual(StackRemoval().command(for: stack()), base)
         XCTAssertEqual(StackRemoval(removeVolumes: true).command(for: stack()), base + " -v")
         let folder = StackRemoval(deleteFolder: true).command(for: stack()) ?? ""
-        XCTAssertTrue(folder.hasPrefix(base + " && cd / && [ -f '/opt/stacks/media/compose.yaml' ] && [ \"$(readlink -f -- '/opt/stacks/media')\" = '/opt/stacks/media' ]"), folder)
-        XCTAssertTrue(folder.contains("case \"$(readlink -f -- '/opt/stacks/media/compose.yaml')\" in '/opt/stacks/media'/*) ;; *) false;; esac"), folder)
+        XCTAssertTrue(folder.hasPrefix(base + " && cd / && { [ -f '/opt/stacks/media/compose.yaml' ] || {"), folder)
+        XCTAssertTrue(folder.contains("[ ! -L '/opt/stacks/media' ] || {"), folder)
+        XCTAssertTrue(folder.contains("R=$(readlink -f -- '/opt/stacks/media')"), folder)
+        XCTAssertTrue(folder.contains("case \"$(readlink -f -- '/opt/stacks/media/compose.yaml')\" in \"$R\"/*) true;;"), folder)
         XCTAssertTrue(folder.contains("rm -rf -- '/opt/stacks/media' || { [ \"$(id -u)\" -ne 0 ] && sudo -n rm -rf -- '/opt/stacks/media'; }"), folder)
         XCTAssertEqual(StackRemoval(removeVolumes: true, deleteFolder: true).intent(for: stack())?.summary, "Delete stack media and its folder")
         XCTAssertEqual(StackRemoval().intent(for: stack())?.risk, .mutate)
@@ -71,7 +73,9 @@ final class StackRemovalTests: XCTestCase {
 
     // MARK: the real command under /bin/sh with a stub `docker`
 
-    private func run(_ removal: StackRemoval, dir: URL, dockerExit: Int32) throws -> Int32 {
+    private func run(_ removal: StackRemoval, dir: URL, dockerExit: Int32) throws -> Int32 { try runCapturing(removal, dir: dir, dockerExit: dockerExit).code }
+
+    private func runCapturing(_ removal: StackRemoval, dir: URL, dockerExit: Int32) throws -> (code: Int32, out: String) {
         let bin = dir.deletingLastPathComponent().appendingPathComponent("bin-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: bin) }
@@ -83,8 +87,10 @@ final class StackRemovalTests: XCTestCase {
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", try XCTUnwrap(removal.command(for: s))]
         p.environment = ["PATH": bin.path + ":/usr/bin:/bin"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
         try p.run(); p.waitUntilExit()
-        return p.terminationStatus
+        return (p.terminationStatus, String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
     }
 
     func testFolderIsDeletedOnlyAfterDownSucceedsAndOnlyWithItsComposeFile() throws {
@@ -136,5 +142,51 @@ final class StackRemovalTests: XCTestCase {
         try fm.createSymbolicLink(at: real.appendingPathComponent("compose.yaml"), withDestinationURL: precious.appendingPathComponent("compose.yaml"))
         XCTAssertNotEqual(try run(StackRemoval(deleteFolder: true), dir: real, dockerExit: 0), 0)
         XCTAssertTrue(fm.fileExists(atPath: real.appendingPathComponent("data").path))
+    }
+
+    func testASymlinkedParentFolderIsFineAndGuardFailuresSaySo() throws {
+        let fm = FileManager.default
+        let root = realTemporaryDirectory().appendingPathComponent("rk-del-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        // /opt-style layout: <root>/link is a symlink to <root>/real, and the stack is addressed through the link.
+        let real = root.appendingPathComponent("real/stacks/app")
+        try fm.createDirectory(at: real.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try "services: {}".write(to: real.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        let viaLink = root.appendingPathComponent("link/stacks/app")
+        let ok = try runCapturing(StackRemoval(deleteFolder: true), dir: viaLink, dockerExit: 0)
+        XCTAssertEqual(ok.code, 0, ok.out)
+        XCTAssertFalse(fm.fileExists(atPath: real.path), "deleted through the symlinked parent")
+        XCTAssertTrue(fm.fileExists(atPath: real.deletingLastPathComponent().path), "the parent is untouched")
+
+        // A guard that fails says why instead of exiting silently, and deletes nothing.
+        let bare = root.appendingPathComponent("real/stacks/bare")
+        try fm.createDirectory(at: bare, withIntermediateDirectories: true)
+        let missing = try runCapturing(StackRemoval(deleteFolder: true), dir: bare, dockerExit: 0)
+        XCTAssertEqual(missing.code, 6)
+        XCTAssertTrue(missing.out.contains("its compose file is missing"), missing.out)
+        XCTAssertTrue(fm.fileExists(atPath: bare.path))
+
+        // The folder itself being a symlink is reported as that, not as a file problem.
+        let target = root.appendingPathComponent("real/stacks/target")
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        try "services: {}".write(to: target.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        let linked = root.appendingPathComponent("real/stacks/linked")
+        try fm.createSymbolicLink(at: linked, withDestinationURL: target)
+        let symlink = try runCapturing(StackRemoval(deleteFolder: true), dir: linked, dockerExit: 0)
+        XCTAssertEqual(symlink.code, 6)
+        XCTAssertTrue(symlink.out.contains("it is a symbolic link"), symlink.out)
+        XCTAssertTrue(fm.fileExists(atPath: target.appendingPathComponent("compose.yaml").path))
+
+        // A compose file that really lives elsewhere is reported as that.
+        let outside = root.appendingPathComponent("real/stacks/outside")
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        let elsewhere = root.appendingPathComponent("elsewhere.yaml")
+        try "services: {}".write(to: elsewhere, atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(at: outside.appendingPathComponent("compose.yaml"), withDestinationURL: elsewhere)
+        let notInside = try runCapturing(StackRemoval(deleteFolder: true), dir: outside, dockerExit: 0)
+        XCTAssertEqual(notInside.code, 6)
+        XCTAssertTrue(notInside.out.contains("not inside it"), notInside.out)
+        XCTAssertTrue(fm.fileExists(atPath: elsewhere.path))
     }
 }

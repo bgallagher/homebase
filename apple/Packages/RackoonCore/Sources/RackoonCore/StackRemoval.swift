@@ -19,10 +19,12 @@ public struct StackRemoval: Sendable, Equatable {
 
     /// Equals the script in spec/commands.json (`compose_down`); a test enforces it.
     static let template = "cd {dir} && docker compose -p {project} {files} down --remove-orphans{volumes}{folder}"
-    /// After `down` succeeded: leave `/`, require the stack's compose file to exist and to really live inside the folder (so
-    /// a symlink can't point the delete somewhere else), require the folder itself not to be a symlink, then remove it, with
-    /// `sudo -n` as a second try for files a container created as root. If that fails too, say so (the containers are gone).
-    static let folderStep = #" && cd / && [ -f {file} ] && [ "$(readlink -f -- {dir})" = {dir} ] && case "$(readlink -f -- {file})" in {dir}/*) ;; *) false;; esac && { rm -rf -- {dir} || { [ "$(id -u)" -ne 0 ] && sudo -n rm -rf -- {dir}; } || { echo 'The containers are removed, but the folder could not be deleted (permissions).'; exit 6; }; }"#
+    /// After `down` succeeded: leave `/`, then check, each guard with its own message (the containers are gone by then, so
+    /// silence or a wrong reason would be confusing): the stack's compose file exists; the folder itself is not a symlink;
+    /// the compose file's real path lies inside the folder's real path (so a symlink can't redirect the delete, while a
+    /// symlinked PARENT such as /opt -> /mnt/data/opt is fine and deletes through it). Then remove the folder, with
+    /// `sudo -n` as a second try for files a container created as root.
+    static let folderStep = #" && cd / && { [ -f {file} ] || { echo 'The containers are removed, but the folder was left alone: its compose file is missing.'; exit 6; }; } && { [ ! -L {dir} ] || { echo 'The containers are removed, but the folder was left alone: it is a symbolic link.'; exit 6; }; } && R=$(readlink -f -- {dir}) && { case "$(readlink -f -- {file})" in "$R"/*) true;; *) echo 'The containers are removed, but the folder was left alone: its compose file is not inside it.'; exit 6;; esac; } && { rm -rf -- {dir} || { [ "$(id -u)" -ne 0 ] && sudo -n rm -rf -- {dir}; } || { echo 'The containers are removed, but the folder could not be deleted (permissions).'; exit 6; }; }"#
     public static let timeout: TimeInterval = 600
 
     /// True when anything beyond the containers and networks is removed, which is when the UI asks for the name.

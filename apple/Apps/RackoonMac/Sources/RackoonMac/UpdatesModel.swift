@@ -23,7 +23,7 @@ final class UpdatesModel {
         // RACKOON_DEMO_UPDATES=1 swift run RackoonMac: pretend the server has pending updates (nothing is sent to it),
         // so the screen can be seen and worked on when the real server is fully up to date.
         let transport: SSHTransport = ProcessInfo.processInfo.environment["RACKOON_DEMO_UPDATES"] != nil
-            ? DemoUpdatesTransport() : OpenSSHTransport(server: server)
+            ? DemoUpdatesTransport() : makeTransport(for: server)
         session = UpdatesSession(transport: transport, policy: SafetyStore.shared.policy)
     }
 
@@ -95,7 +95,7 @@ final class UpdatesModel {
 }
 
 /// Canned answers for the Updates screen. Never talks to a server.
-private struct DemoUpdatesTransport: SSHTransport {
+struct DemoUpdatesTransport: SSHTransport {
     func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult {
         if command == UpdatesSession.command {
             return CommandResult(stdout: """
@@ -111,7 +111,7 @@ private struct DemoUpdatesTransport: SSHTransport {
             ##held
             docker-ce
             ##refreshed
-            1735689600
+            \(Int(Date().timeIntervalSince1970) - 3 * 3600)
             ##reboot
             yes
             """)

@@ -9,7 +9,7 @@ final class StackRemovalLabelsTests: XCTestCase {
         let stack = try XCTUnwrap(DockerParser.parse("##docker\nok\n##ps\n\(row)\n##stats\n").stacks.first)
         XCTAssertNil(StackRemoval.folderProblem(for: stack))
         let command = try XCTUnwrap(StackRemoval(deleteFolder: true).command(for: stack))
-        XCTAssertTrue(command.hasPrefix("cd '/opt/stacks/hello' && docker compose -p hello -f '/opt/stacks/hello/compose.yaml' down --remove-orphans && cd / && [ -f '/opt/stacks/hello/compose.yaml' ]"), command)
+        XCTAssertTrue(command.hasPrefix("cd '/opt/stacks/hello' && docker compose -p hello -f '/opt/stacks/hello/compose.yaml' down --remove-orphans && cd / && { [ -f '/opt/stacks/hello/compose.yaml' ] || {"), command)
         XCTAssertTrue(command.contains("rm -rf -- '/opt/stacks/hello'"), command)
     }
 }

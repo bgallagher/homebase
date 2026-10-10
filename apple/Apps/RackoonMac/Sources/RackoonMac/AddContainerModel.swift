@@ -59,7 +59,7 @@ final class AddContainerModel {
 
     /// No side effects here: SwiftUI may construct this more than once. `start()` begins the checks.
     init(server: Server, folder: String) {
-        let transport = OpenSSHTransport(server: server)
+        let transport = makeTransport(for: server)
         self.transport = transport
         policy = SafetyStore.shared.policy
         serverName = server.name

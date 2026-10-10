@@ -153,6 +153,42 @@ if args.count > 2, args[2] == "file-test" {
     print(failures == 0 ? "file-test: all passed" : "file-test: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "library-check" {
+    // Runs every READ entry of the Commands library through the real streaming path, and only the dry-run PREVIEW of the
+    // maintenance ones. The commands that change the server (prune, clean, restart) are never run by the probe.
+    final class Sink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text = ""
+        func add(_ e: ActionStreamEvent) { if case .output(let t) = e { lock.withLock { text += t } } }
+        var output: String { lock.withLock { text } }
+    }
+    let session = CommandLibrarySession(transport: transport, policy: ActionPolicy())
+    // Parameters: a real container name, and a host that is not ours to probe for the certificate check.
+    let containers = ((try? await transport.run("docker ps --format '{{.Names}}' 2>/dev/null | head -1", timeout: 15))?.stdout ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let values = ["container": containers.isEmpty ? "none" : containers, "host": "example.com"]
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+    for command in CommandLibrary.all {
+        if command.interactive { print("SKIP \(command.id) (interactive: opens in a terminal tab)"); continue }
+        if command.isMutating {
+            let preview = await session.preview(for: command, params: values)
+            check(!preview.contains("Could not read"), "preview of \(command.id): \(preview.split(separator: "\n").first.map(String.init) ?? "(empty)")")
+            continue
+        }
+        guard let intent = session.intent(for: command, params: values) else { check(false, "\(command.id): could not build the command"); continue }
+        let sink = Sink()
+        let t0 = Date()
+        let run = await StreamRunner.run(transport: transport, command: intent.command, cols: 100, rows: 24, onEvent: { sink.add($0) })
+        let plain = ANSI.strip(sink.output).trimmingCharacters(in: .whitespacesAndNewlines)
+        let first = plain.split(separator: "\n").first.map { String($0.prefix(70)) } ?? "(no output)"
+        // `grep` finding nothing exits 1 in a few entries on purpose; what matters is a result, no marker leak and no stray error text.
+        check(run.exitCode != nil && !sink.output.contains("##rackoon-exit"),
+              "\(command.id) exit \(run.exitCode.map(String.init) ?? "none") \(String(format: "%.1f", Date().timeIntervalSince(t0)))s: \(first)")
+    }
+    print(failures == 0 ? "library-check: all passed" : "library-check: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "newstack-test" {
     // Exercises the REAL new-stack check and create scripts under one throwaway folder in /tmp, and removes it.
     let project = "rackoon-probe-newstack"

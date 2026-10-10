@@ -11,6 +11,8 @@ struct BookmarksScreen: View {
     let openStack: (String) -> Void
     @State private var editing: BookmarkModel?
     @State private var removing: BookmarkModel?
+    /// Why a remove couldn't even start (the stack is busy, read-only...). Failures after that are on `removing.notice`.
+    @State private var message: String?
 
     private var model: DockerModel { workspace.model(for: server) }
 
@@ -21,6 +23,7 @@ struct BookmarksScreen: View {
                 header(count: items.count)
                 if let error = model.state.error { ErrorBanner(message: error) }
                 if let error = model.state.actionError { ErrorBanner(message: error) }
+                if let error = message ?? removing?.notice { ErrorBanner(message: error) }
                 if model.state.snapshot == nil, model.state.error == nil {
                     HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading containers…") }.foregroundStyle(Theme.textMuted)
                 } else if items.isEmpty {
@@ -46,6 +49,8 @@ struct BookmarksScreen: View {
         .foregroundStyle(Theme.textPrimary)
         .onAppear { model.attach() }
         .onDisappear { model.detach() }
+        // A "Read-only mode is on" banner must not outlive the switch that caused it.
+        .onChange(of: SafetyStore.shared.readOnly) { _, _ in message = nil }
         // Fetch the icon of any bookmarked site that has none yet (and re-check when a bookmark's address changes).
         .onChange(of: items.map(\.bookmark.href), initial: true) { _, hrefs in FaviconStore.shared.ensure(hrefs) }
         .sheet(item: $editing) { draft in BookmarkSheet(model: draft, cancel: { editing = nil }) }
@@ -140,14 +145,20 @@ struct BookmarksScreen: View {
     }
 
     private func edit(_ item: BookmarkItem) {
+        message = nil
+        removing = nil
         let draft = BookmarkModel(server: server, choices: model.bookmarkableStacks, groups: model.bookmarkGroups,
                                   stack: item.stack, service: item.container.service)
         attach(draft)
         editing = draft
     }
 
-    /// Removing asks for the same confirmation (the compose diff) without the form.
+    /// Removing asks for the same confirmation (the compose diff) without the form. Problems show in a banner on this screen.
     private func remove(_ item: BookmarkItem) {
+        message = nil
+        removing = nil
+        if SafetyStore.shared.readOnly { message = "Read-only mode is on"; return }
+        if let reason = model.composeBlockedReason(for: item.stack) { message = reason; return }
         let draft = BookmarkModel(server: server, choices: [], groups: [], stack: item.stack, service: item.container.service)
         attach(draft)
         removing = draft

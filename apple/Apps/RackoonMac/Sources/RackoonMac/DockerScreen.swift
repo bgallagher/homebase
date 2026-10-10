@@ -19,6 +19,26 @@ final class DockerWorkspace {
     /// Not observed: it is created on first use, possibly while a view is being built.
     @ObservationIgnored private var models: [String: DockerModel] = [:]
 
+    /// A server was removed: stop its polling and drop everything held for it.
+    func forget(serverID: String) {
+        models[serverID]?.stop()
+        models[serverID] = nil
+        commands[serverID]?.cancelOutput()
+        commands[serverID] = nil
+        openStack[serverID] = nil
+        drafts[serverID] = nil
+    }
+
+    /// One Commands-tab model per server (its output and history survive switching screens).
+    @ObservationIgnored private var commands: [String: CommandsModel] = [:]
+
+    func commandsModel(for server: Server) -> CommandsModel {
+        if let existing = commands[server.id] { return existing }
+        let model = CommandsModel(server: server)
+        commands[server.id] = model
+        return model
+    }
+
     func model(for server: Server) -> DockerModel {
         if let existing = models[server.id] { return existing }
         let model = DockerModel(server: server)

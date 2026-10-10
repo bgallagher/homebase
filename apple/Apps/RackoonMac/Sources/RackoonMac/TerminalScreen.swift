@@ -103,6 +103,8 @@ private struct TabButton: View {
                 Text(tab.title).font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
                     .help(selected ? "Click to rename" : "")
+                    // Only the name starts a rename (on the selected tab); the rest of the tab just selects.
+                    .onTapGesture { if selected && !editing { beginEditing() } else if !selected { select() } }
             }
             Button(action: close) {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
@@ -116,8 +118,8 @@ private struct TabButton: View {
         .foregroundStyle(selected ? Theme.textPrimary : Theme.textMuted)
         .background(selected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
         .contentShape(Rectangle())
-        // Click selects; clicking the name of the tab that is already selected (so, a second click on any tab) renames it.
-        .onTapGesture { if selected && !editing { beginEditing() } else if !selected { select() } }
+        // A click anywhere on an unselected tab selects it.
+        .onTapGesture { if !selected { select() } }
         .contextMenu {
             Button("Rename Tab…") { select(); beginEditing() }
             Button("Close Tab", action: close)

@@ -46,7 +46,7 @@ final class StackEditorModel {
         self.serverName = server.name
         self.redeploy = redeploy
         files = StackFiles.editable(for: stack) ?? []
-        session = StackFileSession(transport: OpenSSHTransport(server: server), policy: SafetyStore.shared.policy, stack: stack)
+        session = StackFileSession(transport: makeTransport(for: server), policy: SafetyStore.shared.policy, stack: stack)
     }
 
     // MARK: reading

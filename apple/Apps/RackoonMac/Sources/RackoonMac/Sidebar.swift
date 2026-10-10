@@ -12,8 +12,8 @@ enum Screen: String, CaseIterable, Identifiable {
         case .docker: "Docker"
         case .updates: "Updates"
         case .bookmarks: "Bookmarks"
-        case .terminal: "Terminal"
-        case .command: "Command"
+        case .terminal: "Terminals"
+        case .command: "Commands"
         case .alerts: "Alerts"
         case .security: "Security"
         }

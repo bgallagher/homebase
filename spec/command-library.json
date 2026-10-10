@@ -1,0 +1,371 @@
+{
+  "commands" : [
+    {
+      "group" : "Disk",
+      "id" : "disk_usage",
+      "risk" : "read",
+      "script" : "df -hT -x tmpfs -x devtmpfs -x squashfs -x overlay; echo; echo 'Inodes:'; df -i -x tmpfs -x devtmpfs -x squashfs -x overlay",
+      "summary" : "Space and inodes on every real disk.",
+      "title" : "Disk usage"
+    },
+    {
+      "group" : "Disk",
+      "id" : "biggest_folders",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S du -xh --max-depth=1 / 2>&1 | grep -v 'Permission denied' | sort -rh | head -15",
+      "summary" : "The 15 largest top-level folders on /. Can take a minute.",
+      "title" : "Biggest folders"
+    },
+    {
+      "group" : "Disk",
+      "id" : "docker_disk",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker system df",
+      "summary" : "Images, containers, volumes and build cache, and what is reclaimable.",
+      "title" : "Docker disk use"
+    },
+    {
+      "group" : "Disk",
+      "id" : "journal_size",
+      "risk" : "read",
+      "script" : "journalctl --disk-usage",
+      "summary" : "How much space the system journal uses.",
+      "title" : "Journal size"
+    },
+    {
+      "group" : "Performance",
+      "id" : "top_cpu",
+      "risk" : "read",
+      "script" : "ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu | head -16",
+      "summary" : "The 15 busiest processes right now.",
+      "title" : "Top processes by CPU"
+    },
+    {
+      "group" : "Performance",
+      "id" : "top_memory",
+      "risk" : "read",
+      "script" : "ps -eo pid,user,%cpu,%mem,rss,comm --sort=-%mem | head -16",
+      "summary" : "The 15 processes using the most memory.",
+      "title" : "Top processes by memory"
+    },
+    {
+      "group" : "Performance",
+      "id" : "memory",
+      "risk" : "read",
+      "script" : "free -h; echo; echo 'Swap devices:'; swapon --show 2>/dev/null || echo none",
+      "summary" : "Used, free and cached memory, and swap.",
+      "title" : "Memory and swap"
+    },
+    {
+      "group" : "Performance",
+      "id" : "load",
+      "risk" : "read",
+      "script" : "uptime; echo; echo \"cores: $(nproc)\"",
+      "summary" : "Load averages next to the number of cores.",
+      "title" : "Load and uptime"
+    },
+    {
+      "group" : "Performance",
+      "id" : "container_stats",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker stats --no-stream",
+      "summary" : "CPU, memory and network per running container, one reading.",
+      "title" : "Container resource use"
+    },
+    {
+      "group" : "Performance",
+      "id" : "live_top",
+      "interactive" : true,
+      "risk" : "read",
+      "script" : "top",
+      "summary" : "Opens top in a terminal tab.",
+      "title" : "Live processes (top)"
+    },
+    {
+      "group" : "Docker",
+      "id" : "containers_all",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker ps -a --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'",
+      "summary" : "Every container with its status and image.",
+      "title" : "All containers"
+    },
+    {
+      "group" : "Docker",
+      "id" : "containers_problems",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker ps -a --filter status=exited --filter status=restarting --filter status=dead --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'; echo; echo 'Unhealthy:'; docker ps --filter health=unhealthy --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'",
+      "summary" : "Containers that are not running as they should.",
+      "title" : "Stopped, restarting or unhealthy"
+    },
+    {
+      "group" : "Docker",
+      "id" : "restart_counts",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker ps -a --format '{{.Names}}' | while read -r n; do printf '%s: ' \"$n\"; docker inspect -f '{{.RestartCount}} restarts ({{.State.Status}})' \"$n\"; done",
+      "summary" : "How many times each container has restarted.",
+      "title" : "Restart counts"
+    },
+    {
+      "group" : "Docker",
+      "id" : "container_logs",
+      "needs" : "docker",
+      "params" : [
+        {
+          "id" : "container",
+          "kind" : "container",
+          "label" : "Container",
+          "placeholder" : "container name"
+        }
+      ],
+      "risk" : "read",
+      "script" : "docker logs --tail 200 {container} 2>&1",
+      "summary" : "The tail of one container's log.",
+      "title" : "Container logs (last 200 lines)"
+    },
+    {
+      "group" : "Docker",
+      "id" : "images",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker images --format 'table {{.Repository}}\\t{{.Tag}}\\t{{.Size}}\\t{{.CreatedSince}}'; echo; echo \"Dangling images: $(docker images -f dangling=true -q | wc -l)\"",
+      "summary" : "Local images with their size, and how many are dangling.",
+      "title" : "Images"
+    },
+    {
+      "group" : "Docker",
+      "id" : "volumes",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker volume ls",
+      "summary" : "Docker volumes on this server.",
+      "title" : "Volumes"
+    },
+    {
+      "group" : "Docker",
+      "id" : "docker_events",
+      "needs" : "docker",
+      "risk" : "read",
+      "script" : "docker events --since 1h --until \"$(date +%s)\" 2>&1 | tail -50",
+      "summary" : "What Docker did in the last hour (starts, stops, dies).",
+      "title" : "Recent Docker events"
+    },
+    {
+      "group" : "Network",
+      "id" : "listening_ports",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S ss -tulpn",
+      "summary" : "What is listening, and which process owns it.",
+      "title" : "Listening ports"
+    },
+    {
+      "group" : "Network",
+      "id" : "addresses",
+      "risk" : "read",
+      "script" : "ip -br addr; echo; ip route | head -5",
+      "summary" : "Interfaces with their addresses, and the default routes.",
+      "title" : "Addresses and routes"
+    },
+    {
+      "group" : "Network",
+      "id" : "tailscale_status",
+      "needs" : "tailscale",
+      "risk" : "read",
+      "script" : "tailscale status",
+      "summary" : "This node and its peers.",
+      "title" : "Tailscale status"
+    },
+    {
+      "group" : "Network",
+      "id" : "public_ip",
+      "needs" : "curl",
+      "risk" : "read",
+      "script" : "curl -s --max-time 5 https://ifconfig.me || curl -s --max-time 5 https://icanhazip.com; echo",
+      "summary" : "The address the internet sees for this server.",
+      "title" : "Public IP"
+    },
+    {
+      "group" : "Network",
+      "id" : "dns_check",
+      "risk" : "read",
+      "script" : "cat /etc/resolv.conf; echo; for h in github.com cloudflare.com; do printf '%s -> ' \"$h\"; getent hosts \"$h\" | head -1 || echo FAILED; done",
+      "summary" : "Resolver settings, and whether names resolve.",
+      "title" : "DNS check"
+    },
+    {
+      "group" : "Network",
+      "id" : "cert_expiry",
+      "needs" : "openssl",
+      "params" : [
+        {
+          "id" : "host",
+          "kind" : "hostname",
+          "label" : "Host",
+          "placeholder" : "app.example.com"
+        }
+      ],
+      "risk" : "read",
+      "script" : "echo | openssl s_client -servername {host} -connect {host}:443 2>/dev/null | openssl x509 -noout -subject -issuer -dates",
+      "summary" : "Who issued a site's certificate and when it expires.",
+      "title" : "Certificate expiry"
+    },
+    {
+      "group" : "Logs and system",
+      "id" : "recent_errors",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S journalctl -p err -b -n 100 --no-pager",
+      "summary" : "Error-level messages from this boot, newest last.",
+      "title" : "Recent errors"
+    },
+    {
+      "group" : "Logs and system",
+      "id" : "failed_services",
+      "risk" : "read",
+      "script" : "systemctl --failed --no-pager",
+      "summary" : "systemd units that are in a failed state.",
+      "title" : "Failed services"
+    },
+    {
+      "group" : "Logs and system",
+      "id" : "kernel_messages",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S dmesg --ctime 2>&1 | tail -50",
+      "summary" : "The last 50 kernel log lines.",
+      "title" : "Kernel messages"
+    },
+    {
+      "group" : "Logs and system",
+      "id" : "logins",
+      "risk" : "read",
+      "script" : "w; echo; last -n 10 -a",
+      "summary" : "Current sessions and the last 10 logins.",
+      "title" : "Who is logged in, and recent logins"
+    },
+    {
+      "group" : "Logs and system",
+      "id" : "follow_journal",
+      "interactive" : true,
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S journalctl -f",
+      "summary" : "Opens journalctl -f in a terminal tab.",
+      "title" : "Follow the system log"
+    },
+    {
+      "group" : "Security",
+      "id" : "fail2ban",
+      "needs" : "fail2ban-client",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S fail2ban-client status; echo; $S fail2ban-client status sshd 2>/dev/null",
+      "summary" : "Jails, and who is banned in the SSH jail.",
+      "title" : "Fail2ban status"
+    },
+    {
+      "group" : "Security",
+      "id" : "firewall",
+      "needs" : "ufw",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S ufw status verbose",
+      "summary" : "ufw rules, if ufw is installed.",
+      "title" : "Firewall status"
+    },
+    {
+      "group" : "Security",
+      "id" : "failed_ssh",
+      "risk" : "read",
+      "root" : true,
+      "script" : "$S journalctl -u ssh -u sshd --since '24 hours ago' --no-pager 2>&1 | grep -iE 'Failed password|Invalid user|sudo:|not allowed|permission' | tail -30; echo; echo '(last 24 hours; nothing above means none)'",
+      "summary" : "Rejected passwords and unknown users in the last day.",
+      "title" : "Failed SSH logins (24 h)"
+    },
+    {
+      "group" : "Security",
+      "id" : "security_updates",
+      "risk" : "read",
+      "script" : "apt list --upgradable 2>/dev/null | grep -i security || echo 'No pending security updates in this server'\\''s package lists.'",
+      "summary" : "From the package lists already on the server.",
+      "title" : "Pending security updates"
+    },
+    {
+      "group" : "Security",
+      "id" : "autoremove_preview",
+      "risk" : "read",
+      "script" : "apt-get -s autoremove | grep -E '^Remv|to remove|^[0-9]+ upgraded'",
+      "summary" : "What apt autoremove would remove (a simulation; nothing is removed).",
+      "title" : "Unused packages"
+    },
+    {
+      "group" : "Maintenance",
+      "id" : "docker_prune",
+      "needs" : "docker",
+      "preview" : "docker ps -a --filter status=exited --filter status=dead --filter status=created --format 'Stopped container: {{.Names}}'; docker network ls --format '{{.ID}} {{.Name}}' | while read -r id name; do case \"$name\" in bridge|host|none) continue;; esac; [ \"$(docker network inspect -f '{{len .Containers}}' \"$id\")\" = 0 ] && echo \"Unused network: $name\"; done; docker images -f dangling=true --format 'Dangling image: {{.ID}} ({{.Size}})'; echo; echo 'Build cache and totals:'; docker system df",
+      "risk" : "mutate",
+      "script" : "docker system prune -f",
+      "summary" : "Removes stopped containers, unused networks, dangling images and unused build cache. Volumes are kept.",
+      "title" : "Prune unused Docker data"
+    },
+    {
+      "group" : "Maintenance",
+      "id" : "apt_clean",
+      "preview" : "du -sh /var/cache/apt/archives; ls /var/cache/apt/archives/*.deb 2>/dev/null | wc -l | sed 's/$/ cached packages/'",
+      "risk" : "mutate",
+      "root" : true,
+      "script" : "$S apt-get clean && du -sh /var/cache/apt/archives",
+      "summary" : "Deletes downloaded .deb files in /var/cache/apt/archives. Installed packages are not touched.",
+      "title" : "Clear the apt download cache"
+    },
+    {
+      "group" : "Maintenance",
+      "id" : "journal_vacuum",
+      "preview" : "journalctl --disk-usage",
+      "risk" : "mutate",
+      "root" : true,
+      "script" : "$S journalctl --vacuum-time=7d",
+      "summary" : "Deletes journal entries older than a week.",
+      "title" : "Trim the journal to 7 days"
+    },
+    {
+      "group" : "Maintenance",
+      "id" : "restart_tailscale",
+      "needs" : "tailscale",
+      "preview" : "tailscale status | head -5",
+      "risk" : "mutate",
+      "root" : true,
+      "script" : "$S systemctl restart tailscaled",
+      "summary" : "Restarts the tailscaled service.",
+      "title" : "Restart Tailscale",
+      "warning" : "If Rackoon reaches this server over Tailscale, its connection drops while the service restarts. It comes back on its own in a few seconds."
+    },
+    {
+      "group" : "Maintenance",
+      "id" : "restart_docker",
+      "needs" : "docker",
+      "preview" : "docker ps --format 'Will be interrupted: {{.Names}}'",
+      "risk" : "mutate",
+      "root" : true,
+      "script" : "$S systemctl restart docker",
+      "summary" : "Restarts the Docker daemon.",
+      "title" : "Restart the Docker service",
+      "warning" : "Every running container stops and starts again (unless Docker's live-restore is on). Containers without a restart policy stay stopped."
+    }
+  ],
+  "groups" : [
+    "Disk",
+    "Performance",
+    "Docker",
+    "Network",
+    "Logs and system",
+    "Security",
+    "Maintenance"
+  ]
+}

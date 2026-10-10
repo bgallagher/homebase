@@ -46,7 +46,7 @@ final class DockerModel {
     @ObservationIgnored private var logGeneration = 0
 
     init(server: Server) {
-        let transport = OpenSSHTransport(server: server)
+        let transport = makeTransport(for: server)
         self.transport = transport
         serverName = server.name
         serverUser = server.user

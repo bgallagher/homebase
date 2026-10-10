@@ -104,7 +104,7 @@ struct ContentView: View {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
                     updates: updateBadge,
                     onSelect: { selection = .overview; model.select($0) },
-                    onRemove: { terminals.closeAll(for: $0); model.remove($0) },
+                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
                     onAddServer: { showingAdd = true })
             Divider()
             detail
@@ -188,7 +188,11 @@ struct ContentView: View {
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:
-                    CommandProbeView(server: server).id(server.id)
+                    CommandsScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace,
+                                   openInTerminal: { title, command in
+                                       terminals.newTab(for: server, title: title, command: command)
+                                       selection = .terminal
+                                   }).id(server.id)
                 default:
                     EmptyView()
                 }

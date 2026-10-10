@@ -148,15 +148,26 @@ final class BookmarkModel: Identifiable {
         Task {
             defer { busy = false }
             do {
-                let session = StackFileSession(transport: OpenSSHTransport(server: server), policy: SafetyStore.shared.policy, stack: stack)
+                let session = StackFileSession(transport: makeTransport(for: server), policy: SafetyStore.shared.policy, stack: stack)
                 // The first compose file that defines the service (an override file may be the one that does).
                 var found: (file: EditableFile, remote: RemoteFile, text: String)?
+                var unreadable: [String] = []
                 for file in files where !file.isEnv {
-                    guard case .file(let remote) = try await session.read(file), ComposeLabels.definesService(service, in: remote.content) else { continue }
-                    found = (file, remote, try ComposeLabels.setting(changes, onService: service, in: remote.content))
-                    break
+                    switch try await session.read(file) {
+                    case .file(let remote):
+                        guard ComposeLabels.definesService(service, in: remote.content) else { continue }
+                        found = (file, remote, try ComposeLabels.setting(changes, onService: service, in: remote.content))
+                    case .missing: unreadable.append("\(file.fileName) is missing on \(serverName)")
+                    case .tooLarge: unreadable.append("\(file.fileName) is too large to edit here")
+                    }
+                    if found != nil { break }
                 }
-                guard let found else { notice = "No compose file of \(stack.name) defines a service called \(service)."; return }
+                guard let found else {
+                    // Say why when a file could not be read, instead of claiming the service doesn't exist.
+                    notice = unreadable.isEmpty ? "No compose file of \(stack.name) defines a service called \(service)."
+                                                : "Couldn't read the stack's compose file: " + unreadable.joined(separator: "; ") + "."
+                    return
+                }
                 guard found.text != found.remote.content else {
                     notice = removing ? "\(service) has no bookmark labels to remove." : "Nothing would change in \(found.file.fileName)."
                     return

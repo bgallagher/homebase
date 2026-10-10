@@ -71,6 +71,19 @@ final class TerminalTab: Identifiable {
         let ssh = OpenSSHTransport.terminalArguments(for: server) + (remoteCommand.map { [$0] } ?? [])
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
         launchGeneration += 1
+        if Demo.isOn {
+            // Demo mode: a scripted fake shell that never runs what is typed (see Demo.swift). Through the relay when it exists,
+            // so output highlighting looks as it does on a real server.
+            let shell = ["/bin/bash", Demo.terminalScript().path, server.name]
+            viaRelay = Self.relayURL != nil
+            if let relay = Self.relayURL {
+                let flags = AppearanceStore.shared.highlightOutput ? [] : ["--no-highlight"]
+                view.startProcess(executable: relay.path, args: flags + ["--"] + shell, environment: environment)
+            } else {
+                view.startProcess(executable: shell[0], args: Array(shell.dropFirst()), environment: environment)
+            }
+            return
+        }
         if let relay = Self.relayURL {
             // Always go through the relay when it exists, even with highlighting off, so the switch can be
             // flipped later on this very tab.

@@ -143,6 +143,18 @@ final class ComposeLabelsTests: XCTestCase {
         XCTAssertTrue(out.contains("- homepage.href=https://x.com/?a=1"), out)
     }
 
+    func testListDashesAtTheSameIndentAsTheLabelsKey() throws {
+        let file = "services:\n  web:\n    image: nginx\n    labels:\n    - traefik.enable=true\n    - homepage.href=http://old\n    restart: always\n"
+        XCTAssertEqual(try set(Bookmark(href: "http://new", name: "N"), file),
+                       "services:\n  web:\n    image: nginx\n    labels:\n    - traefik.enable=true\n    - homepage.href=http://new\n    - homepage.name=N\n    restart: always\n")
+        XCTAssertEqual(try set(nil, file), "services:\n  web:\n    image: nginx\n    labels:\n    - traefik.enable=true\n    restart: always\n")
+        let only = "services:\n  web:\n    image: nginx\n    labels:\n    - homepage.href=http://old\n    restart: always\n"
+        XCTAssertEqual(try set(nil, only), "services:\n  web:\n    image: nginx\n    restart: always\n")
+        // The block ends at the next sibling key, which is not a dash line.
+        let last = "services:\n  web:\n    image: nginx\n    labels:\n    - a=b\n  db:\n    image: pg\n"
+        XCTAssertEqual(try set(Bookmark(href: "http://x"), last), "services:\n  web:\n    image: nginx\n    labels:\n    - a=b\n    - homepage.href=http://x\n  db:\n    image: pg\n")
+    }
+
     func testDefinesService() {
         let t = "services:\n  web:\n    image: x\n"
         XCTAssertTrue(ComposeLabels.definesService("web", in: t))
