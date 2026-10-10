@@ -35,6 +35,7 @@
 **Bookmarks**
 - Link to any service with a small modal, from the bookmark button on a stack card or from the Bookmarks screen. Bookmarks are stored as [Homepage](https://gethomepage.dev) Docker labels (`homepage.href`, `homepage.name`, `homepage.group`, ...) in the stack's compose file, so they stay with the stack and work with other tools that read them.
 - The Bookmarks screen lists them by group, with Open, Copy, Edit and Remove.
+- Each site's favicon is fetched and cached, and shown in Bookmarks and on the stack's card in the Docker overview. Click an icon to fetch a fresh one.
 
 **Updates**
 - Pending, security and held `apt` packages from the server's own package lists; refresh lists, install all or security updates only, with streamed output.

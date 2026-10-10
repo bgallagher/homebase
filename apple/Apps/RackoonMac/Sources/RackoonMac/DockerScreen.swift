@@ -80,7 +80,7 @@ struct DockerScreen: View {
                             Text("No containers on this server.").foregroundStyle(Theme.textMuted)
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
-                            ForEach(model.stacks) { stack in
+                            ForEach(model.stacks.filter(\.hasBookmark) + model.stacks.filter { !$0.hasBookmark }) { stack in   // bookmarked first, each part in its usual order
                                 StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name), height: tileHeight,
                                           bookmark: model.bookmarkableStacks.contains { $0.name == stack.name } ? { startBookmark(stack) } : nil) {
                                     openStack = stack.name
@@ -98,6 +98,8 @@ struct DockerScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
+        // Fetch the icon of any bookmarked site that has none yet.
+        .onChange(of: model.bookmarkItems.map(\.bookmark.href), initial: true) { _, hrefs in FaviconStore.shared.ensure(hrefs) }
         .onAppear {
             model.attach()
             if let draft = newStack { attach(draft) }   // a draft from before the screen was rebuilt
@@ -192,9 +194,19 @@ private struct StackTile: View {
     let open: () -> Void
     @State private var hovering = false
 
+    /// The favicon of the stack's first bookmark that has one; nil (nothing shown) until one has been fetched.
+    private var faviconHref: String? {
+        stack.containers.compactMap { $0.bookmark?.href }.first { FaviconStore.shared.image(for: $0) != nil }
+    }
+
     var body: some View {
         card
-            // A sibling of the card's button, not inside it, so a click on the bookmark never also opens the stack.
+            // Siblings of the card's button, not inside it, so a click on an icon never also opens the stack.
+            .overlay(alignment: .topLeading) {
+                if let faviconHref {
+                    FaviconView(href: faviconHref, size: 20, hideWhenMissing: true).padding(.top, 16).padding(.leading, 18)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if let bookmark {
                     Button(action: bookmark) {
@@ -226,6 +238,7 @@ private struct StackTile: View {
                     }
                 }
                 .padding(.trailing, bookmark == nil ? 0 : 26)   // room for the bookmark button
+                .padding(.leading, faviconHref == nil ? 0 : 28)   // and for the site's icon
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(stack.containers) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {

@@ -43,6 +43,8 @@ cat > "$out/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <!-- Bookmarks fetch each site's favicon, often from plain http addresses on a home network or Tailscale. -->
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>
 </plist>
 PLIST

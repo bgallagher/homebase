@@ -46,6 +46,8 @@ struct BookmarksScreen: View {
         .foregroundStyle(Theme.textPrimary)
         .onAppear { model.attach() }
         .onDisappear { model.detach() }
+        // Fetch the icon of any bookmarked site that has none yet (and re-check when a bookmark's address changes).
+        .onChange(of: items.map(\.bookmark.href), initial: true) { _, hrefs in FaviconStore.shared.ensure(hrefs) }
         .sheet(item: $editing) { draft in BookmarkSheet(model: draft, cancel: { editing = nil }) }
         .confirmAction(Binding(get: { removing?.pending }, set: { removing?.pending = $0 }))
     }
@@ -100,7 +102,7 @@ struct BookmarksScreen: View {
 
     private func row(_ item: BookmarkItem) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: "bookmark.fill").font(.system(size: 14)).foregroundStyle(Theme.accent).frame(width: 20)
+            FaviconView(href: item.bookmark.href, size: 24)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(item.title).fontWeight(.semibold).lineLimit(1)
