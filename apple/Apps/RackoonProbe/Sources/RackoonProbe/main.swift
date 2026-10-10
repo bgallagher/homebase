@@ -216,6 +216,75 @@ if args.count > 2, args[2] == "newstack-test" {
     print(failures == 0 ? "newstack-test: all passed" : "newstack-test: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "delete-test" {
+    // Exercises the REAL stack delete (compose down + folder removal) on throwaway stacks this probe creates under one temp
+    // directory. It never touches your own stacks. The data folder is bind-mounted and written to BY THE CONTAINER, so its files
+    // are owned by root: the case a non-root ssh user would trip over.
+    let parent = "/tmp/rackoon-probe-delete"
+    func sh(_ script: String, timeout: TimeInterval = 300) async -> CommandResult {
+        (try? await transport.run(script, timeout: timeout)) ?? CommandResult(stdout: "", stderr: "ssh failed", exitCode: 255)
+    }
+    func teardown() async {
+        _ = await sh("for d in \(parent)/*/; do [ -f \"$d/compose.yaml\" ] && (cd \"$d\" && docker compose -p \"rackoon-probe-del-$(basename \"$d\")\" down -v --remove-orphans 2>&1); done; rm -rf \(parent)")
+    }
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+    final class Sink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text = ""
+        func add(_ e: ActionStreamEvent) { if case .output(let t) = e { lock.withLock { text += t } } }
+        var output: String { lock.withLock { text } }
+    }
+    func make(_ name: String) async -> Bool {
+        let dir = "\(parent)/\(name)"
+        let r = await sh("""
+        mkdir -p \(dir) && cd \(dir) && printf 'services:\\n  web:\\n    image: busybox\\n    command: sh -c "echo hi > /data/made-by-container; sleep 3600"\\n    volumes:\\n      - ./data:/data\\n' > compose.yaml && docker compose -p rackoon-probe-del-\(name) up -d 2>&1
+        """, timeout: 600)
+        return r.exitCode == 0
+    }
+    await teardown()
+    let policy = ActionPolicy()
+    let docker = DockerSession(transport: transport, policy: policy)
+    check(await make("full"), "setup: stack with a container-written bind mount")
+    check(await make("keep"), "setup: second stack that must be left alone")
+    try? await Task.sleep(nanoseconds: 2_000_000_000)
+    await docker.refresh()
+    let snapshot = await docker.state.snapshot
+    let full = snapshot?.stacks.first { $0.name == "rackoon-probe-del-full" }
+    check(full != nil, "docker reports the stack by its real labels")
+    guard let full else { await teardown(); exit(1) }
+    check(StackRemoval.folderProblem(for: full) == nil, "folder deletion is offered for it: \(StackRemoval.folderProblem(for: full) ?? "yes")")
+    let owner = await sh("stat -c %U \(parent)/full/data/made-by-container")
+    print("data file owner on the server: \(owner.stdout.trimmingCharacters(in: .whitespacesAndNewlines))")
+
+    // The stack's own working_dir label is /tmp/rackoon-probe-delete/full, and the project name is rackoon-probe-del-full.
+    let removal = StackRemoval(removeVolumes: false, deleteFolder: true)
+    let sink = Sink()
+    let confirmation = try? docker.confirm(removal, stack: full)
+    await docker.performStreaming(removal, stack: full, confirmation: confirmation, cols: 100, rows: 24, onEvent: { sink.add($0) })
+    let after = await sh("docker ps -a --filter label=com.docker.compose.project=rackoon-probe-del-full -q | wc -l; ls \(parent) 2>&1")
+    print(ANSI.strip(sink.output).split(separator: "\n").suffix(4).joined(separator: "\n"))
+    check(after.stdout.hasPrefix("0\n"), "its container is gone")
+    check(!after.stdout.contains("full") && after.stdout.contains("keep"), "its folder, with the root-owned data, is gone and the other stack's is not: \(after.stdout.replacingOccurrences(of: "\n", with: " "))")
+    let keepRunning = await sh("docker ps --filter label=com.docker.compose.project=rackoon-probe-del-keep --filter status=running -q | wc -l")
+    check(keepRunning.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "1", "the other stack still runs")
+
+    // Without confirmation, or in read-only mode, nothing runs.
+    let keep = (await { await docker.refresh(); return await docker.state.snapshot?.stacks.first { $0.name == "rackoon-probe-del-keep" } }())
+    if let keep {
+        policy.isReadOnly = true
+        check((try? docker.confirm(removal, stack: keep)) == nil, "read-only refuses to confirm a delete")
+        policy.isReadOnly = false
+        await docker.performStreaming(removal, stack: keep, confirmation: nil, cols: 100, rows: 24, onEvent: { _ in })
+        let still = await sh("ls \(parent)/keep/compose.yaml 2>&1")
+        check(still.stdout.contains("compose.yaml") && !still.stdout.contains("No such"), "a delete without confirmation changed nothing")
+    }
+    await teardown()
+    let leftover = await sh("ls \(parent) 2>&1 | head -1; docker ps -a --filter label=com.docker.compose.project=rackoon-probe-del-keep -q | wc -l")
+    check(leftover.stdout.contains("No such file") && leftover.stdout.hasSuffix("0\n"), "teardown removed everything")
+    print(failures == 0 ? "delete-test: all passed" : "delete-test: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "compose-test" {
     // Exercises the REAL compose actions end to end on a throwaway stack that this probe creates and removes.
     // It never touches your own stacks: everything lives under one temp directory and one project name.

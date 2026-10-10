@@ -74,12 +74,21 @@ public enum OverviewParser {
         return Overview(
             vendor: system["vendor"] ?? "", product: system["product"] ?? "", machineID: system["machine_id"] ?? "",
             kernel: system["kernel"] ?? "", bootID: system["boot_id"] ?? "",
+            ipAddress: ipv4(system["ip"]), tailscaleIP: ipv4(system["tailscale_ip"]),
             serverTime: timeParts.first.flatMap { Int64($0) } ?? 0, utcOffsetSeconds: utcOffset,
             timeZoneName: timeParts.count >= 3 ? timeParts[2] : "",
             hostname: hostname, os: os, uptimeSeconds: uptime,
             load1: load[0], load5: load[1], load15: load[2], cores: cores,
             cpu: cpu, memory: memory, disks: disks, rebootRequired: reboot, unhealthyContainers: unhealthy,
             pendingUpdates: pending, securityUpdates: security)
+    }
+
+    /// A dotted IPv4 address, or nil. It is shown and copied, so anything else the command might print is dropped.
+    static func ipv4(_ value: String?) -> String? {
+        guard let v = value?.trimmingCharacters(in: .whitespaces),
+              v.range(of: #"^\d{1,3}(\.\d{1,3}){3}$"#, options: .regularExpression) != nil,
+              v.split(separator: ".").allSatisfy({ Int($0).map { $0 <= 255 } ?? false }) else { return nil }
+        return v
     }
 
     static func splitSections(_ output: String) -> [String: [String]] {

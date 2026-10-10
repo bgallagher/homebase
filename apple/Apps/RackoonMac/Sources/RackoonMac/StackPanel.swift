@@ -26,7 +26,9 @@ struct StackPanel: View {
             case .file(let file): FileEditorBody(editor: editor, file: file, theme: theme, serverName: serverName)
             }
         }
-        .frame(minHeight: 620)
+        // As tall as the window allows (never less than 520): a panel with only a minimum height grows to fit a long log inside
+        // the page's own scroll view, so the log never scrolls by itself and its jump controls never appear.
+        .containerRelativeFrame(.vertical) { length, _ in max(520, length - 190) }
         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
         .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
         .confirmAction(Binding(get: { editor.pending }, set: { editor.pending = $0 }))
@@ -71,7 +73,7 @@ struct StackPanel: View {
 
     @ViewBuilder private var logs: some View {
         if let target = model.logTarget, stack.containers.contains(where: { $0.id == target.id }) {
-            LogPanel(model: model, container: target, theme: theme, busy: busy.contains(target.id))
+            LogPanel(model: model, container: target, theme: theme, busy: busy.contains(target.id)).id(target.id)   // scroll state per container
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "text.alignleft").font(.system(size: 22)).foregroundStyle(Theme.textMuted)

@@ -38,7 +38,7 @@ struct UpdatesScreen: View {
                         .foregroundStyle(Theme.textMuted)
                 }
             }
-            .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
+            .padding(.horizontal, 28).padding(.top, Theme.pageTop).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)

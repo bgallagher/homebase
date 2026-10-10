@@ -27,7 +27,7 @@ struct CommandProbeView: View {
                     .textSelection(.enabled)
             }
         }
-        .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 20)
+        .padding(.horizontal, 28).padding(.top, Theme.pageTop).padding(.bottom, 20)
     }
 
     private func run() {

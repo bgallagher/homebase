@@ -4,6 +4,9 @@ import Foundation
 /// ends lines with \r\n, so this joins partial lines, normalises endings and caps memory.
 public struct LogBuffer: Sendable, Equatable {
     public private(set) var lines: [String] = []
+    /// Every line ever appended, including those trimmed off the front. It only grows, so a view can say "N new lines"
+    /// even when the buffer is full and `lines.count` has stopped changing.
+    public private(set) var totalAppended = 0
     private var partial = ""
     public let maxLines: Int
 
@@ -14,7 +17,9 @@ public struct LogBuffer: Sendable, Equatable {
         var pieces = text.components(separatedBy: "\n")
         partial = pieces.removeLast()
         // ssh prints this itself when the remote command ends; it is not part of the logs.
-        lines.append(contentsOf: pieces.filter { !($0.hasPrefix("Connection to ") && $0.hasSuffix(" closed.")) })
+        let kept = pieces.filter { !($0.hasPrefix("Connection to ") && $0.hasSuffix(" closed.")) }
+        lines.append(contentsOf: kept)
+        totalAppended += kept.count
         if lines.count > maxLines { lines.removeFirst(lines.count - maxLines) }
     }
 

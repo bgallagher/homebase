@@ -1,0 +1,47 @@
+##hostname
+ubuntu-4gb-hel1-1
+##os
+PRETTY_NAME="Ubuntu 24.04.5 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.5 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+UBUNTU_CODENAME=noble
+LOGO=ubuntu-logo
+##uptime
+85981.37 315567.74
+##loadavg
+0.65 0.48 0.33 1/828 657803
+##nproc
+4
+##stat
+cpu  1454041 1145 785259 31556776 8141 0 148919 0 0 0
+##meminfo
+MemTotal:        7937224 kB
+MemAvailable:    5654876 kB
+##df
+Filesystem        1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      39973924864 17170952192 21118779392      45% /
+/dev/sda15       264281088      148992   264132096       1% /boot/efi
+##system
+vendor=Hetzner
+product=vServer
+machine_id=0123456789abcdef0123456789abcdef
+kernel=6.8.0-146-generic
+boot_id=1b4e28ba-2fa1-11d2-883f-0016d3cca427
+time=1791615000 +0000 UTC
+ip=192.168.1.20
+tailscale_ip=
+##reboot
+no
+##updates
+0
+##security
+0
+##unhealthy

@@ -30,7 +30,7 @@ struct OverviewView: View {
                         .foregroundStyle(Theme.textMuted)
                 }
             }
-            .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
+            .padding(.horizontal, 28).padding(.top, Theme.pageTop).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
@@ -100,6 +100,9 @@ struct SystemInfoCard: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 28, alignment: .top)], alignment: .leading, spacing: 12) {
                     if !o.modelName.isEmpty { row("Model", o.modelName) }
                     row("Hostname", o.hostname)
+                    if let ip = o.ipAddress { row("IP address", ip, mono: true, copy: ip) }
+                    // Only when the server has Tailscale up: nothing is shown or mentioned otherwise.
+                    if let ts = o.tailscaleIP { row("Tailscale IP", ts, mono: true, copy: ts) }
                     row("Operating system", o.os.prettyName)
                     if !o.kernel.isEmpty { row("Kernel", o.kernel) }
                     if !o.machineID.isEmpty { row("Machine ID", o.machineID, mono: true) }
@@ -111,11 +114,12 @@ struct SystemInfoCard: View {
         .padding(18).frame(maxWidth: .infinity, alignment: .leading).card()
     }
 
-    private func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
+    private func row(_ label: String, _ value: String, mono: Bool = false, copy: String? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label).foregroundStyle(Theme.textMuted).frame(width: 130, alignment: .leading)
             Text(value).font(mono ? .system(size: 12, design: .monospaced) : .body)
                 .foregroundStyle(Theme.textPrimary).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+            if let copy { CopyButton(text: copy, what: label) }
             Spacer(minLength: 0)
         }
     }
@@ -287,5 +291,33 @@ enum Format {
     static func load(_ v: Double) -> String { String(format: "%.2f", v) }
     static func bytes(_ b: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: b, countStyle: .binary)
+    }
+}
+
+/// A small copy-to-clipboard button: the icon turns into a tick for a moment after copying.
+struct CopyButton: View {
+    let text: String
+    /// What is being copied, for the tooltip ("Copy IP address").
+    let what: String
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: copied ? .bold : .regular))
+                .foregroundStyle(copied ? Theme.ok : Theme.textMuted)
+                .frame(width: 22, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.pointer)
+        .help(copied ? "Copied" : "Copy \(what)")
+        .accessibilityLabel(copied ? "Copied" : "Copy \(what)")
     }
 }

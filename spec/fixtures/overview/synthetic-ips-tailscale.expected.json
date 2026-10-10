@@ -1,0 +1,52 @@
+{
+  "bootID": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+  "cores": 4,
+  "cpu": {
+    "idle": 31564917,
+    "total": 33954281
+  },
+  "disks": [
+    {
+      "filesystem": "/dev/sda1",
+      "mount": "/",
+      "totalBytes": 39973924864,
+      "usePercent": 45,
+      "usedBytes": 17170952192
+    },
+    {
+      "filesystem": "/dev/sda15",
+      "mount": "/boot/efi",
+      "totalBytes": 264281088,
+      "usePercent": 1,
+      "usedBytes": 148992
+    }
+  ],
+  "hostname": "ubuntu-4gb-hel1-1",
+  "ipAddress": "89.167.95.123",
+  "kernel": "6.8.0-146-generic",
+  "load1": 0.65,
+  "load15": 0.33,
+  "load5": 0.48,
+  "machineID": "0123456789abcdef0123456789abcdef",
+  "memory": {
+    "availableBytes": 5790593024,
+    "totalBytes": 8127717376
+  },
+  "os": {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "prettyName": "Ubuntu 24.04.5 LTS",
+    "version": "24.04"
+  },
+  "pendingUpdates": 0,
+  "product": "vServer",
+  "rebootRequired": false,
+  "securityUpdates": 0,
+  "serverTime": 1791615000,
+  "tailscaleIP": "100.125.183.84",
+  "timeZoneName": "UTC",
+  "unhealthyContainers": [],
+  "uptimeSeconds": 85981.37,
+  "utcOffsetSeconds": 0,
+  "vendor": "Hetzner"
+}

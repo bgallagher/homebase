@@ -38,6 +38,11 @@ public struct Overview: Sendable, Codable, Equatable {
     public var kernel: String
     /// Changes on every boot; how a reboot is recognised.
     public var bootID: String
+    /// The server's own IPv4 address (the source address of its route to the internet), and its Tailscale IPv4 address.
+    /// Nil when unknown, and nil for Tailscale when it is not installed or not connected, so nothing is shown for it.
+    /// Optional so snapshots cached by an earlier version still decode.
+    public var ipAddress: String?
+    public var tailscaleIP: String?
     /// The server's clock at the poll (Unix seconds), its UTC offset in seconds and its zone abbreviation.
     public var serverTime: Int64
     public var utcOffsetSeconds: Int

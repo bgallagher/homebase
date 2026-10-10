@@ -81,7 +81,7 @@ struct DockerScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, 32).padding(.top, 40).padding(.bottom, 24)
+            .padding(.horizontal, 32).padding(.top, Theme.pageTop).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
@@ -293,6 +293,15 @@ private struct StackDetail: View {
                 panel.frame(maxWidth: .infinity)
             }
         }
+        // A stack with one container has nothing to choose: show its logs straight away, and follow the container when an
+        // update or rebuild replaces it (its id changes) or when it first appears after a deploy.
+        .onAppear(perform: openSoleContainerLogs)
+        .onChange(of: stack.containers.map(\.id)) { _, _ in openSoleContainerLogs() }
+    }
+
+    private func openSoleContainerLogs() {
+        guard stack.containers.count == 1, let container = stack.containers.first, model.logTarget?.id != container.id else { return }
+        model.showLogs(for: container)
     }
 
     // MARK: header
@@ -539,15 +548,8 @@ struct LogPanel: View {
             .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
 
             if let error = model.logError { ErrorBanner(message: error).padding(12) }
-            ScrollView {
-                Text(styled)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-            }
-            .defaultScrollAnchor(.bottom)
-            .background(Color(nsColor: theme.backgroundRGB.nsColor))
+            LogScroll(text: styled, received: model.logReceived)
+                .background(Color(nsColor: theme.backgroundRGB.nsColor))
         }
     }
 
@@ -586,5 +588,153 @@ struct LogPanel: View {
             if i < lines.count - 1 { out += AttributedString("\n") }
         }
         return out
+    }
+}
+
+// MARK: - Scrolling the logs
+
+/// The log text. Follows new lines while you are at the bottom, stops following when you scroll up (so it doesn't move
+/// under you while you read), and shows small floating controls to jump to the latest line or back to the top (⌘↓ / ⌘↑).
+/// macOS 15 can report the scroll position, which is what makes the pause and the "N new" count possible; macOS 14
+/// keeps the plain behaviour with the jump buttons always shown.
+private struct LogScroll: View {
+    let text: AttributedString
+    let received: Int
+
+    var body: some View {
+        if #available(macOS 15, *) {
+            FollowingLogScroll(text: text, received: received)
+        } else {
+            SimpleLogScroll(text: text)
+        }
+    }
+}
+
+private struct LogText: View {
+    let text: AttributedString
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+    }
+}
+
+@available(macOS 15, *)
+private struct FollowingLogScroll: View {
+    let text: AttributedString
+    let received: Int
+    @State private var position = ScrollPosition(edge: .bottom)
+    @State private var atBottom = true
+    @State private var atTop = false
+    /// How many lines had arrived when the user scrolled away, to count the new ones.
+    @State private var pausedAt: Int?
+
+    private struct Metrics: Equatable {
+        var offset: CGFloat
+        var content: CGFloat
+        var visible: CGFloat
+        var fromBottom: CGFloat { max(0, content - visible - offset) }
+    }
+    /// Close enough to an edge to count as being at it.
+    private static let slack: CGFloat = 24
+
+    var body: some View {
+        ScrollView { LogText(text: text) }
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: Metrics.self) { geometry in
+                Metrics(offset: geometry.contentOffset.y, content: geometry.contentSize.height, visible: geometry.containerSize.height)
+            } action: { old, new in
+                let wasAtBottom = old.fromBottom <= Self.slack
+                let nowAtBottom = new.fromBottom <= Self.slack
+                let userMoved = abs(new.offset - old.offset) > 0.5
+                atTop = new.offset <= Self.slack
+                if nowAtBottom {
+                    atBottom = true
+                    pausedAt = nil
+                } else if wasAtBottom && !userMoved {
+                    // New lines (or a resized window) pushed the end out of view while we were following it: stay with it.
+                    position.scrollTo(edge: .bottom)
+                } else {
+                    if atBottom { pausedAt = received }
+                    atBottom = false
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                let newLines = pausedAt.map { max(0, received - $0) } ?? 0
+                HStack(spacing: 8) {
+                    if !atTop {
+                        FloatingJump(symbol: "arrow.up.to.line", title: nil, help: "Jump to the first line (⌘↑)", key: .upArrow) {
+                            position.scrollTo(edge: .top)
+                        }
+                    }
+                    if !atBottom {
+                        FloatingJump(symbol: "arrow.down.to.line", title: newLines > 0 ? "\(newLines) new" : "Latest",
+                                     help: "Jump to the latest line and follow new ones (⌘↓)", key: .downArrow, prominent: true) {
+                            position.scrollTo(edge: .bottom)
+                        }
+                    }
+                }
+                .padding(14)
+                .animation(.easeOut(duration: 0.15), value: atTop)
+                .animation(.easeOut(duration: 0.15), value: atBottom)
+            }
+    }
+}
+
+private struct SimpleLogScroll: View {
+    let text: AttributedString
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id("top")
+                    LogText(text: text)
+                    Color.clear.frame(height: 0).id("bottom")
+                }
+            }
+            .defaultScrollAnchor(.bottom)
+            .overlay(alignment: .bottomTrailing) {
+                HStack(spacing: 8) {
+                    FloatingJump(symbol: "arrow.up.to.line", title: nil, help: "Jump to the first line (⌘↑)", key: .upArrow) {
+                        proxy.scrollTo("top", anchor: .top)
+                    }
+                    FloatingJump(symbol: "arrow.down.to.line", title: nil, help: "Jump to the latest line (⌘↓)", key: .downArrow) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+                .padding(14)
+            }
+        }
+    }
+}
+
+/// A small capsule button that floats over the logs. `prominent` is the accent-coloured "latest" one.
+private struct FloatingJump: View {
+    let symbol: String
+    let title: String?
+    let help: String
+    let key: KeyEquivalent
+    var prominent = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                if let title { Text(title).font(.system(size: 12, weight: .semibold)).monospacedDigit() }
+            }
+            .padding(.horizontal, title == nil ? 9 : 12).frame(height: 28)
+            .foregroundStyle(prominent ? Theme.accentText : Theme.textPrimary)
+            .background(prominent ? Theme.accent : Theme.card, in: Capsule())
+            .overlay(Capsule().stroke(prominent ? .clear : Theme.border))
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+        }
+        .buttonStyle(.pointer)
+        .keyboardShortcut(key, modifiers: .command)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }

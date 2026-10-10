@@ -21,6 +21,8 @@ public actor ServerSession {
     echo '##system'; echo "vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)"; echo "product=$(cat /sys/class/dmi/id/product_name 2>/dev/null)"; \
     echo "machine_id=$(cat /etc/machine-id 2>/dev/null)"; echo "kernel=$(uname -r)"; \
     echo "boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"; echo "time=$(date '+%s %z %Z')"; \
+    echo "ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^src$/){print $(i+1); exit}}')"; \
+    T=$(timeout 3 tailscale ip -4 2>/dev/null | head -1); [ -n "$T" ] || T=$(ip -4 -o addr show dev tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1); echo "tailscale_ip=$T"; \
     echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; \
     U=$(apt list --upgradable 2>/dev/null); echo '##updates'; echo "$U" | grep -c -E '^[^/ ]+/'; \
     echo '##security'; echo "$U" | grep -c -E '^[^/ ]+/[^ ]*-security'; \

@@ -44,7 +44,8 @@ struct TerminalScreen: View {
             .help("New tab (⌘T)")
             Spacer()
         }
-        .padding(.leading, 12).padding(.trailing, 12).padding(.top, 34).padding(.bottom, 6)
+        // The hidden title bar still reserves ~28 pt of safe area, and the traffic lights sit over the sidebar, so little extra is needed.
+        .padding(.leading, 12).padding(.trailing, 12).padding(.top, 6).padding(.bottom, 6)
         .background(Theme.sidebar)
         .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
     }

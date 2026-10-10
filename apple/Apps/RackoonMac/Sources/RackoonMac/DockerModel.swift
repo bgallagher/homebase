@@ -11,6 +11,8 @@ final class DockerModel {
     /// Lines shown in the panel. Updated at most ~10 times a second so a chatty container cannot
     /// make the UI re-render (and re-colour 2000 lines) on every chunk.
     private(set) var logLines: [String] = []
+    /// Lines received since the logs were opened (not capped like `logLines`), for "N new lines" while scrolled away.
+    private(set) var logReceived = 0
     @ObservationIgnored private var logBuffer = LogBuffer()
     @ObservationIgnored private var flushScheduled = false
     /// Everything received so far, for the Copy button.
@@ -189,6 +191,12 @@ final class DockerModel {
                 if self.output?.phase == .succeeded {
                     self.createdStacks[stack.name] = nil
                     self.removedStack = stack.name
+                } else {
+                    // Failed or cancelled part way (the containers may be gone but the folder is not): keep the stack on screen,
+                    // as "Not started" if docker no longer reports it, so its Output can be read and the files are not orphaned.
+                    var left = stack
+                    left.containers = []
+                    self.createdStacks[stack.name] = left
                 }
             })
     }
@@ -251,6 +259,7 @@ final class DockerModel {
         logTarget = container
         logBuffer = LogBuffer()
         logLines = []
+        logReceived = 0
         logError = nil
         logsLive = true
         let generation = logGeneration
@@ -278,7 +287,10 @@ final class DockerModel {
             try? await Task.sleep(nanoseconds: 100_000_000)
             guard let self else { return }
             self.flushScheduled = false
-            if self.logGeneration == generation { self.logLines = self.logBuffer.lines }
+            if self.logGeneration == generation {
+                self.logLines = self.logBuffer.lines
+                self.logReceived = self.logBuffer.totalAppended
+            }
         }
     }
 
@@ -287,6 +299,7 @@ final class DockerModel {
         logTask?.cancel(); logTask = nil   // cancelling sends Ctrl-C to the remote `docker logs -f`
         logTarget = nil
         logLines = []
+        logReceived = 0
         logsLive = false
     }
 }

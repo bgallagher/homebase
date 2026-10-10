@@ -110,7 +110,7 @@ struct Sidebar: View {
             SafetySection()
             AppearanceSection()
         }
-        .padding(.top, 44).padding(.bottom, 16).padding(.horizontal, 12) // top clears the traffic lights
+        .padding(.top, Theme.pageTop).padding(.bottom, 16).padding(.horizontal, 12) // below the title-bar safe area, where the traffic lights are
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.sidebar)

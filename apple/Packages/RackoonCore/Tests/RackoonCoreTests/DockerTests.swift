@@ -218,3 +218,16 @@ final class LogLineParserTests: XCTestCase {
         XCTAssertEqual(LogLineParser.timestampLength(in: "level=info time=2026-10-09T20:39:12Z"), 0, "only a leading timestamp")
     }
 }
+
+final class LogBufferCountTests: XCTestCase {
+    func testTotalAppendedKeepsCountingAfterTheBufferIsFull() {
+        var b = LogBuffer(maxLines: 3)
+        b.append("a\nb\nc\nd\ne\n")
+        XCTAssertEqual(b.lines, ["c", "d", "e"])
+        XCTAssertEqual(b.totalAppended, 5)
+        b.append("f\npartial")
+        XCTAssertEqual(b.totalAppended, 6, "an unfinished line is not counted until it ends")
+        b.append("ial\nConnection to host closed.\n")
+        XCTAssertEqual(b.totalAppended, 7, "the finished partial line counts; ssh's own closing notice does not")
+    }
+}

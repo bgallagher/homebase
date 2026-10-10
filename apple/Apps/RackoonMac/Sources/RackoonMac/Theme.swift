@@ -29,6 +29,10 @@ enum Theme {
 
     static let cardRadius: CGFloat = 12
 
+    /// Space above a page's heading and the sidebar's first label. The hidden title bar already reserves ~28 pt of safe
+    /// area (where the traffic lights are), so this is only the breathing room below it.
+    static let pageTop: CGFloat = 14
+
     /// For AppKit views that need an NSColor.
     static var sidebarNS: NSColor { p.sidebar.nsColor }
 }

@@ -122,3 +122,23 @@ final class ServerSessionTests: XCTestCase {
         XCTAssertEqual(state.error, "Connection refused")
     }
 }
+
+final class OverviewIPTests: XCTestCase {
+    func testIPv4IsValidatedBeforeItIsShownOrCopied() {
+        XCTAssertEqual(OverviewParser.ipv4("89.167.95.123"), "89.167.95.123")
+        XCTAssertEqual(OverviewParser.ipv4(" 100.64.0.1 "), "100.64.0.1")
+        for bad in [nil, "", "256.1.1.1", "1.2.3", "1.2.3.4.5", "a.b.c.d", "1.2.3.4; reboot", "fe80::1", "$(id)", "1.2.3.4 5.6.7.8"] {
+            XCTAssertNil(OverviewParser.ipv4(bad), bad ?? "nil")
+        }
+    }
+
+    func testOldCachedSnapshotsWithoutIPsStillDecode() throws {
+        let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/overview/ubuntu-24.04.out.txt"), encoding: .utf8)
+        let overview = try OverviewParser.parse(text)
+        XCTAssertNil(overview.ipAddress)
+        XCTAssertNil(overview.tailscaleIP)
+        let data = try JSONEncoder().encode(overview)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("ipAddress"), "absent, as in snapshots from before this field existed")
+        XCTAssertEqual(try JSONDecoder().decode(Overview.self, from: data), overview)
+    }
+}
