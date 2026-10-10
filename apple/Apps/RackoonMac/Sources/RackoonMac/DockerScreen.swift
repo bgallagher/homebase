@@ -32,8 +32,9 @@ struct DockerScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let stack {
-                    StackDetail(stack: stack, model: model, theme: theme, busy: state.busy,
+                    StackDetail(stack: stack, server: server, model: model, theme: theme, busy: state.busy,
                                 back: { model.closeLogs(); openStack = nil }, openShell: openShell)
+                        .id(stack.name)   // one editor (and its drafts) per stack
                 } else {
                     overviewHeader(state.snapshot)
                 }
@@ -198,12 +199,27 @@ private struct CornerTicks: Shape {
 
 private struct StackDetail: View {
     let stack: DockerStack
+    let server: Server
     let model: DockerModel
     let theme: TerminalTheme
     let busy: Set<String>
     let back: () -> Void
     let openShell: (DockerContainer) -> Void
-    private let safety = SafetyStore.shared
+    @State private var editor: StackEditorModel
+    @State private var tab: PanelSelection = .logs
+    @State private var confirmDiscard = false
+
+    init(stack: DockerStack, server: Server, model: DockerModel, theme: TerminalTheme, busy: Set<String>,
+         back: @escaping () -> Void, openShell: @escaping (DockerContainer) -> Void) {
+        self.stack = stack
+        self.server = server
+        self.model = model
+        self.theme = theme
+        self.busy = busy
+        self.back = back
+        self.openShell = openShell
+        _editor = State(initialValue: StackEditorModel(stack: stack, server: server, redeploy: { model.runDirect(.up, on: $0) }))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -220,7 +236,14 @@ private struct StackDetail: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Button(action: back) { Text("Docker").foregroundStyle(Theme.accent) }.buttonStyle(.pointer)
+                Button(action: { if editor.hasUnsavedChanges { confirmDiscard = true } else { back() } }) {
+                    Text("Docker").foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.pointer)
+                .confirmationDialog("Discard unsaved changes?", isPresented: $confirmDiscard) {
+                    Button("Discard Changes", role: .destructive) { back() }
+                    Button("Keep Editing", role: .cancel) {}
+                } message: { Text("Your edits to \(stack.name)'s files have not been saved.") }
                 Text("/").foregroundStyle(Theme.textMuted)
                 Text(stack.name).foregroundStyle(Theme.textSecondary)
             }
@@ -281,49 +304,7 @@ private struct StackDetail: View {
     // MARK: right panel
 
     private var panel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                PanelTab(label: "Logs", selected: true, soon: false)
-                if !stack.isStandalone {
-                    PanelTab(label: stack.configFileName ?? "compose.yaml", selected: false, soon: true)
-                    PanelTab(label: ".env", selected: false, soon: true)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 12).frame(height: 42)
-            .background(Theme.sidebar)
-            .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
-
-            if let target = model.logTarget, stack.containers.contains(where: { $0.id == target.id }) {
-                LogPanel(model: model, container: target, theme: theme, busy: busy.contains(target.id))
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "text.alignleft").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
-                    Text("Choose Logs on a container to follow its output.").foregroundStyle(Theme.textMuted)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: theme.backgroundRGB.nsColor))
-            }
-        }
-        .frame(minHeight: 460)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
-    }
-}
-
-private struct PanelTab: View {
-    let label: String
-    let selected: Bool
-    let soon: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label).font(.system(size: 12, design: .monospaced))
-            if soon { Text("Soon").font(.system(size: 10, weight: .medium)).padding(.horizontal, 5).background(Theme.border, in: Capsule()) }
-        }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .foregroundStyle(selected ? Theme.textPrimary : Theme.textMuted)
-        .background(selected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+        StackPanel(stack: stack, model: model, editor: editor, theme: theme, busy: busy, serverName: server.name, tab: $tab)
     }
 }
 
@@ -452,7 +433,7 @@ struct Badge: View {
     }
 }
 
-private struct LogPanel: View {
+struct LogPanel: View {
     let model: DockerModel
     let container: DockerContainer
     let theme: TerminalTheme

@@ -34,6 +34,8 @@ struct PendingAction: Identifiable {
     /// The exact command that will run on the server.
     let command: String
     let destructive: Bool
+    /// A readable description of what will change (a +/- diff for file saves), shown above the command.
+    var preview: String? = nil
     let run: () -> Void
 }
 
@@ -49,6 +51,18 @@ private struct ConfirmSheet: View {
     let action: PendingAction
     let close: () -> Void
 
+    /// Added lines green, removed lines red, context and "…" muted.
+    private static func styled(_ preview: String) -> AttributedString {
+        var out = AttributedString()
+        let lines = preview.components(separatedBy: "\n")
+        for (i, line) in lines.enumerated() {
+            var piece = AttributedString(line + (i < lines.count - 1 ? "\n" : ""))
+            piece.foregroundColor = line.hasPrefix("+") ? Theme.ok : (line.hasPrefix("-") ? Theme.danger : Theme.textMuted)
+            out += piece
+        }
+        return out
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
@@ -59,16 +73,31 @@ private struct ConfirmSheet: View {
             }
             Text(action.message).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("RUNS ON \(action.serverName.uppercased())")
-                    .font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
-                Text(action.command)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            if let preview = action.preview {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("CHANGES ON \(action.serverName.uppercased())")
+                        .font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+                    ScrollView {
+                        Text(Self.styled(preview)).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                    }
+                    .frame(maxHeight: 220)
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
+            }
+            if !action.command.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(action.preview == nil ? "RUNS ON" : "THEN RUNS ON") \(action.serverName.uppercased())")
+                        .font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+                    Text(action.command)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                }
             }
 
             HStack(spacing: 10) {

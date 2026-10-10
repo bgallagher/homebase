@@ -117,6 +117,13 @@ final class DockerModel {
                                 run: { [weak self] in self?.run(action, on: stack, label: working) })
     }
 
+    /// Runs a stack action without its own confirmation sheet, for flows where the user already agreed to it as part
+    /// of a larger confirmed step (Save and redeploy). The policy still applies: read-only mode refuses it.
+    func runDirect(_ action: ComposeAction, on stack: DockerStack) {
+        guard composeBlockedReason(for: stack) == nil else { return }
+        run(action, on: stack, label: "Updating \(stack.name)…")
+    }
+
     private func run(_ action: ComposeAction, on stack: DockerStack, label: String) {
         guard composeWorking == nil else { return }
         composeWorking = label

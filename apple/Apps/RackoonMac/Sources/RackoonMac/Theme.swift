@@ -28,6 +28,9 @@ enum Theme {
     static var idle: Color { Color(rgb: p.idle) }
 
     static let cardRadius: CGFloat = 12
+
+    /// For AppKit views that need an NSColor.
+    static var sidebarNS: NSColor { p.sidebar.nsColor }
 }
 
 extension RGB {

@@ -51,6 +51,14 @@ public struct RemoteFile: Sendable, Equatable, Codable {
     /// "owner:group".
     public var owner: String
     public var modifiedAt: Int64
+
+    public init(content: String, sha256: String, mode: String, owner: String, modifiedAt: Int64) {
+        self.content = content
+        self.sha256 = sha256
+        self.mode = mode
+        self.owner = owner
+        self.modifiedAt = modifiedAt
+    }
 }
 
 public enum StackFileError: Error, Equatable, LocalizedError {
@@ -77,6 +85,11 @@ public enum StackFileError: Error, Equatable, LocalizedError {
 
 public struct ComposeIssue: Sendable, Equatable, Codable {
     public enum Severity: String, Sendable, Codable { case error, warning }
+    public init(severity: Severity, line: Int?, message: String) {
+        self.severity = severity
+        self.line = line
+        self.message = message
+    }
     public var severity: Severity
     /// 1-based line in the edited file when compose reported one.
     public var line: Int?
@@ -85,6 +98,7 @@ public struct ComposeIssue: Sendable, Equatable, Codable {
 
 public struct ValidationResult: Sendable, Equatable {
     public var issues: [ComposeIssue]
+    public init(issues: [ComposeIssue]) { self.issues = issues }
     public var errors: [ComposeIssue] { issues.filter { $0.severity == .error } }
     public var warnings: [ComposeIssue] { issues.filter { $0.severity == .warning } }
     public var isValid: Bool { errors.isEmpty }
