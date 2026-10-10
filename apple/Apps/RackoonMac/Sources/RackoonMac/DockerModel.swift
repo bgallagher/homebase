@@ -99,6 +99,10 @@ final class DockerModel {
             ("Update \(stack.name)?",
              "Recreates only the containers whose image or settings changed, and starts any that are stopped.",
              "Updating \(stack.name)…")
+        case .rebuild:
+            ("Rebuild \(stack.name)?",
+             "Rebuilds images from the stack's Dockerfiles (services with a build section), then recreates the containers that changed. Services that only use pulled images are left alone. Building can take a while.",
+             "Rebuilding \(stack.name)…")
         case .recreate:
             ("Recreate all \(n) container\(n == 1 ? "" : "s") in \(stack.name)?",
              "Every container is stopped and recreated from the compose file. Volumes are kept, but anything stored only inside a container is lost.",

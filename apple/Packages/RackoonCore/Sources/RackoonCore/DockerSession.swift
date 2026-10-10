@@ -12,13 +12,14 @@ public enum DockerAction: String, Sendable, CaseIterable {
 
 /// Whole-stack actions, run with `docker compose` from the stack's own compose file.
 public enum ComposeAction: String, Sendable, CaseIterable {
-    case pull, up, recreate
+    case pull, up, rebuild, recreate
 
     var commandID: String { "compose_\(rawValue)" }
     var template: String {
         switch self {
         case .pull: "cd {dir} && docker compose -p {project} {files} pull"
         case .up: "cd {dir} && docker compose -p {project} {files} up -d"
+        case .rebuild: "cd {dir} && docker compose -p {project} {files} up -d --build"
         case .recreate: "cd {dir} && docker compose -p {project} {files} up -d --force-recreate"
         }
     }
@@ -26,11 +27,18 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         switch self {
         case .pull: "Pull images for"
         case .up: "Update"
+        case .rebuild: "Rebuild"
         case .recreate: "Recreate"
         }
     }
     /// Pulling downloads images but touches no running container, so it is the one non-destructive stack action.
-    public var timeout: TimeInterval { self == .pull ? 900 : 600 }
+    public var timeout: TimeInterval {
+        switch self {
+        case .pull: 900
+        case .rebuild: 1800   // building images from source can be slow
+        case .up, .recreate: 600
+        }
+    }
 
     /// The exact command, or nil if the stack has no compose project/paths or any of them is unsafe to send.
     public func command(for stack: DockerStack) -> String? {

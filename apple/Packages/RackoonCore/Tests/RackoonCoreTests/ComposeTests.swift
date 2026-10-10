@@ -51,6 +51,9 @@ final class ComposeActionTests: XCTestCase {
         }
         XCTAssertEqual(ComposeAction.pull.command(for: stack()),
                        "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' pull")
+        XCTAssertEqual(ComposeAction.rebuild.command(for: stack()),
+                       "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' up -d --build")
+        XCTAssertEqual(ComposeAction.rebuild.timeout, 1800)
         XCTAssertEqual(ComposeAction.recreate.command(for: stack()),
                        "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' up -d --force-recreate")
     }

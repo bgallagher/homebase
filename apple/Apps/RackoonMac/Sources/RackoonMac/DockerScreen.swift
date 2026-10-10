@@ -42,7 +42,7 @@ struct DockerScreen: View {
                 .padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minWidth: 400)
+            .frame(minWidth: 440)
             if let target = model.logTarget {
                 LogPanel(model: model, container: target, theme: theme, busy: state.busy.contains(target.id))
                     .frame(minWidth: 320, idealWidth: 460)
@@ -135,6 +135,7 @@ private struct StackCard: View {
                     if let reason { Text(reason) }
                     Button("Pull Images") { model.request(.pull, on: stack) }
                     Button("Update") { model.request(.up, on: stack) }
+                    Button("Rebuild") { model.request(.rebuild, on: stack) }
                     Divider()
                     Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
                 } label: {
@@ -144,7 +145,7 @@ private struct StackCard: View {
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .disabled(reason != nil)
                 .foregroundStyle(Theme.textSecondary)
-                .help(reason ?? "Pull, update or recreate \(stack.name)")
+                .help(reason ?? "Pull, update, rebuild or recreate \(stack.name)")
                 .handCursor()
             }
         }

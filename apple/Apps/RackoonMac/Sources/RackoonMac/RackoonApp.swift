@@ -108,7 +108,7 @@ struct ContentView: View {
             detail
         }
         .background(Theme.background)
-        .frame(minWidth: 960, minHeight: 600)
+        .frame(minWidth: 1080, minHeight: 600)
         // The theme drives the whole window: accent for controls, light/dark for system-drawn parts, and
         // every open terminal is recoloured when the resolved theme changes.
         .tint(Theme.accent)

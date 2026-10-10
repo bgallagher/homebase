@@ -98,6 +98,17 @@
       ]
     },
     {
+      "id": "compose_rebuild",
+      "kind": "action",
+      "description": "docker compose up -d --build for one stack: rebuilds images for services with a build section (from their Dockerfiles), then recreates the containers whose image or config changed. Services that only use pulled images are untouched. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order. All paths are absolute, from the project's labels, single-quoted for the shell.",
+      "script": "cd {dir} && docker compose -p {project} {files} up -d --build",
+      "timeoutSeconds": 1800,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "compose_recreate",
       "kind": "action",
       "description": "docker compose up -d --force-recreate for one stack: recreates every container. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",

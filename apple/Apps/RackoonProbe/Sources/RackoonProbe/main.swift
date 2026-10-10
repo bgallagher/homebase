@@ -42,6 +42,84 @@ if args.count > 2, args[2] == "hostkey" {
     exit(0)
 }
 let transport = OpenSSHTransport(host: args[1])
+if args.count > 2, args[2] == "compose-test" {
+    // Exercises the REAL compose actions end to end on a throwaway stack that this probe creates and removes.
+    // It never touches your own stacks: everything lives under one temp directory and one project name.
+    let project = "rackoon-probe-test"
+    let dir = "/tmp/rackoon-probe-stack"
+    let file = "\(dir)/compose.yaml"
+    func sh(_ script: String, timeout: TimeInterval = 300) async -> CommandResult {
+        (try? await transport.run(script, timeout: timeout)) ?? CommandResult(stdout: "", stderr: "ssh failed", exitCode: 255)
+    }
+    func teardown() async {
+        _ = await sh("cd \(dir) 2>/dev/null && docker compose -p \(project) -f \(file) down -v --remove-orphans --rmi local 2>&1; cd /; rm -rf \(dir)")
+    }
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+
+    await teardown()
+    let setup = await sh("""
+    mkdir -p \(dir)/b && cd \(dir) && \
+    printf 'FROM busybox:1.36\\nRUN echo built > /built.txt\\nCMD sleep 3600\\n' > b/Dockerfile && \
+    printf 'services:\\n  web:\\n    image: busybox:1.36\\n    command: sleep 3600\\n  built:\\n    build: ./b\\n' > compose.yaml && \
+    docker compose -p \(project) -f \(file) up -d --build 2>&1
+    """, timeout: 600)
+    check(setup.exitCode == 0, "setup stack up (exit \(setup.exitCode)) \(setup.exitCode == 0 ? "" : setup.stdout.suffix(300))")
+    guard setup.exitCode == 0 else { await teardown(); exit(1) }
+
+    let policy = ActionPolicy()
+    let session = DockerSession(transport: transport, policy: policy)
+    func theStack() async -> DockerStack? {
+        await session.refresh()
+        return await session.state.snapshot?.stacks.first { $0.name == project }
+    }
+    func ids(_ s: DockerStack?) -> Set<String> { Set((s?.containers ?? []).map(\.id)) }
+
+    var stack = await theStack()
+    check(stack?.containers.count == 2, "probe stack is listed with 2 containers")
+    check(stack?.configFiles == [file], "config file label parsed: \(stack?.configFiles ?? [])")
+    guard var current = stack else { await teardown(); exit(1) }
+    let original = ids(current)
+
+    func run(_ action: ComposeAction) async -> String? {
+        let t0 = Date()
+        await session.perform(action, stack: current, confirmation: try? session.confirm(action, stack: current))
+        let state = await session.state
+        print("   \(action.rawValue) took \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
+        check(state.busyStacks.isEmpty && state.busy.isEmpty, "\(action.rawValue): busy cleared afterwards")
+        return state.actionError
+    }
+
+    check(await run(.pull) == nil, "pull succeeds")
+    stack = await theStack(); current = stack ?? current
+    check(ids(stack) == original, "pull leaves containers untouched")
+
+    check(await run(.up) == nil, "update (up -d) succeeds")
+    stack = await theStack(); current = stack ?? current
+    check(ids(stack) == original, "update with nothing changed keeps the same containers")
+
+    check(await run(.rebuild) == nil, "rebuild succeeds")
+    stack = await theStack(); current = stack ?? current
+    check(stack?.containers.count == 2 && stack?.containers.allSatisfy(\.isRunning) == true, "rebuild leaves 2 running containers")
+
+    let beforeRecreate = ids(stack)
+    check(await run(.recreate) == nil, "recreate succeeds")
+    stack = await theStack(); current = stack ?? current
+    check(ids(stack).isDisjoint(with: beforeRecreate) && ids(stack).count == 2, "recreate gives every container a new id")
+    check(stack?.containers.allSatisfy(\.isRunning) == true, "recreated containers are running")
+
+    policy.isReadOnly = true
+    let blocked = await run(.recreate)
+    check(blocked == PolicyError.readOnly.errorDescription, "read-only mode refuses a real stack action: \(blocked ?? "nil")")
+    policy.isReadOnly = false
+    check(ids(await theStack()) == ids(stack), "nothing changed while read-only")
+
+    await teardown()
+    let leftover = await sh("docker ps -a --filter label=com.docker.compose.project=\(project) -q | wc -l; ls \(dir) 2>&1 | head -1")
+    check(leftover.stdout.hasPrefix("0"), "teardown removed the containers and directory (\(leftover.stdout.replacingOccurrences(of: "\n", with: " | ")))")
+    print(failures == 0 ? "compose-test: all passed" : "compose-test: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "updates" {
     let session = UpdatesSession(transport: transport)
     let t0 = Date()
