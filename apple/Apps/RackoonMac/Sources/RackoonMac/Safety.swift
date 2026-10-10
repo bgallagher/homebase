@@ -86,6 +86,7 @@ private struct ConfirmSheet: View {
                 .tint(action.destructive ? Theme.danger : Theme.accent)
             }
             .controlSize(.large)
+            .handCursor()
             .padding(.top, 4)
         }
         .padding(22)

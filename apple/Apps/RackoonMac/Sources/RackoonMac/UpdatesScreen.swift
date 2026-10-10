@@ -76,6 +76,7 @@ struct UpdatesScreen: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
+        .handCursor()
     }
 
     private func subtitle(_ s: UpdatesSnapshot) -> String {
@@ -224,8 +225,10 @@ private struct DoneBanner: View {
                 }
             }
             Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 11)) }
-                .buttonStyle(.plain).foregroundStyle(Theme.textMuted).help("Dismiss")
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.system(size: 11)).frame(width: 24, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.pointer).foregroundStyle(Theme.textMuted).help("Dismiss")
         }
         .padding(12).background(Theme.ok.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }

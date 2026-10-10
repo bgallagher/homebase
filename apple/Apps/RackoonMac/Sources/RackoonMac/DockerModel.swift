@@ -21,6 +21,8 @@ final class DockerModel {
 
     /// A stop or restart waiting for the user's yes (shown as a sheet by the Docker screen).
     var pending: PendingAction?
+    /// A whole-stack compose action is running (they take minutes), e.g. "Pulling images for media…".
+    private(set) var composeWorking: String?
     @ObservationIgnored private let serverName: String
     @ObservationIgnored private let session: DockerSession
     @ObservationIgnored private let transport: SSHTransport
@@ -71,6 +73,51 @@ final class DockerModel {
             serverName: serverName, command: intent.command,
             destructive: stopping,
             run: { [weak self] in self?.perform(action, on: container) })
+    }
+
+    /// Why the stack's actions are unavailable, or nil if they can run.
+    func composeBlockedReason(for stack: DockerStack) -> String? {
+        if SafetyStore.shared.readOnly { return "Read-only mode is on" }
+        if composeWorking != nil { return "Another stack action is running" }
+        if ComposeAction.up.command(for: stack) == nil {
+            return stack.isStandalone ? "These containers were not started with Docker Compose"
+                                      : "No single compose file was found for this stack"
+        }
+        return nil
+    }
+
+    /// Pull, update and recreate ask first, showing the exact command (one `docker compose` line for the whole stack).
+    func request(_ action: ComposeAction, on stack: DockerStack) {
+        guard composeBlockedReason(for: stack) == nil, let intent = action.intent(for: stack) else { return }
+        let n = stack.containers.count
+        let (title, message, working): (String, String, String) = switch action {
+        case .pull:
+            ("Pull images for \(stack.name)?",
+             "Downloads newer images for the stack. Running containers are not touched; use Update afterwards to switch to them.",
+             "Pulling images for \(stack.name)…")
+        case .up:
+            ("Update \(stack.name)?",
+             "Recreates only the containers whose image or settings changed, and starts any that are stopped.",
+             "Updating \(stack.name)…")
+        case .recreate:
+            ("Recreate all \(n) container\(n == 1 ? "" : "s") in \(stack.name)?",
+             "Every container is stopped and recreated from the compose file. Volumes are kept, but anything stored only inside a container is lost.",
+             "Recreating \(stack.name)…")
+        }
+        pending = PendingAction(title: title, message: message, serverName: serverName, command: intent.command,
+                                destructive: action == .recreate,
+                                run: { [weak self] in self?.run(action, on: stack, label: working) })
+    }
+
+    private func run(_ action: ComposeAction, on stack: DockerStack, label: String) {
+        guard composeWorking == nil else { return }
+        composeWorking = label
+        let session = session
+        Task {
+            let confirmation = try? session.confirm(action, stack: stack)
+            await session.perform(action, stack: stack, confirmation: confirmation)
+            composeWorking = nil
+        }
     }
 
     func perform(_ action: DockerAction, on container: DockerContainer) {

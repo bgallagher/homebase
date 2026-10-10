@@ -21,6 +21,7 @@ struct DockerScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header(state.snapshot)
+                    if let working = model.composeWorking { ComposeBanner(text: working) }
                     if let error = state.actionError { ErrorBanner(message: error) }
                     if let error = state.error { ErrorBanner(message: error) }
                     if let snapshot = state.snapshot {
@@ -93,19 +94,22 @@ private struct StackCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: toggle) {
-                HStack(spacing: 10) {
-                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
-                        .rotationEffect(.degrees(collapsed ? 0 : 90)).foregroundStyle(Theme.textMuted)
-                    Text(stack.name).fontWeight(.semibold)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textMuted)
-                    Spacer()
-                    summaryBadge
+            HStack(spacing: 0) {
+                Button(action: toggle) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                            .rotationEffect(.degrees(collapsed ? 0 : 90)).foregroundStyle(Theme.textMuted)
+                        Text(stack.name).fontWeight(.semibold)
+                        Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                        Spacer()
+                        summaryBadge
+                    }
+                    .padding(.vertical, 14).padding(.leading, 14).padding(.trailing, 10)
+                    .contentShape(Rectangle())
                 }
-                .padding(14)
-                .contentShape(Rectangle())
+                .buttonStyle(.pointer)
+                if !stack.isStandalone { stackMenu }
             }
-            .buttonStyle(.pointer)
 
             if !collapsed {
                 Divider().overlay(Theme.border)
@@ -117,6 +121,34 @@ private struct StackCard: View {
             }
         }
         .card()
+    }
+
+    /// Whole-stack actions. A native menu: items are disabled with the reason shown first when they cannot run.
+    private var stackMenu: some View {
+        let reason = model.composeBlockedReason(for: stack)
+        let working = stack.containers.contains { busy.contains($0.id) }
+        return Group {
+            if working {
+                ProgressView().controlSize(.small).frame(width: 28, height: 28)
+            } else {
+                Menu {
+                    if let reason { Text(reason) }
+                    Button("Pull Images") { model.request(.pull, on: stack) }
+                    Button("Update") { model.request(.up, on: stack) }
+                    Divider()
+                    Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .disabled(reason != nil)
+                .foregroundStyle(Theme.textSecondary)
+                .help(reason ?? "Pull, update or recreate \(stack.name)")
+                .handCursor()
+            }
+        }
+        .padding(.trailing, 12)
     }
 
     private var subtitle: String {
@@ -238,6 +270,22 @@ private struct IconButton: View {
         .disabled(blocked)
         .opacity(blocked ? 0.4 : 1)
         .help(blocked ? "Read-only mode is on" : help)
+    }
+}
+
+private struct ComposeBanner: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(text).fontWeight(.medium)
+                Text("This can take a few minutes. It keeps running on the server if you leave this screen.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+            }
+            Spacer()
+        }
+        .padding(12).background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
