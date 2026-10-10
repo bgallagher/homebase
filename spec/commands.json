@@ -120,6 +120,17 @@
       ]
     },
     {
+      "id": "compose_rebuild_service",
+      "kind": "action",
+      "description": "docker compose up -d --build --no-deps for ONE service of a stack: rebuilds that service's image from its Dockerfile and recreates its container if it changed; its dependencies and the other services are untouched. {service} must match ^[A-Za-z0-9][A-Za-z0-9_.-]*$ and be a service of the stack (from the container's compose service label). Other placeholders as in compose_rebuild.",
+      "script": "cd {dir} && docker compose -p {project} {files} up -d --build --no-deps {service}",
+      "timeoutSeconds": 1800,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "compose_recreate",
       "kind": "action",
       "description": "docker compose up -d --force-recreate for one stack: recreates every container. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",

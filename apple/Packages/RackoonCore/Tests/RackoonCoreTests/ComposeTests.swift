@@ -58,6 +58,25 @@ final class ComposeActionTests: XCTestCase {
                        "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' up -d --force-recreate")
     }
 
+    func testServiceRebuildIsScopedAndMatchesSpec() throws {
+        let data = try Data(contentsOf: specDir.appendingPathComponent("commands.json"))
+        let commands = (try JSONSerialization.jsonObject(with: data) as! [String: Any])["commands"] as! [[String: Any]]
+        let spec = commands.first { $0["id"] as? String == ComposeAction.rebuildServiceCommandID }
+        XCTAssertEqual(spec?["script"] as? String, ComposeAction.rebuildServiceTemplate)
+        XCTAssertEqual(spec?["kind"] as? String, "action")
+        XCTAssertEqual(ComposeAction.rebuild.command(for: stack(), service: "web"),
+                       "cd '/srv/media' && docker compose -p media -f '/srv/media/compose.yaml' up -d --build --no-deps web")
+        XCTAssertEqual(ComposeAction.rebuild.intent(for: stack(), service: "web")?.summary, "Rebuild service web of media")
+        // Only rebuild is service-scoped; the service must exist in the stack and be a safe name.
+        XCTAssertNil(ComposeAction.restart.command(for: stack(), service: "web"))
+        XCTAssertNil(ComposeAction.rebuild.command(for: stack(), service: "db"))
+        XCTAssertNil(ComposeAction.rebuild.command(for: stack(standalone: true), service: "web"))
+        for bad in ["", "-x", "web; reboot", "$(id)", "a b", ".hidden"] {
+            XCTAssertFalse(ComposeAction.isServiceName(bad), bad)
+        }
+        XCTAssertTrue(ComposeAction.isServiceName("my_app.v2-web"))
+    }
+
     func testEveryComposeFileIsPassedInOrder() {
         let s = stack(files: ["/srv/media/compose.yaml", "/srv/media/compose.override.yaml"])
         XCTAssertEqual(ComposeAction.up.command(for: s),

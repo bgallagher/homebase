@@ -42,8 +42,26 @@ public enum ComposeAction: String, Sendable, CaseIterable {
         }
     }
 
+    /// Rebuilds one service only: `--no-deps` keeps its dependencies (databases and the like) untouched.
+    static let rebuildServiceTemplate = "cd {dir} && docker compose -p {project} {files} up -d --build --no-deps {service}"
+    static let rebuildServiceCommandID = "compose_rebuild_service"
+
+    /// Compose service names: letters, digits, `.`, `_`, `-`, starting with a letter or digit. The name comes from a
+    /// container label, so it is checked before it reaches a shell.
+    static func isServiceName(_ name: String) -> Bool {
+        guard name.count <= 64, let first = name.first, first.isASCII, first.isLetter || first.isNumber else { return false }
+        return name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }
+    }
+
     /// The exact command, or nil if the stack has no compose project/paths or any of them is unsafe to send.
-    public func command(for stack: DockerStack) -> String? {
+    /// With `service`, only `.rebuild` has a command (that one service); every other action is whole-stack.
+    public func command(for stack: DockerStack, service: String? = nil) -> String? {
+        guard let service else { return Self.fill(template, stack: stack, extra: [:]) }
+        guard self == .rebuild, Self.isServiceName(service), stack.containers.contains(where: { $0.service == service }) else { return nil }
+        return Self.fill(Self.rebuildServiceTemplate, stack: stack, extra: ["service": service])
+    }
+
+    private static func fill(_ template: String, stack: DockerStack, extra: [String: String]) -> String? {
         let paths = stack.configFiles.isEmpty ? (stack.configFile.map { [$0] } ?? []) : stack.configFiles
         // A comma inside a real path would have been split by the label parser, leaving a non-absolute piece,
         // which quotePath refuses, so a mangled list never reaches the shell.
@@ -52,12 +70,13 @@ public enum ComposeAction: String, Sendable, CaseIterable {
               let dir = stack.workingDir.flatMap(ShellQuote.quotePath),
               !paths.isEmpty, files.count == paths.count else { return nil }
         return Template.fill(template, ["dir": dir, "project": stack.name,
-                                        "files": files.map { "-f " + $0 }.joined(separator: " ")])
+                                        "files": files.map { "-f " + $0 }.joined(separator: " ")].merging(extra) { $1 })
     }
 
-    public func intent(for stack: DockerStack) -> Intent? {
-        guard let command = command(for: stack) else { return nil }
-        return Intent(summary: "\(verb) stack \(stack.name)", command: command, risk: .mutate)
+    public func intent(for stack: DockerStack, service: String? = nil) -> Intent? {
+        guard let command = command(for: stack, service: service) else { return nil }
+        let summary = service.map { "\(verb) service \($0) of \(stack.name)" } ?? "\(verb) stack \(stack.name)"
+        return Intent(summary: summary, command: command, risk: .mutate)
     }
 }
 
@@ -175,8 +194,8 @@ public actor DockerSession {
         return try policy.confirm(intent)
     }
 
-    public nonisolated func confirm(_ action: ComposeAction, stack: DockerStack) throws -> Confirmation {
-        guard let intent = action.intent(for: stack) else { throw PolicyError.invalidTarget }
+    public nonisolated func confirm(_ action: ComposeAction, stack: DockerStack, service: String? = nil) throws -> Confirmation {
+        guard let intent = action.intent(for: stack, service: service) else { throw PolicyError.invalidTarget }
         return try policy.confirm(intent)
     }
 
@@ -227,16 +246,17 @@ public actor DockerSession {
     /// Runs a whole-stack compose action with live output and then refreshes. The command is the same one `perform`
     /// runs; only the way it is run differs (a pty, so compose draws its normal progress, and an exit-code marker).
     /// Cancelling the calling task stops the remote command (Ctrl-C through the pty).
-    public func performStreaming(_ action: ComposeAction, stack: DockerStack, confirmation: Confirmation?,
+    public func performStreaming(_ action: ComposeAction, stack: DockerStack, service: String? = nil, confirmation: Confirmation?,
                                  cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
-        guard let intent = action.intent(for: stack) else {
+        guard let intent = action.intent(for: stack, service: service) else {
             var next = state
             next.actionError = "Refusing to \(action.rawValue) \(stack.name): it has no usable compose project."
             publish(next)
             onEvent(.finished(exitCode: nil))
             return
         }
-        await stream(intent, confirmation: confirmation, ids: Set(stack.containers.map(\.id)), stackName: stack.name,
+        let scoped = service == nil ? stack.containers : stack.containers.filter { $0.service == service }
+        await stream(intent, confirmation: confirmation, ids: Set(scoped.map(\.id)), stackName: stack.name,
                      label: "docker compose \(action.rawValue)", cols: cols, rows: rows, onEvent: onEvent)
     }
 

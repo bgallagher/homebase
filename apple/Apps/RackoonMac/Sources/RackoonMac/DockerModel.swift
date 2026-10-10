@@ -119,6 +119,22 @@ final class DockerModel {
                                 run: { [weak self] in self?.run(action, on: stack, label: working) })
     }
 
+    /// Rebuilds one service of the stack (`up -d --build --no-deps <service>`), after asking with the exact command.
+    func requestRebuild(of container: DockerContainer, in stack: DockerStack) {
+        guard composeBlockedReason(for: stack) == nil, let service = container.service,
+              let intent = ComposeAction.rebuild.intent(for: stack, service: service) else { return }
+        pending = PendingAction(
+            title: "Rebuild \(service)?",
+            message: "Rebuilds the image for \(service) from its Dockerfile and recreates its container if the image changed. Other services in \(stack.name) are left alone. Building can take a while. If \(service) has no build section, nothing is rebuilt.",
+            serverName: serverName, command: intent.command, destructive: false,
+            run: { [weak self] in self?.run(.rebuild, on: stack, service: service, label: "Rebuilding \(service)…") })
+    }
+
+    /// Whether the Rebuild link applies to this container: it needs a compose service the stack can address.
+    func canRebuild(_ container: DockerContainer, in stack: DockerStack) -> Bool {
+        container.service.map { ComposeAction.rebuild.command(for: stack, service: $0) != nil } ?? false
+    }
+
     /// Runs a stack action without its own confirmation sheet, for flows where the user already agreed to it as part
     /// of a larger confirmed step (Save and redeploy). The policy still applies: read-only mode refuses it.
     func runDirect(_ action: ComposeAction, on stack: DockerStack) {
@@ -127,15 +143,16 @@ final class DockerModel {
     }
 
     /// Runs a stack action with its output streamed into `output`, which the detail page shows as a live terminal.
-    private func run(_ action: ComposeAction, on stack: DockerStack, label: String) {
+    private func run(_ action: ComposeAction, on stack: DockerStack, service: String? = nil, label: String) {
         guard composeWorking == nil else { return }
         composeWorking = label
         let session = session
         output = ActionOutput.launch(
-            scope: stack.name, title: "docker compose \(action.rawValue)",
+            scope: stack.name, title: "docker compose \(action.rawValue)" + (service.map { " \($0)" } ?? ""),
             work: { cols, rows, onEvent in
-                let confirmation = try? session.confirm(action, stack: stack)
-                await session.performStreaming(action, stack: stack, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
+                let confirmation = try? session.confirm(action, stack: stack, service: service)
+                await session.performStreaming(action, stack: stack, service: service, confirmation: confirmation,
+                                               cols: cols, rows: rows, onEvent: onEvent)
             },
             completion: { [weak self] in self?.composeWorking = nil })
     }

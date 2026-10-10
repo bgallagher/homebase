@@ -299,7 +299,7 @@ private struct StackDetail: View {
             Text("CONTAINERS").font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
             VStack(spacing: 0) {
                 ForEach(stack.containers) { c in
-                    ContainerCard(container: c, busy: busy.contains(c.id), model: model, openShell: openShell)
+                    ContainerCard(container: c, stack: stack, busy: busy.contains(c.id), model: model, openShell: openShell)
                     if c.id != stack.containers.last?.id { Divider().overlay(Theme.border) }
                 }
             }
@@ -317,6 +317,7 @@ private struct StackDetail: View {
 /// One container in the detail list: status dot, name, usage, image, and text actions.
 private struct ContainerCard: View {
     let container: DockerContainer
+    let stack: DockerStack
     let busy: Bool
     let model: DockerModel
     let openShell: (DockerContainer) -> Void
@@ -339,6 +340,9 @@ private struct ContainerCard: View {
                     ProgressView().controlSize(.mini)
                 } else {
                     LinkAction(title: "Restart", mutates: true) { model.request(.restart, on: container) }
+                    if model.canRebuild(container, in: stack) {
+                        LinkAction(title: "Rebuild", mutates: true) { model.requestRebuild(of: container, in: stack) }
+                    }
                     if container.isRunning {
                         LinkAction(title: "Stop", mutates: true) { model.request(.stop, on: container) }
                     } else {
