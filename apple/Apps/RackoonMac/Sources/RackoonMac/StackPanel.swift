@@ -114,6 +114,7 @@ private struct FileEditorBody: View {
                                changedLines: editor.changedLines(file), errorLines: editor.errorLines(file))
                     .id(file)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 checks
                 footer
             }

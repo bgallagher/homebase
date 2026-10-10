@@ -317,6 +317,7 @@ if args.count > 2, args[2] == "overview" {
         print("cpu \(state.cpuPercent.map { String(format: "%.1f%%", $0) } ?? "n/a") · mem \(o.memory.usedBytes / 1_048_576) / \(o.memory.totalBytes / 1_048_576) MiB")
         for d in o.disks { print("disk \(d.mount) \(d.usePercent)%") }
         print("reboot required: \(o.rebootRequired) · attention: \(state.attention.map(\.message))")
+    print("system: \(state.overview?.modelName ?? "-") · kernel \(state.overview?.kernel ?? "-") · machine-id \(state.overview?.machineID.prefix(8) ?? "-")… · boot \(state.overview?.bootID.prefix(8) ?? "-")… · server time \(state.overview?.serverTime ?? 0) offset \(state.overview?.utcOffsetSeconds ?? 0) \(state.overview?.timeZoneName ?? "")")
     }
     exit(0)
 }

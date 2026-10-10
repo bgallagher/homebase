@@ -56,6 +56,15 @@ public enum OverviewParser {
             disks.append(.init(filesystem: String(f[0]), mount: String(f[5]), totalBytes: total, usedBytes: used, usePercent: pct))
         }
 
+        // Optional like `unhealthy`: output captured before this section existed still parses.
+        let system = keyValues(sections["system"] ?? [])
+        let timeParts = (system["time"] ?? "").split(separator: " ").map(String.init)
+        let utcOffset: Int = {
+            guard timeParts.count >= 2, timeParts[1].count == 5, let sign = timeParts[1].first, "+-".contains(sign),
+                  let h = Int(timeParts[1].dropFirst().prefix(2)), let m = Int(timeParts[1].suffix(2)) else { return 0 }
+            return (sign == "-" ? -1 : 1) * (h * 3600 + m * 60)
+        }()
+
         let reboot = try section("reboot").first == "yes"
         // Optional: older output and hosts without docker have no names here.
         let unhealthy = sections["unhealthy"] ?? []
@@ -63,6 +72,10 @@ public enum OverviewParser {
         let security = sections["security"]?.first.flatMap { Int($0) } ?? 0
 
         return Overview(
+            vendor: system["vendor"] ?? "", product: system["product"] ?? "", machineID: system["machine_id"] ?? "",
+            kernel: system["kernel"] ?? "", bootID: system["boot_id"] ?? "",
+            serverTime: timeParts.first.flatMap { Int64($0) } ?? 0, utcOffsetSeconds: utcOffset,
+            timeZoneName: timeParts.count >= 3 ? timeParts[2] : "",
             hostname: hostname, os: os, uptimeSeconds: uptime,
             load1: load[0], load5: load[1], load15: load[2], cores: cores,
             cpu: cpu, memory: memory, disks: disks, rebootRequired: reboot, unhealthyContainers: unhealthy,

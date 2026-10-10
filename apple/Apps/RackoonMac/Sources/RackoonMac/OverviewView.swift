@@ -15,9 +15,14 @@ struct OverviewView: View {
                     Text("Waiting for you to confirm the host key…").foregroundStyle(Theme.textMuted)
                 } else if let o = state.overview {
                     header(o, stale: state.isStale ? state.updatedAt : nil)
+                    if let flow = model.reboots[server.id] {
+                        RebootProgressBanner(flow: flow, name: server.name) { model.dismissReboot(server) }
+                    }
                     if !state.attention.isEmpty { AttentionStrip(items: state.attention, open: openScreen) }
-                    if let error = state.error { ErrorBanner(message: error) }
+                    // While it reboots the failing polls are expected, not news.
+                    if let error = state.error, model.reboots[server.id]?.isActive != true { ErrorBanner(message: error) }
                     cards(o, cpu: state.cpuPercent)
+                    SystemInfoCard(o: o, polledAt: state.updatedAt)
                 } else if let error = state.error {
                     ErrorBanner(message: error)
                 } else {
@@ -29,6 +34,7 @@ struct OverviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
+        .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
     }
 
     private func header(_ o: Overview, stale: Date?) -> some View {
@@ -43,6 +49,10 @@ struct OverviewView: View {
                 }
             }
             Spacer()
+            Button("Reboot…") { model.requestReboot(server) }
+                .buttonStyle(.bordered).controlSize(.large).handCursor()
+                .disabled(SafetyStore.shared.readOnly || model.reboots[server.id]?.isActive == true)
+                .help(SafetyStore.shared.readOnly ? "Read-only mode is on" : "Reboot \(server.name) and wait for it to come back")
             Button(action: openTerminal) {
                 Text("Open Terminal").fontWeight(.semibold)
                     .padding(.horizontal, 16).frame(height: 34)
@@ -73,6 +83,95 @@ struct OverviewView: View {
                          tint: over ? Theme.danger : Theme.accent)
             }
         }
+    }
+}
+
+/// Cockpit-style identity of the server: model, hostname, OS, kernel, machine id, uptime and its own clock.
+/// Uptime and the clock tick locally from the last poll, so they move every second without extra requests.
+struct SystemInfoCard: View {
+    let o: Overview
+    let polledAt: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("System information").fontWeight(.semibold)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let elapsed = max(0, polledAt.map { context.date.timeIntervalSince($0) } ?? 0)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 28, alignment: .top)], alignment: .leading, spacing: 12) {
+                    if !o.modelName.isEmpty { row("Model", o.modelName) }
+                    row("Hostname", o.hostname)
+                    row("Operating system", o.os.prettyName)
+                    if !o.kernel.isEmpty { row("Kernel", o.kernel) }
+                    if !o.machineID.isEmpty { row("Machine ID", o.machineID, mono: true) }
+                    row("Uptime", Format.uptime(o.uptimeSeconds + elapsed))
+                    if o.serverTime > 0 { row("Server time", serverTime(o.serverTime + Int64(elapsed))) }
+                }
+            }
+        }
+        .padding(18).frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+
+    private func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(Theme.textMuted).frame(width: 130, alignment: .leading)
+            Text(value).font(mono ? .system(size: 12, design: .monospaced) : .body)
+                .foregroundStyle(Theme.textPrimary).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// The server's clock in the server's own zone, so it reads like `date` there.
+    private func serverTime(_ epoch: Int64) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: o.utcOffsetSeconds)
+        formatter.dateFormat = "MMM d, yyyy, h:mm:ss a"
+        let text = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(epoch)))
+        return o.timeZoneName.isEmpty ? text : "\(text) \(o.timeZoneName)"
+    }
+}
+
+/// Progress of a reboot started from the app: waiting, back, timed out, or failed.
+struct RebootProgressBanner: View {
+    let flow: RebootFlow
+    let name: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        switch flow.phase {
+        case .requesting:
+            box(color: Theme.accent, symbol: nil, title: "Asking \(name) to reboot…", detail: nil, dismissible: false)
+        case .waiting(let since):
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                box(color: Theme.accent, symbol: nil, title: "Rebooting \(name)…",
+                    detail: "Waiting for it to come back · \(Format.duration(context.date.timeIntervalSince(since))) so far", dismissible: false)
+            }
+        case .back(let after):
+            box(color: Theme.ok, symbol: "checkmark.circle.fill", title: "\(name) is back",
+                detail: "It restarted and answered again after \(Format.duration(after)).", dismissible: true)
+        case .timedOut:
+            box(color: Theme.warn, symbol: "exclamationmark.triangle.fill", title: "\(name) has not come back",
+                detail: "No answer after 10 minutes. Check the machine or the provider's console.", dismissible: true)
+        case .failed(let message):
+            box(color: Theme.danger, symbol: "xmark.octagon.fill", title: "Could not reboot \(name)", detail: message, dismissible: true)
+        }
+    }
+
+    private func box(color: Color, symbol: String?, title: String, detail: String?, dismissible: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let symbol { Image(systemName: symbol).foregroundStyle(color) } else { ProgressView().controlSize(.small) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).fontWeight(.medium)
+                if let detail { Text(detail).font(.system(size: 12)).foregroundStyle(Theme.textMuted) }
+            }
+            Spacer()
+            if dismissible {
+                Button(action: dismiss) {
+                    Image(systemName: "xmark").font(.system(size: 11)).frame(width: 24, height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.pointer).foregroundStyle(Theme.textMuted).help("Dismiss")
+            }
+        }
+        .padding(12).background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -176,6 +275,13 @@ enum Format {
         let s = Int(seconds)
         let d = s / 86400, h = s % 86400 / 3600, m = s % 3600 / 60
         return d > 0 ? "\(d)d \(h)h" : h > 0 ? "\(h)h \(m)m" : "\(m)m"
+    }
+    /// "45s", "1m 12s", "1h 5m": for short waits, where uptime's minute resolution would read "0m".
+    static func duration(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds))
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m \(s % 60)s" }
+        return "\(s / 3600)h \(s % 3600 / 60)m"
     }
     static func percent(_ v: Double) -> String { String(format: "%.0f%%", v) }
     static func load(_ v: Double) -> String { String(format: "%.2f", v) }

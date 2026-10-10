@@ -250,7 +250,8 @@ private struct StackDetail: View {
             .font(.system(size: 13))
             HStack(alignment: .center, spacing: 10) {
                 Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
-                Text(summary.text).foregroundStyle(summary.color)
+                // A pill, so it centres on the title instead of sitting on its baseline.
+                Badge(text: summary.text, color: summary.color)
                 Spacer()
                 if !stack.isStandalone { actions }
             }

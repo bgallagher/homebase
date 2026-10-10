@@ -4,7 +4,7 @@
     {
       "id": "overview",
       "description": "One batched read of host, OS, uptime, load, CPU counters, memory, disks and reboot flag and the names of unhealthy containers (empty if docker is absent). Sections start with a '##name' line.",
-      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; U=$(apt list --upgradable 2>/dev/null); echo '##updates'; echo \"$U\" | grep -c -E '^[^/ ]+/'; echo '##security'; echo \"$U\" | grep -c -E '^[^/ ]+/[^ ]*-security'; echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null",
+      "script": "echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; echo '##system'; echo \"vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)\"; echo \"product=$(cat /sys/class/dmi/id/product_name 2>/dev/null)\"; echo \"machine_id=$(cat /etc/machine-id 2>/dev/null)\"; echo \"kernel=$(uname -r)\"; echo \"boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)\"; echo \"time=$(date '+%s %z %Z')\"; echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; U=$(apt list --upgradable 2>/dev/null); echo '##updates'; echo \"$U\" | grep -c -E '^[^/ ]+/'; echo '##security'; echo \"$U\" | grep -c -E '^[^/ ]+/[^ ]*-security'; echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null",
       "timeoutSeconds": 10,
       "distros": [
         "debian",
@@ -201,6 +201,28 @@
       "description": "Save new content over one stack file: refuses if the file's sha256 no longer matches what was opened (exit 3, ##changed; {expect} is that check, or a not-exists check for a new file), validates with docker compose config (exit 4, ##invalid, nothing written), copies the old file to <file>.rackoon.bak, keeps owner and mode, then moves the new file into place atomically (##saved and the new sha256). Exit 7 = not writable. All paths are absolute and single-quoted for the shell; {b64} is the file content base64-encoded and quoted.",
       "script": "F={file}; D={dir}; {expect}; T=$(mktemp \"$D/.rackoon-save.XXXXXX\") || { echo '##cannot-write'; exit 7; }; trap 'rm -f \"$T\"' EXIT; echo {b64} | base64 -d > \"$T\"; if ! OUT=$(docker compose -p {project} --project-directory \"$D\" {args} config -q 2>&1); then echo '##invalid'; echo \"$OUT\"; exit 4; fi; if [ -e \"$F\" ]; then chmod --reference=\"$F\" \"$T\"; chown --reference=\"$F\" \"$T\" 2>/dev/null; cp -p \"$F\" \"$F.rackoon.bak\" || { echo '##cannot-write'; exit 7; }; else chmod 600 \"$T\"; fi; mv -f \"$T\" \"$F\"; echo '##saved'; sha256sum \"$F\" | cut -d' ' -f1",
       "timeoutSeconds": 90,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "boot_id",
+      "description": "The kernel's boot id: a random id that changes on every boot. Used after a reboot to tell the server has really restarted, not just kept its old connection.",
+      "script": "cat /proc/sys/kernel/random/boot_id",
+      "timeoutSeconds": 8,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ],
+      "kind": "query"
+    },
+    {
+      "id": "reboot",
+      "kind": "action",
+      "description": "Reboot the server in 2 seconds (so this ssh command can return and close cleanly). Runs as root or through sudo -n; if sudo would ask for a password it exits 5 with ##no-sudo and nothing is scheduled. The reboot is started with nohup so it survives the session ending.",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S true || { echo '##no-sudo'; exit 5; }; nohup sh -c \"sleep 2; $S systemctl reboot\" >/dev/null 2>&1 </dev/null & echo '##rebooting'",
+      "timeoutSeconds": 15,
       "distros": [
         "debian",
         "ubuntu"

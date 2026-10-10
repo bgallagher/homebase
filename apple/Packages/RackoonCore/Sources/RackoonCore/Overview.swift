@@ -31,6 +31,21 @@ public struct Overview: Sendable, Codable, Equatable {
         public var idle: Int64
     }
 
+    /// Hardware and system identity (from /sys/class/dmi, /etc/machine-id, uname). Empty when the server does not say.
+    public var vendor: String
+    public var product: String
+    public var machineID: String
+    public var kernel: String
+    /// Changes on every boot; how a reboot is recognised.
+    public var bootID: String
+    /// The server's clock at the poll (Unix seconds), its UTC offset in seconds and its zone abbreviation.
+    public var serverTime: Int64
+    public var utcOffsetSeconds: Int
+    public var timeZoneName: String
+
+    /// "Hetzner vServer", or whatever part is known.
+    public var modelName: String { [vendor, product].filter { !$0.isEmpty }.joined(separator: " ") }
+
     public var hostname: String
     public var os: OS
     public var uptimeSeconds: Double

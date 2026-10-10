@@ -20,6 +20,12 @@ struct CodeEditorView: NSViewRepresentable {
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
+        // A full-size-content window gives scroll views a top inset, and the ruler then drew its edge line up through
+        // the tab bar above the editor. No automatic insets, and nothing may draw outside the editor's own bounds.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets()
+        scroll.wantsLayer = true
+        scroll.layer?.masksToBounds = true
 
         let tv = EditorTextView()
         tv.isRichText = false

@@ -29,6 +29,13 @@ MemAvailable:    5654876 kB
 Filesystem        1-blocks        Used   Available Capacity Mounted on
 /dev/sda1      39973924864 17170952192 21118779392      45% /
 /dev/sda15       264281088      148992   264132096       1% /boot/efi
+##system
+vendor=Hetzner
+product=vServer
+machine_id=0123456789abcdef0123456789abcdef
+kernel=6.8.0-146-generic
+boot_id=1b4e28ba-2fa1-11d2-883f-0016d3cca427
+time=1791615000 +0000 UTC
 ##reboot
 no
 ##updates
