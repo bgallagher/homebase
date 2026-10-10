@@ -8,6 +8,15 @@ private struct TileHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// What the Docker screen is showing for each server, kept outside the screen so it survives switching to another
+/// sidebar item and back (the screen itself is rebuilt each time): the stack page that was open, and an Add container
+/// draft in progress.
+@MainActor @Observable
+final class DockerWorkspace {
+    var openStack: [String: String] = [:]
+    var drafts: [String: AddContainerModel] = [:]
+}
+
 /// Docker: a grid of stack cards, and a detail page for one stack (its containers, actions and logs).
 struct DockerScreen: View {
     let server: Server
@@ -15,40 +24,52 @@ struct DockerScreen: View {
     let theme: TerminalTheme
     /// Opens a shell inside a container (a terminal tab running `docker exec`).
     let openShell: (DockerContainer) -> Void
+    let workspace: DockerWorkspace
     @State private var model: DockerModel
-    @State private var openStack: String?
     @State private var tileHeight: CGFloat = 0
 
-    init(server: Server, theme: TerminalTheme, openShell: @escaping (DockerContainer) -> Void) {
+    private var openStack: String? {
+        get { workspace.openStack[server.id] }
+        nonmutating set { workspace.openStack[server.id] = newValue }
+    }
+    private var newStack: AddContainerModel? {
+        get { workspace.drafts[server.id] }
+        nonmutating set { workspace.drafts[server.id] = newValue }
+    }
+
+    init(server: Server, theme: TerminalTheme, workspace: DockerWorkspace, openShell: @escaping (DockerContainer) -> Void) {
         self.server = server
         self.theme = theme
+        self.workspace = workspace
         self.openShell = openShell
         _model = State(initialValue: DockerModel(server: server))
     }
 
     var body: some View {
         let state = model.state
-        let stack = openStack.flatMap { name in state.snapshot?.stacks.first { $0.name == name } }
+        let stack = openStack.flatMap { model.stack(named: $0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let stack {
                     StackDetail(stack: stack, server: server, model: model, theme: theme, busy: state.busy,
                                 back: { model.closeLogs(); openStack = nil }, openShell: openShell)
                         .id(stack.name)   // one editor (and its drafts) per stack
+                } else if let newStack {
+                    AddContainerScreen(model: newStack, theme: theme, back: { self.newStack = nil })
                 } else {
                     overviewHeader(state.snapshot)
                 }
                 // On a stack's page the Output tab shows the run; the banner is for the overview.
-                if stack == nil, let working = model.composeWorking { ComposeBanner(text: working) }
+                if stack == nil, newStack == nil, let working = model.composeWorking { ComposeBanner(text: working) }
                 if let error = state.actionError { ErrorBanner(message: error) }
                 if let error = state.error { ErrorBanner(message: error) }
-                if stack == nil {
+                if stack == nil, newStack == nil {
                     if let snapshot = state.snapshot {
-                        if snapshot.containers.isEmpty {
+                        if snapshot.containers.isEmpty, model.createdStacks.isEmpty {
                             Text("No containers on this server.").foregroundStyle(Theme.textMuted)
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
-                            ForEach(snapshot.stacks) { stack in
+                            ForEach(model.stacks) { stack in
                                 StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name),
                                           height: tileHeight) { openStack = stack.name }
                             }
@@ -64,9 +85,32 @@ struct DockerScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
-        .onAppear { model.start() }
+        .onAppear {
+            model.start()
+            if let draft = newStack { attach(draft) }   // a draft from before the screen was rebuilt
+        }
         .onDisappear { model.stop() }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+    }
+
+    private func startNewStack() {
+        let draft = AddContainerModel(server: server, folder: model.suggestedStackFolder)
+        attach(draft)
+        newStack = draft
+    }
+
+    /// Hands this screen's data and its "finished" step to a draft, which outlives the screen.
+    private func attach(_ draft: AddContainerModel) {
+        let model = model, workspace = workspace, serverID = server.id
+        draft.attach(
+            stacks: { model.stacks }, containers: { model.state.snapshot?.containers ?? [] },
+            blockedReason: { model.composeBlockedReason(for: $0) },
+            finished: { result in
+                if result.isNew { model.adopt(result.stack) }
+                if result.start { model.runDirect(.up, on: result.stack) }   // the output is already showing when the stack's page opens
+                workspace.drafts[serverID] = nil
+                workspace.openStack[serverID] = result.stack.name
+            })
     }
 
     private func overviewHeader(_ snapshot: DockerSnapshot?) -> some View {
@@ -85,6 +129,11 @@ struct DockerScreen: View {
             Spacer()
             Button(action: model.refresh) { Label("Refresh", systemImage: "arrow.clockwise") }
                 .buttonStyle(.bordered).controlSize(.large).handCursor()
+            let blocked = SafetyStore.shared.readOnly ? "Read-only mode is on" : nil
+            Button(action: startNewStack) { Label("Add Container", systemImage: "plus") }
+                .buttonStyle(.borderedProminent).controlSize(.large).handCursor()
+                .disabled(blocked != nil || snapshot == nil)
+                .help(blocked ?? "Add a container to a new or existing stack on \(server.name)")
         }
     }
 }
@@ -169,6 +218,7 @@ private struct StackTile: View {
 
     private var status: (text: String, color: Color, dot: Color) {
         if stack.unhealthyCount > 0 { return ("\(stack.unhealthyCount) unhealthy", Theme.danger, Theme.danger) }
+        if stack.containers.isEmpty { return ("Not started", Theme.textMuted, Theme.idle) }
         if stack.runningCount == 0 { return ("Stopped", Theme.textMuted, Theme.idle) }
         if stack.stoppedCount > 0 { return ("\(stack.stoppedCount) stopped", Theme.warn, Theme.warn) }
         return ("", Theme.ok, Theme.ok)
@@ -207,7 +257,7 @@ private struct StackDetail: View {
     let back: () -> Void
     let openShell: (DockerContainer) -> Void
     @State private var editor: StackEditorModel
-    @State private var tab: PanelSelection = .logs
+    @State private var tab: PanelSelection
     @State private var confirmDiscard = false
 
     init(stack: DockerStack, server: Server, model: DockerModel, theme: TerminalTheme, busy: Set<String>,
@@ -219,6 +269,8 @@ private struct StackDetail: View {
         self.busy = busy
         self.back = back
         self.openShell = openShell
+        // A run that started just before this page opened (a new stack's first deploy) is already showing.
+        _tab = State(initialValue: model.output?.scope == stack.name ? .output : .logs)
         _editor = State(initialValue: StackEditorModel(stack: stack, server: server, redeploy: { model.runDirect(.up, on: $0) }))
     }
 
@@ -267,6 +319,7 @@ private struct StackDetail: View {
     private var summary: (text: String, color: Color) {
         let n = stack.containers.count
         if stack.unhealthyCount > 0 { return ("\(stack.unhealthyCount) unhealthy", Theme.danger) }
+        if n == 0 { return ("Not started", Theme.textMuted) }
         if stack.runningCount == n { return (n == 1 ? "Running" : "All \(n) running", Theme.ok) }
         if stack.runningCount == 0 { return ("Stopped", Theme.textMuted) }
         return ("\(stack.runningCount) of \(n) running", Theme.warn)

@@ -153,6 +153,69 @@ if args.count > 2, args[2] == "file-test" {
     print(failures == 0 ? "file-test: all passed" : "file-test: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "newstack-test" {
+    // Exercises the REAL new-stack check and create scripts under one throwaway folder in /tmp, and removes it.
+    let project = "rackoon-probe-newstack"
+    let parent = "/tmp/rackoon-probe-newstack"
+    func sh(_ script: String, timeout: TimeInterval = 300) async -> CommandResult {
+        (try? await transport.run(script, timeout: timeout)) ?? CommandResult(stdout: "", stderr: "ssh failed", exitCode: 255)
+    }
+    func teardown() async {
+        _ = await sh("cd \(parent)/\(project) 2>/dev/null && docker compose -p \(project) down -v --remove-orphans 2>&1; cd /; rm -rf \(parent)")
+    }
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+
+    await teardown()
+    let policy = ActionPolicy()
+    let session = NewStackSession(transport: transport, policy: policy)
+    let good = NewStackPlan(name: project, parentDirectory: parent,
+                            compose: "services:\n  web:\n    image: busybox:${TAG:?TAG is required}\n    command: sleep 3600\n", env: "TAG=1.36\n")
+    let dir = good.directory!
+
+    // --- check: changes nothing in the real folder
+    let ok = try? await session.check(good)
+    check(ok?.isValid == true, "valid files pass the server check: \(String(describing: ok))")
+    var noEnv = good; noEnv.env = ""
+    let missingVar = try? await session.check(noEnv)
+    check(missingVar?.isValid == false, "a required variable with no .env fails the check: \(String(describing: missingVar?.errors.first?.message))")
+    var broken = good; broken.compose = "services:\n  web:\n    image: busybox\n   command: x\n"
+    let bad = try? await session.check(broken)
+    check(bad?.isValid == false && bad?.errors.first?.message.contains("/tmp/") == false, "broken YAML fails with a readable message: \(String(describing: bad?.errors.first))")
+    check((await sh("ls \(parent) 2>&1")).stdout.contains("No such file"), "checking created nothing under the target folder")
+
+    // --- create: files, modes, refusal without confirmation
+    do { _ = try await session.create(good, confirmation: nil); check(false, "create without confirmation is refused") }
+    catch { check(error as? PolicyError == .notConfirmed, "create without confirmation is refused") }
+    policy.isReadOnly = true
+    check((try? session.confirm(good)) == nil, "read-only refuses to confirm a create")
+    policy.isReadOnly = false
+    let made = try? await session.create(good, confirmation: try? session.confirm(good))
+    check(made == .created, "created: \(String(describing: made))")
+    let files = await sh("cat \(dir)/compose.yaml; echo ---; cat \(dir)/.env; echo ---; stat -c '%a' \(dir)/.env")
+    check(files.stdout.contains("busybox:${TAG") && files.stdout.contains("TAG=1.36") && files.stdout.hasSuffix("600\n"), ".env and compose.yaml written, .env mode 600: \(files.stdout.suffix(40))")
+    let again = try? await session.create(good, confirmation: try? session.confirm(good))
+    check(again == .exists, "same name again is refused: \(String(describing: again))")
+
+    // --- create with files the server rejects leaves nothing behind
+    var rejected = good; rejected.name = "rackoon-probe-newstack-bad"; rejected.compose = "services:\n  web:\n    image: busybox\n   command: x\n"
+    let invalid = try? await session.create(rejected, confirmation: try? session.confirm(rejected))
+    check({ if case .invalid(let issues)? = invalid { return !issues.isEmpty }; return false }(), "rejected files report issues: \(String(describing: invalid))")
+    check((await sh("ls \(parent)")).stdout.trimmingCharacters(in: .whitespacesAndNewlines) == project, "the rejected stack left no folder behind")
+
+    // --- it starts with the normal stack action
+    let docker = DockerSession(transport: transport, policy: policy)
+    let stack = good.stack!
+    await docker.perform(.up, stack: stack, confirmation: try? docker.confirm(.up, stack: stack))
+    let running = await sh("docker ps --filter label=com.docker.compose.project=\(project) --filter status=running -q | wc -l")
+    check(running.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "1", "up -d on the new stack started its container")
+
+    await teardown()
+    let leftover = await sh("ls \(parent) 2>&1 | head -1; docker ps -a --filter label=com.docker.compose.project=\(project) -q | wc -l")
+    check(leftover.stdout.contains("No such file") && leftover.stdout.hasSuffix("0\n"), "teardown removed everything")
+    print(failures == 0 ? "newstack-test: all passed" : "newstack-test: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "compose-test" {
     // Exercises the REAL compose actions end to end on a throwaway stack that this probe creates and removes.
     // It never touches your own stacks: everything lives under one temp directory and one project name.

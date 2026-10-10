@@ -95,6 +95,7 @@ struct ContentView: View {
     @State private var model = AppModel()
     @State private var selection: Screen = .overview
     @State private var terminals = TerminalStore()
+    @State private var dockerWorkspace = DockerWorkspace()
     @State private var showingAdd = false
     private let appearance = AppearanceStore.shared
 
@@ -174,7 +175,7 @@ struct ContentView: View {
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal },
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
                 case .docker:
-                    DockerScreen(server: server, theme: appearance.resolvedTheme, openShell: { container in
+                    DockerScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace, openShell: { container in
                         guard let command = DockerSession.shellCommand(id: container.id) else { return }
                         terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: command)
                         selection = .terminal

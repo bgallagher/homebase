@@ -25,7 +25,11 @@ final class DockerModel {
     private(set) var composeWorking: String?
     /// The most recent stack action and everything it printed, kept until dismissed or replaced by the next one.
     private(set) var output: ActionOutput?
+    /// Stacks created from this app that have no containers yet. `docker ps` can't see them, so they are remembered
+    /// here (for this run of the app) until their containers show up in the snapshot.
+    private(set) var createdStacks: [String: DockerStack] = [:]
     @ObservationIgnored private let serverName: String
+    @ObservationIgnored private let serverUser: String?
     @ObservationIgnored private let session: DockerSession
     @ObservationIgnored private let transport: SSHTransport
     @ObservationIgnored private var listener: Task<Void, Never>?
@@ -37,8 +41,25 @@ final class DockerModel {
         let transport = OpenSSHTransport(server: server)
         self.transport = transport
         serverName = server.name
+        serverUser = server.user
         session = DockerSession(transport: transport, policy: SafetyStore.shared.policy)
     }
+
+    /// Every stack to show: the ones docker reports, then freshly created ones that have no containers yet.
+    var stacks: [DockerStack] {
+        let reported = state.snapshot?.stacks ?? []
+        let names = Set(reported.map(\.name))
+        return reported + createdStacks.values.filter { !names.contains($0.name) }.sorted { $0.name < $1.name }
+    }
+
+    func stack(named name: String) -> DockerStack? { stacks.first { $0.name == name } }
+
+    /// Where a new stack should go by default: where this server's existing stacks live.
+    var suggestedStackFolder: String {
+        NewStackDefaults.parentDirectory(stacks: state.snapshot?.stacks ?? [], user: serverUser)
+    }
+
+    func adopt(_ stack: DockerStack) { createdStacks[stack.name] = stack }
 
     func start() {
         guard listener == nil else { return }

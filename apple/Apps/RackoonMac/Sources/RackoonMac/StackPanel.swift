@@ -183,34 +183,7 @@ private struct FileEditorBody: View {
     // MARK: checks and footer
 
     @ViewBuilder private var checks: some View {
-        let rows = editor.rows(for: file)
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(rows) { row in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        switch row.state {
-                        case .running: ProgressView().controlSize(.mini).frame(width: 14)
-                        default: Text(icon(row.state)).foregroundStyle(color(row.state)).fontWeight(.bold).frame(width: 14)
-                        }
-                        Text(row.title).foregroundStyle(row.state == .fail ? Theme.danger : (row.state == .skipped ? Theme.textMuted : Theme.textPrimary))
-                        Text(row.detail).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(2)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.sidebar.opacity(0.6))
-            .overlay(alignment: .top) { Theme.border.frame(height: 1) }
-        }
-    }
-
-    private func icon(_ s: EditorCheckRow.State) -> String {
-        switch s { case .pass: "✓"; case .fail: "✕"; case .warn: "!"; case .skipped: "–"; case .running: "" }
-    }
-
-    private func color(_ s: EditorCheckRow.State) -> Color {
-        switch s { case .pass: Theme.ok; case .fail: Theme.danger; case .warn: Theme.warn; case .skipped, .running: Theme.textMuted }
+        EditorChecksList(rows: editor.rows(for: file))
     }
 
     private var footer: some View {
@@ -240,5 +213,40 @@ private struct FileEditorBody: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(Theme.sidebar)
         .overlay(alignment: .top) { Theme.border.frame(height: 1) }
+    }
+}
+
+/// The checklist under an editor: one row per check (YAML syntax, schema, the server's compose check...).
+struct EditorChecksList: View {
+    let rows: [EditorCheckRow]
+
+    var body: some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(rows) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        switch row.state {
+                        case .running: ProgressView().controlSize(.mini).frame(width: 14)
+                        default: Text(icon(row.state)).foregroundStyle(color(row.state)).fontWeight(.bold).frame(width: 14)
+                        }
+                        Text(row.title).foregroundStyle(row.state == .fail ? Theme.danger : (row.state == .skipped ? Theme.textMuted : Theme.textPrimary))
+                        Text(row.detail).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.sidebar.opacity(0.6))
+            .overlay(alignment: .top) { Theme.border.frame(height: 1) }
+        }
+    }
+
+    private func icon(_ s: EditorCheckRow.State) -> String {
+        switch s { case .pass: "✓"; case .fail: "✕"; case .warn: "!"; case .skipped: "–"; case .running: "" }
+    }
+
+    private func color(_ s: EditorCheckRow.State) -> Color {
+        switch s { case .pass: Theme.ok; case .fail: Theme.danger; case .warn: Theme.warn; case .skipped, .running: Theme.textMuted }
     }
 }

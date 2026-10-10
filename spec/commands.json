@@ -218,6 +218,50 @@
       ]
     },
     {
+      "id": "stack_new_check",
+      "kind": "query",
+      "description": "Check a NEW stack's files without creating anything in its real folder: writes compose.yaml (and .env, when {env} is the .env step) into a scratch folder from mktemp -d, runs docker compose config -q there, and removes the scratch folder on exit. {b64} is the compose file base64-encoded and quoted; {project} must match ^[a-z0-9][a-z0-9_-]*$. {env} is empty or `echo <base64> | base64 -d > \"$T/.env\"; `. Exit 7 = cannot create the scratch folder.",
+      "script": "T=$(mktemp -d) || { echo '##cannot-write'; exit 7; }; trap 'rm -rf \"$T\"' EXIT; echo {b64} | base64 -d > \"$T/compose.yaml\"; {env}cd \"$T\" && docker compose -p {project} config -q 2>&1",
+      "timeoutSeconds": 60,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "stack_create",
+      "kind": "action",
+      "description": "Create a new stack: refuses if {dir} already exists (exit 3, ##exists), creates {parent} if needed and then {dir} (exit 7 = not writable), writes compose.yaml (and .env with mode 600 when {env} is the .env step: `echo <base64> | base64 -d > \"$D/.env\" && chmod 600 \"$D/.env\" || exit 7; `, otherwise empty), checks it in place with docker compose config -q (exit 4, ##invalid), and on any failure removes the files and the folder it made. Success prints ##created. {dir} is <parent>/<name>; all paths are absolute and single-quoted for the shell. {b64} is the compose file base64-encoded and quoted.",
+      "script": "D={dir}; P={parent}; if [ -e \"$D\" ]; then echo '##exists'; exit 3; fi; mkdir -p \"$P\" && mkdir \"$D\" || { echo '##cannot-write'; exit 7; }; ok=; trap '[ -n \"$ok\" ] || { rm -f \"$D/compose.yaml\" \"$D/.env\"; rmdir \"$D\" 2>/dev/null; }' EXIT; echo {b64} | base64 -d > \"$D/compose.yaml\" || exit 7; {env}if ! OUT=$(cd \"$D\" && docker compose -p {project} config -q 2>&1); then echo '##invalid'; echo \"$OUT\"; exit 4; fi; ok=1; echo '##created'",
+      "timeoutSeconds": 90,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "image_exists",
+      "kind": "query",
+      "description": "Does the image exist in its registry, as seen from the server (so private registries it is logged in to work)? Prints found, timeout (20 s) or notfound; notfound also covers a registry that needs a login. {image} is a validated image name (letters, digits and . _ / : @ -), single-quoted.",
+      "script": "timeout 20 docker manifest inspect {image} >/dev/null 2>&1; case $? in 0) echo found;; 124) echo timeout;; *) echo notfound;; esac",
+      "timeoutSeconds": 30,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "listening_ports",
+      "kind": "query",
+      "description": "TCP ports with a listener on the server, one line per socket: the fourth column is the local address and the port follows its last colon. Used to tell whether a host port is free before adding a container.",
+      "script": "ss -H -tln 2>/dev/null",
+      "timeoutSeconds": 10,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "boot_id",
       "description": "The kernel's boot id: a random id that changes on every boot. Used after a reboot to tell the server has really restarted, not just kept its old connection.",
       "script": "cat /proc/sys/kernel/random/boot_id",

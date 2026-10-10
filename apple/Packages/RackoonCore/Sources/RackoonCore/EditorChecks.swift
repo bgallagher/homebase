@@ -77,7 +77,7 @@ public enum EditorChecks {
         return rows
     }
 
-    static func describe(_ issue: ComposeIssue) -> String {
+    public static func describe(_ issue: ComposeIssue) -> String {
         issue.line.map { "Line \($0): \(issue.message)" } ?? issue.message
     }
 
