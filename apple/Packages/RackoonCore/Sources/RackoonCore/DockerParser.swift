@@ -35,7 +35,8 @@ public enum DockerParser {
                 project: labels["com.docker.compose.project"], service: labels["com.docker.compose.service"],
                 workingDir: labels["com.docker.compose.project.working_dir"],
                 configFile: configFiles.first, configFiles: configFiles,
-                cpuPercent: s?.cpu, memoryUsedBytes: s?.used, memoryLimitBytes: s?.limit))
+                cpuPercent: s?.cpu, memoryUsedBytes: s?.used, memoryLimitBytes: s?.limit,
+                bookmark: Bookmark.from(labels: labels)))
         }
         return DockerSnapshot(containers: containers)
     }

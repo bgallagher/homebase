@@ -70,6 +70,20 @@ final class DockerModel {
 
     func adopt(_ stack: DockerStack) { createdStacks[stack.name] = stack }
 
+    /// Screens that show Docker data attach while visible; polling runs while at least one is. Counting matters because
+    /// a new screen can appear before the old one disappears.
+    @ObservationIgnored private var attached = 0
+
+    func attach() {
+        attached += 1
+        start()
+    }
+
+    func detach() {
+        attached = max(0, attached - 1)
+        if attached == 0 { stop() }
+    }
+
     func start() {
         guard listener == nil else { return }
         let session = session

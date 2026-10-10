@@ -248,9 +248,9 @@ public enum ComposeInsert {
         return lines.joined(separator: "\n")
     }
 
-    private struct Block { var start: Int; var end: Int; var inline: Bool }
+    struct Block { var start: Int; var end: Int; var inline: Bool }
 
-    private static func servicesBlock(_ lines: [String]) -> Block? {
+    static func servicesBlock(_ lines: [String]) -> Block? {
         guard let start = lines.firstIndex(where: { $0.hasPrefix("services:") }) else { return nil }
         var rest = String(lines[start].dropFirst("services:".count))
         if let hash = rest.firstIndex(of: "#") { rest = String(rest[..<hash]) }
@@ -263,7 +263,7 @@ public enum ComposeInsert {
         return Block(start: start, end: end, inline: inline)
     }
 
-    private static func childIndent(_ lines: [String], _ block: Block) -> Int? {
+    static func childIndent(_ lines: [String], _ block: Block) -> Int? {
         for i in block.start + 1..<block.end {
             let line = lines[i]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -273,7 +273,7 @@ public enum ComposeInsert {
         return nil
     }
 
-    private static func serviceNames(_ lines: [String], _ block: Block, _ step: Int) -> [String] {
+    static func serviceNames(_ lines: [String], _ block: Block, _ step: Int) -> [String] {
         guard step > 0 else { return [] }
         return (block.start + 1..<block.end).compactMap { i -> String? in
             let line = lines[i]

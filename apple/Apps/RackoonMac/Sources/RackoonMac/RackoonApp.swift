@@ -180,6 +180,9 @@ struct ContentView: View {
                         terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: command)
                         selection = .terminal
                     }).id(server.id)
+                case .bookmarks:
+                    BookmarksScreen(server: server, workspace: dockerWorkspace,
+                                    openStack: { name in dockerWorkspace.openStack[server.id] = name; selection = .docker }).id(server.id)
                 case .updates:
                     UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
                 case .terminal:

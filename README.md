@@ -32,6 +32,10 @@
 - **Add container**: fill in name, image, ports, volumes, environment and restart policy and watch the compose file and `.env` appear, or paste YAML and have the form fill in. Add to a new stack or an existing one. The server checks the YAML, that the image exists, that the port is free and that the name is unused.
 - **Delete stack**: removes the containers and networks and, by default, the stack's folder (with safety checks), with optional volume removal and a typed-name confirmation.
 
+**Bookmarks**
+- Link to any service with a small modal, from the bookmark button on a stack card or from the Bookmarks screen. Bookmarks are stored as [Homepage](https://gethomepage.dev) Docker labels (`homepage.href`, `homepage.name`, `homepage.group`, ...) in the stack's compose file, so they stay with the stack and work with other tools that read them.
+- The Bookmarks screen lists them by group, with Open, Copy, Edit and Remove.
+
 **Updates**
 - Pending, security and held `apt` packages from the server's own package lists; refresh lists, install all or security updates only, with streamed output.
 
@@ -50,7 +54,7 @@
 
 ## Roadmap
 
-- Bookmarks (open any service with the right Tailscale or public URL), Alerts and Security. These appear as "Soon" in the sidebar.
+- Alerts and Security (shown as "Soon" in the sidebar), and bookmark links derived automatically from Traefik host rules or published ports.
 - Keychain-stored secrets and password logins (today: keys and ssh-agent).
 - Editing saved servers, stacks that exist only as files, notarized builds.
 - iPhone, then Android, sharing the same spec (see below).

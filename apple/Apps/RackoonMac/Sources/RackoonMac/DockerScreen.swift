@@ -15,6 +15,16 @@ private struct TileHeightKey: PreferenceKey {
 final class DockerWorkspace {
     var openStack: [String: String] = [:]
     var drafts: [String: AddContainerModel] = [:]
+    /// One Docker model per server, shared by the Docker and Bookmarks screens so both see the same stacks and labels.
+    /// Not observed: it is created on first use, possibly while a view is being built.
+    @ObservationIgnored private var models: [String: DockerModel] = [:]
+
+    func model(for server: Server) -> DockerModel {
+        if let existing = models[server.id] { return existing }
+        let model = DockerModel(server: server)
+        models[server.id] = model
+        return model
+    }
 }
 
 /// Docker: a grid of stack cards, and a detail page for one stack (its containers, actions and logs).
@@ -25,8 +35,9 @@ struct DockerScreen: View {
     /// Opens a shell inside a container (a terminal tab running `docker exec`).
     let openShell: (DockerContainer) -> Void
     let workspace: DockerWorkspace
-    @State private var model: DockerModel
+    private let model: DockerModel
     @State private var tileHeight: CGFloat = 0
+    @State private var bookmarking: BookmarkModel?
 
     private var openStack: String? {
         get { workspace.openStack[server.id] }
@@ -42,7 +53,7 @@ struct DockerScreen: View {
         self.theme = theme
         self.workspace = workspace
         self.openShell = openShell
-        _model = State(initialValue: DockerModel(server: server))
+        model = workspace.model(for: server)
     }
 
     var body: some View {
@@ -70,8 +81,10 @@ struct DockerScreen: View {
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
                             ForEach(model.stacks) { stack in
-                                StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name),
-                                          height: tileHeight) { openStack = stack.name }
+                                StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name), height: tileHeight,
+                                          bookmark: model.bookmarkableStacks.contains { $0.name == stack.name } ? { startBookmark(stack) } : nil) {
+                                    openStack = stack.name
+                                }
                             }
                         }
                         .onPreferenceChange(TileHeightKey.self) { tileHeight = $0 }
@@ -86,18 +99,38 @@ struct DockerScreen: View {
         }
         .foregroundStyle(Theme.textPrimary)
         .onAppear {
-            model.start()
+            model.attach()
             if let draft = newStack { attach(draft) }   // a draft from before the screen was rebuilt
         }
-        .onDisappear { model.stop() }
+        .onDisappear {
+            model.closeLogs()   // don't keep streaming a log nobody can see
+            model.detach()
+        }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
         .sheet(item: Binding(get: { model.deleting }, set: { model.deleting = $0 })) { stack in
             DeleteStackSheet(stack: stack, serverName: server.name, cancel: { model.deleting = nil },
                              run: { removal in model.deleting = nil; model.delete(stack, removal) })
         }
+        .sheet(item: $bookmarking) { draft in
+            BookmarkSheet(model: draft, cancel: { bookmarking = nil })
+        }
         .onChange(of: model.removedStack) { _, removed in
             if let removed, openStack == removed { openStack = nil }   // the stack is gone: back to the overview
         }
+    }
+
+    private func startBookmark(_ stack: DockerStack) {
+        guard !SafetyStore.shared.readOnly else { return }
+        let draft = BookmarkModel(server: server, choices: model.bookmarkableStacks, groups: model.bookmarkGroups, stack: stack)
+        let model = model
+        draft.attach(blockedReason: { model.composeBlockedReason(for: $0) }, finished: { stack, apply in
+            bookmarking = nil
+            if apply {
+                model.runDirect(.up, on: stack)   // the label shows once the container is recreated; the output is on the stack's page
+                openStack = stack.name
+            }
+        })
+        bookmarking = draft
     }
 
     private func startNewStack() {
@@ -154,10 +187,31 @@ private struct StackTile: View {
     let busyStack: Bool
     /// Height every card is drawn at (the tallest one's natural height).
     let height: CGFloat
+    /// Bookmark button; nil when the stack can't take one (no containers yet, or not editable).
+    let bookmark: (() -> Void)?
     let open: () -> Void
     @State private var hovering = false
 
     var body: some View {
+        card
+            // A sibling of the card's button, not inside it, so a click on the bookmark never also opens the stack.
+            .overlay(alignment: .topTrailing) {
+                if let bookmark {
+                    Button(action: bookmark) {
+                        Image(systemName: stack.hasBookmark ? "bookmark.fill" : "bookmark")
+                            .font(.system(size: 13))
+                            .foregroundStyle(stack.hasBookmark ? Theme.accent : Theme.textMuted)
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pointer)
+                    .padding(.top, 12).padding(.trailing, 10)
+                    .help(stack.hasBookmark ? "Edit bookmark" : "Add bookmark")
+                    .accessibilityLabel(stack.hasBookmark ? "Edit bookmark" : "Add bookmark")
+                }
+            }
+    }
+
+    private var card: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -171,6 +225,7 @@ private struct StackTile: View {
                         Circle().fill(status.dot).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
                     }
                 }
+                .padding(.trailing, bookmark == nil ? 0 : 26)   // room for the bookmark button
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(stack.containers) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -463,7 +518,7 @@ private struct LinkAction: View {
     }
 }
 
-private struct IconButton: View {
+struct IconButton: View {
     let symbol: String
     let help: String
     var tint: Color = Theme.textSecondary

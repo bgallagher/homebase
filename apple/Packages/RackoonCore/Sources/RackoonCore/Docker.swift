@@ -69,6 +69,8 @@ public struct DockerContainer: Sendable, Codable, Equatable, Identifiable {
     public var cpuPercent: Double?
     public var memoryUsedBytes: Int64?
     public var memoryLimitBytes: Int64?
+    /// From the container's `homepage.*` labels (the Homepage dashboard convention); nil when it has no valid `homepage.href`.
+    public var bookmark: Bookmark?
 
     public var isRunning: Bool { state == "running" || state == "restarting" }
     public var isUnhealthy: Bool { health == "unhealthy" }
@@ -87,6 +89,8 @@ public struct DockerStack: Sendable, Equatable, Identifiable {
     public var runningCount: Int { containers.filter(\.isRunning).count }
     public var unhealthyCount: Int { containers.filter(\.isUnhealthy).count }
     public var stoppedCount: Int { containers.count - runningCount }
+    /// True when any container of the stack has a bookmark.
+    public var hasBookmark: Bool { containers.contains { $0.bookmark != nil } }
 }
 
 public enum DockerParseError: Error, Equatable, LocalizedError {

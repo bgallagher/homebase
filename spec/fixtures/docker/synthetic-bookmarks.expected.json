@@ -1,0 +1,69 @@
+{
+  "containers" : [
+    {
+      "bookmark" : {
+        "description" : "Stream aggregator, with a comma",
+        "group" : "Media",
+        "href" : "https:\/\/streams.example.com\/",
+        "icon" : "streams.png",
+        "name" : "Streams"
+      },
+      "configFile" : "\/opt\/stacks\/streams\/compose.yaml",
+      "configFiles" : [
+        "\/opt\/stacks\/streams\/compose.yaml"
+      ],
+      "health" : "none",
+      "id" : "aaaaaaaaaaa1",
+      "image" : "ghcr.io\/example\/streams:latest",
+      "name" : "streams",
+      "ports" : [
+        {
+          "containerPort" : 80,
+          "hostPort" : 8080,
+          "proto" : "tcp"
+        }
+      ],
+      "project" : "streams",
+      "service" : "streams",
+      "state" : "running",
+      "status" : "Up 1 hour",
+      "workingDir" : "\/opt\/stacks\/streams"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/streams\/compose.yaml",
+      "configFiles" : [
+        "\/opt\/stacks\/streams\/compose.yaml"
+      ],
+      "health" : "none",
+      "id" : "aaaaaaaaaaa2",
+      "image" : "redis:7",
+      "name" : "streams_redis",
+      "ports" : [
+
+      ],
+      "project" : "streams",
+      "service" : "redis",
+      "state" : "running",
+      "status" : "Up 1 hour",
+      "workingDir" : "\/opt\/stacks\/streams"
+    },
+    {
+      "configFile" : "\/opt\/stacks\/site\/compose.yaml",
+      "configFiles" : [
+        "\/opt\/stacks\/site\/compose.yaml"
+      ],
+      "health" : "none",
+      "id" : "aaaaaaaaaaa3",
+      "image" : "nginx:alpine",
+      "name" : "site-web-1",
+      "ports" : [
+
+      ],
+      "project" : "site",
+      "service" : "web",
+      "state" : "running",
+      "status" : "Up 1 hour",
+      "workingDir" : "\/opt\/stacks\/site"
+    }
+  ]
+}

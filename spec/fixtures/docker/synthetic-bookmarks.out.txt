@@ -1,0 +1,7 @@
+##docker
+ok
+##ps
+{"CreatedAt":"2026-10-10 09:00:00 +0000 UTC","HealthStatus":"none","ID":"aaaaaaaaaaa1","Image":"ghcr.io/example/streams:latest","Labels":"com.docker.compose.project.config_files=/opt/stacks/streams/compose.yaml,com.docker.compose.project.working_dir=/opt/stacks/streams,com.docker.compose.project=streams,com.docker.compose.service=streams,homepage.description=Stream aggregator, with a comma,homepage.group=Media,homepage.href=https://streams.example.com/,homepage.icon=streams.png,homepage.name=Streams,homepage.weight=10","Names":"streams","Ports":"100.64.0.1:8080->80/tcp","RunningFor":"1 hour ago","State":"running","Status":"Up 1 hour"}
+{"CreatedAt":"2026-10-10 09:00:00 +0000 UTC","HealthStatus":"none","ID":"aaaaaaaaaaa2","Image":"redis:7","Labels":"com.docker.compose.project.config_files=/opt/stacks/streams/compose.yaml,com.docker.compose.project.working_dir=/opt/stacks/streams,com.docker.compose.project=streams,com.docker.compose.service=redis","Names":"streams_redis","Ports":"6379/tcp","RunningFor":"1 hour ago","State":"running","Status":"Up 1 hour"}
+{"CreatedAt":"2026-10-10 09:00:00 +0000 UTC","HealthStatus":"none","ID":"aaaaaaaaaaa3","Image":"nginx:alpine","Labels":"com.docker.compose.project.config_files=/opt/stacks/site/compose.yaml,com.docker.compose.project.working_dir=/opt/stacks/site,com.docker.compose.project=site,com.docker.compose.service=web,homepage.href=ftp://not-a-web-link,homepage.name=Ignored","Names":"site-web-1","Ports":"","RunningFor":"1 hour ago","State":"running","Status":"Up 1 hour"}
+##stats

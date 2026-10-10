@@ -308,6 +308,30 @@
                   "type": "string"
                 },
                 "description": "All compose files from the config_files label, in order. configFile is the first."
+              },
+              "bookmark": {
+                "type": "object",
+                "description": "From the container's Homepage-convention labels (gethomepage.dev): homepage.href, homepage.name, homepage.group, homepage.icon, homepage.description. Present only when homepage.href is a valid http(s) URL; empty optional fields are omitted. Other homepage.* labels are ignored.",
+                "required": [
+                  "href"
+                ],
+                "properties": {
+                  "href": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "icon": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }
