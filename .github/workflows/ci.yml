@@ -12,5 +12,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift test
         working-directory: apple
-      - run: swift build --product HomebaseMac
+      - run: swift build --product RackoonMac
         working-directory: apple

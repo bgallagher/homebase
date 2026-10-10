@@ -2,59 +2,59 @@
 import PackageDescription
 
 let package = Package(
-    name: "Homebase",
+    name: "Rackoon",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
-        .library(name: "HomebaseCore", targets: ["HomebaseCore"]),
-        .library(name: "HomebaseSSHSystem", targets: ["HomebaseSSHSystem"]),
-        .executable(name: "HomebaseMac", targets: ["HomebaseMac"]),
-        .executable(name: "homebase-probe", targets: ["HomebaseProbe"]),
-        .executable(name: "homebase-pty", targets: ["HomebasePTY"]),
+        .library(name: "RackoonCore", targets: ["RackoonCore"]),
+        .library(name: "RackoonSSHSystem", targets: ["RackoonSSHSystem"]),
+        .executable(name: "RackoonMac", targets: ["RackoonMac"]),
+        .executable(name: "rackoon-probe", targets: ["RackoonProbe"]),
+        .executable(name: "rackoon-pty", targets: ["RackoonPTY"]),
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
     ],
     targets: [
         .target(
-            name: "HomebaseCore",
-            path: "Packages/HomebaseCore/Sources/HomebaseCore"
+            name: "RackoonCore",
+            path: "Packages/RackoonCore/Sources/RackoonCore"
         ),
         .target(
-            name: "HomebaseSSHSystem",
-            dependencies: ["HomebaseCore"],
-            path: "Packages/HomebaseSSHSystem/Sources/HomebaseSSHSystem"
+            name: "RackoonSSHSystem",
+            dependencies: ["RackoonCore"],
+            path: "Packages/RackoonSSHSystem/Sources/RackoonSSHSystem"
         ),
         .executableTarget(
-            name: "HomebaseMac",
+            name: "RackoonMac",
             dependencies: [
-                "HomebaseCore", "HomebaseSSHSystem",
+                "RackoonCore", "RackoonSSHSystem",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
-                "HomebasePTY",   // built alongside the app; found next to its executable at run time
+                "RackoonPTY",   // built alongside the app; found next to its executable at run time
             ],
-            path: "Apps/HomebaseMac",
+            path: "Apps/RackoonMac",
             exclude: ["Resources/SOURCES.md"],
-            sources: ["Sources/HomebaseMac"],
+            sources: ["Sources/RackoonMac"],
             resources: [.copy("Resources/themes.json")]
         ),
         .executableTarget(
-            name: "HomebaseProbe",
-            dependencies: ["HomebaseSSHSystem"],
-            path: "Apps/HomebaseProbe/Sources/HomebaseProbe"
+            name: "RackoonProbe",
+            dependencies: ["RackoonSSHSystem"],
+            path: "Apps/RackoonProbe/Sources/RackoonProbe"
         ),
         .executableTarget(
-            name: "HomebasePTY",
-            dependencies: ["HomebaseCore"],
-            path: "Apps/HomebasePTY/Sources/HomebasePTY"
+            name: "RackoonPTY",
+            dependencies: ["RackoonCore"],
+            path: "Apps/RackoonPTY/Sources/RackoonPTY"
         ),
         .testTarget(
-            name: "HomebaseSSHSystemTests",
-            dependencies: ["HomebaseSSHSystem"],
-            path: "Packages/HomebaseSSHSystem/Tests/HomebaseSSHSystemTests"
+            name: "RackoonSSHSystemTests",
+            dependencies: ["RackoonSSHSystem"],
+            path: "Packages/RackoonSSHSystem/Tests/RackoonSSHSystemTests"
         ),
         .testTarget(
-            name: "HomebaseCoreTests",
-            dependencies: ["HomebaseCore"],
-            path: "Packages/HomebaseCore/Tests/HomebaseCoreTests"
+            name: "RackoonCoreTests",
+            dependencies: ["RackoonCore"],
+            path: "Packages/RackoonCore/Tests/RackoonCoreTests"
         ),
     ]
 )

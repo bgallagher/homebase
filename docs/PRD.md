@@ -1,14 +1,14 @@
-# Homebase PRD
+# Rackoon PRD
 
 Oct 9, 2026 · @Brian
 
 ## Overview
 
-Homebase is an agentless SSH app that lets one person run their self-hosted Linux servers from a Mac, then an iPhone and Android phone. The MVP is a Mac app that does four things well: connect, monitor, manage Docker Compose stacks, and open services by Tailscale or public URL.
+Rackoon is an agentless SSH app that lets one person run their self-hosted Linux servers from a Mac, then an iPhone and Android phone. The MVP is a Mac app that does four things well: connect, monitor, manage Docker Compose stacks, and open services by Tailscale or public URL.
 
 **Positioning:** the server manager for people who self-host over Tailscale and Docker Compose. Built first for the author's own servers; sold later if it earns it.
 
-**Working name:** Homebase (placeholder, check trademark and App Store availability before launch).
+**Working name:** Rackoon (placeholder, check trademark and App Store availability before launch).
 
 ## Problem and opportunity
 
@@ -19,7 +19,7 @@ Self-hosters manage servers through raw SSH, Compose commands and scattered book
 - **Updates go unnoticed:** pending apt patches and new image versions are only seen if you look.
 - **No phone answer:** most GUI tools are Mac-only or web dashboards you must host yourself.
 
-**Closest competitor:** ServerBuddy (Mac only) offers stats, SSH terminal, processes, systemd, Docker, files, ports, users, apt, cron and logs. It costs $59 one-off with one year of updates, and a free tier allows one server. Homebase does not try to match that breadth at launch. It aims to be better at Compose, Tailscale-aware access, updates and alerts, and to reach phones.
+**Closest competitor:** ServerBuddy (Mac only) offers stats, SSH terminal, processes, systemd, Docker, files, ports, users, apt, cron and logs. It costs $59 one-off with one year of updates, and a free tier allows one server. Rackoon does not try to match that breadth at launch. It aims to be better at Compose, Tailscale-aware access, updates and alerts, and to reach phones.
 
 ## Goals and non-goals
 
@@ -41,7 +41,7 @@ Self-hosters manage servers through raw SSH, Compose commands and scattered book
 
 **Primary user:** a technical self-hoster running 1 to 5 Linux servers (a VPS and a home box) with Docker Compose and Tailscale, who is comfortable in a terminal but would rather not use it for routine jobs.
 
-| Scenario | What they do today | With Homebase |
+| Scenario | What they do today | With Rackoon |
 | --- | --- | --- |
 | Morning check | SSH in, run df, docker ps, apt list | Open the app, read the "needs attention" strip |
 | A service is down | SSH, find the container, read logs, restart | Tap the unhealthy container, view logs, restart |
@@ -144,4 +144,4 @@ Build the Mac app natively in SwiftUI first, keep server logic in a separate por
 - Should Phase 3 be native Swift for iPhone, or one cross-platform codebase for both phones?
 - Is a paid tier ($30 to $60 one-off, similar to ServerBuddy's $59) the right model, or a free app with a paid mobile add-on?
 - Which distros beyond Debian and Ubuntu matter to testers?
-- Is the name Homebase available for trademark and App Store use?
+- Is the name Rackoon available for trademark and App Store use?
