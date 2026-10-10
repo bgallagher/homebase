@@ -31,7 +31,7 @@ cd apple && swift run rackoon-probe <host> file-test     # REAL read/validate/sa
 cd apple && swift run rackoon-probe <host> hostkey     # unknown -> trust -> tampered flow, using a throwaway known_hosts
 ```
 
-No linter or formatter is configured yet (`swift-format` is not installed). CI is `.github/workflows/ci.yml` (check-spec on Linux; `swift test` and build on macOS).
+No linter or formatter is configured yet (`swift-format` is not installed). CI is `.github/workflows/ci.yml` (check-spec on Linux; `swift test`, build and `tools/make-app` on `macos-26`, because SwiftTerm 1.99 needs Swift 6.2+ and on an older runner SwiftPM silently fell back to SwiftTerm 1.20.0). Every push uploads `Rackoon-<version>-macos-arm64.zip` plus a `.sha256` as the `Rackoon-macOS-arm64` workflow artifact (14 days); pushing a `v*` tag also publishes them as a GitHub Release (Apple silicon, ad-hoc signed, not notarized, so first launch needs right-click Open). Notarizing needs a Developer ID certificate and secrets, which are not set up.
 
 Xcode is installed on the dev machine. There is no `.xcodeproj` yet. The Mac app is a SwiftPM executable target, which needs the `AppDelegate` activation-policy workaround in `RackoonApp.swift` to show a window under `swift run`. A real Xcode project is needed before signing and notarizing.
 

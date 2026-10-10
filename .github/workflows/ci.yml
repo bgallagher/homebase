@@ -12,10 +12,58 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the app's build number is the commit count
       - run: swift --version
       - run: swift test
         working-directory: apple
       - run: swift build --product RackoonMac
         working-directory: apple
       - name: Build the app bundle
-        run: tools/make-app
+        run: |
+          # A v1.2.3 tag builds version 1.2.3; any other push builds the default version, named by commit.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            tools/make-app "$VERSION"
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+            tools/make-app
+          fi
+          echo "FILE_ID=$VERSION" >> "$GITHUB_ENV"
+      - name: Package
+        run: |
+          cd build
+          NAME="Rackoon-${FILE_ID}-macos-arm64.zip"
+          ditto -c -k --keepParent Rackoon.app "$NAME"        # keeps the signature and symlinks intact (plain zip does not)
+          shasum -a 256 "$NAME" > "$NAME.sha256"
+          ls -l "$NAME" "$NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rackoon-macOS-arm64
+          path: |
+            build/Rackoon-*-macos-arm64.zip
+            build/Rackoon-*-macos-arm64.zip.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+  # A v* tag publishes the build from this same run as a GitHub Release.
+  release:
+    needs: [spec, swift-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rackoon-macOS-arm64
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Rackoon ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --notes "Apple silicon Mac build. It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
