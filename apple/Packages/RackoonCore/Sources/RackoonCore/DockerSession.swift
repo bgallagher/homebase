@@ -10,6 +10,45 @@ public enum DockerAction: String, Sendable, CaseIterable {
     }
 }
 
+/// Whole-stack actions, run with `docker compose` from the stack's own compose file.
+public enum ComposeAction: String, Sendable, CaseIterable {
+    case pull, up, recreate
+
+    var commandID: String { "compose_\(rawValue)" }
+    var template: String {
+        switch self {
+        case .pull: "cd {dir} && docker compose -p {project} -f {file} pull"
+        case .up: "cd {dir} && docker compose -p {project} -f {file} up -d"
+        case .recreate: "cd {dir} && docker compose -p {project} -f {file} up -d --force-recreate"
+        }
+    }
+    var verb: String {
+        switch self {
+        case .pull: "Pull images for"
+        case .up: "Update"
+        case .recreate: "Recreate"
+        }
+    }
+    /// Pulling downloads images but touches no running container, so it is the one non-destructive stack action.
+    public var timeout: TimeInterval { self == .pull ? 900 : 600 }
+
+    /// The exact command, or nil if the stack has no compose project/paths or any of them is unsafe to send.
+    public func command(for stack: DockerStack) -> String? {
+        guard !stack.isStandalone, DockerSession.isComposeProjectName(stack.name),
+              let dir = stack.workingDir.flatMap(ShellQuote.quotePath),
+              let file = stack.configFile.flatMap(ShellQuote.quotePath) else { return nil }
+        return template
+            .replacingOccurrences(of: "{dir}", with: dir)
+            .replacingOccurrences(of: "{project}", with: stack.name)
+            .replacingOccurrences(of: "{file}", with: file)
+    }
+
+    public func intent(for stack: DockerStack) -> Intent? {
+        guard let command = command(for: stack) else { return nil }
+        return Intent(summary: "\(verb) stack \(stack.name)", command: command, risk: .mutate)
+    }
+}
+
 public struct DockerState: Sendable, Equatable {
     public var snapshot: DockerSnapshot?
     /// Why the last poll failed. The last good snapshot stays visible beside it.
@@ -41,6 +80,12 @@ public actor DockerSession {
     /// Follow a container's logs (last 100 lines first). Same id validation as actions.
     public static func logsCommand(id: String) -> String? {
         isContainerID(id) ? "docker logs -f --tail 100 \(id)" : nil
+    }
+
+    /// Compose project names are lowercase letters, digits, `-` and `_`, starting with a letter or digit.
+    static func isComposeProjectName(_ name: String) -> Bool {
+        guard let first = name.first, first.isASCII, first.isLowercase || first.isNumber else { return false }
+        return name.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-" || $0 == "_") }
     }
 
     static func isContainerID(_ id: String) -> Bool {
@@ -107,6 +152,53 @@ public actor DockerSession {
     public nonisolated func confirm(_ action: DockerAction, containerID: String) throws -> Confirmation {
         guard let intent = action.intent(containerID: containerID) else { throw PolicyError.invalidTarget }
         return try policy.confirm(intent)
+    }
+
+    public nonisolated func confirm(_ action: ComposeAction, stack: DockerStack) throws -> Confirmation {
+        guard let intent = action.intent(for: stack) else { throw PolicyError.invalidTarget }
+        return try policy.confirm(intent)
+    }
+
+    /// Runs a whole-stack compose action, then refreshes. All the stack's containers show as busy meanwhile.
+    public func perform(_ action: ComposeAction, stack: DockerStack, confirmation: Confirmation?) async {
+        guard let intent = action.intent(for: stack) else {
+            var next = state
+            next.actionError = "Refusing to \(action.rawValue) \(stack.name): it has no usable compose project."
+            publish(next)
+            return
+        }
+        do {
+            try policy.authorize(intent, with: confirmation)
+        } catch {
+            var next = state
+            next.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            publish(next)
+            return
+        }
+        let ids = Set(stack.containers.map(\.id))
+        var working = state
+        working.busy.formUnion(ids)
+        working.actionError = nil
+        publish(working)
+
+        var failure: String?
+        do {
+            let result = try await transport.run(intent.command, timeout: action.timeout)
+            if result.exitCode != 0 {
+                let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Compose writes progress to stderr too; the last lines carry the reason.
+                let tail = detail.split(separator: "\n").suffix(3).joined(separator: "\n")
+                failure = tail.isEmpty ? "docker compose \(action.rawValue) failed (exit \(result.exitCode))" : tail
+            }
+        } catch {
+            failure = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+
+        var done = state
+        done.busy.subtract(ids)
+        done.actionError = failure
+        publish(done)
+        await refresh()
     }
 
     /// Runs the action, then refreshes so the list shows the result.

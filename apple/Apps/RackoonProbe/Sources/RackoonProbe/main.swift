@@ -74,6 +74,14 @@ if args.count > 2, args[2] == "docker" {
         state = await session.state
         print("no-op start of \(running.name): actionError=\(state.actionError ?? "none"), busy=\(state.busy.count)")
     }
+    // Harmless: prove the compose command (cd, quoting, -p, -f) resolves on this host with `config -q`, which
+    // validates the file and changes nothing. The real pull/up/recreate commands are never run by the probe.
+    for stack in snap.stacks where !stack.isStandalone {
+        guard let pull = ComposeAction.pull.command(for: stack) else { print("compose \(stack.name): no usable command"); continue }
+        let check = pull.replacingOccurrences(of: " pull", with: " config -q", options: .backwards)
+        let r = try? await transport.run(check, timeout: 30)
+        print("compose \(stack.name): config check exit \(r.map { String($0.exitCode) } ?? "failed")\((r?.stderr.isEmpty ?? true) ? "" : " " + r!.stderr.prefix(120))")
+    }
     await session.perform(.start, containerID: "0123456789ab", confirmation: try? session.confirm(.start, containerID: "0123456789ab"))
     state = await session.state
     print("start of nonexistent id: actionError=\(state.actionError ?? "none")")
