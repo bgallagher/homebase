@@ -182,6 +182,8 @@ final class FileTransferTests: XCTestCase {
         XCTAssertNil(FileTransferCommands.uploadFile(directory: "/srv", newName: "two\nlines", bytes: 1))
         XCTAssertNil(FileTransferCommands.uploadFile(directory: "relative", newName: "x", bytes: 1))
         XCTAssertNil(FileTransferCommands.downloadFolder(directory: "/srv", name: ""))
+        XCTAssertNil(FileTransferCommands.uploadFile(directory: "/srv", newName: String(repeating: "a", count: 241), bytes: 1))
+        XCTAssertNotNil(FileTransferCommands.uploadFile(directory: "/srv", newName: String(repeating: "a", count: 240), bytes: 1))
         XCTAssertEqual(FileTransferCommands.downloadFile(directory: "/srv", name: "it's"), "cat -- '/srv/it'\\''s'")
     }
 
@@ -246,6 +248,27 @@ final class FileTransferTests: XCTestCase {
         try await s.download(name: "proj dir", isDirectory: true, from: remote.path, toLocalDirectory: back, as: "proj dir", replacing: false, progress: { _ in })
         XCTAssertEqual(try String(contentsOf: back.appendingPathComponent("proj dir/sub/b's.txt"), encoding: .utf8), "b")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: back.path), ["proj dir"], "scratch folder removed")
+    }
+
+    func testDownloadOfASymlinkToAFolderGetsTheFolder() async throws {
+        let remote = try dir("remote/releases/v3")
+        try Data("hi".utf8).write(to: remote.appendingPathComponent("a.txt"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("remote/current"), withDestinationURL: remote)
+        let back = try dir("back")
+        try await session().download(name: "current", isDirectory: true, from: root.appendingPathComponent("remote").path,
+                                     toLocalDirectory: back, as: "current", replacing: false, progress: { _ in })
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: back.appendingPathComponent("current").path, isDirectory: &isDir) && isDir.boolValue)
+        XCTAssertEqual(try String(contentsOf: back.appendingPathComponent("current/a.txt"), encoding: .utf8), "hi")
+    }
+
+    func testReplacingKeepsTheOldItemIfThePlacementFails() async throws {
+        let remote = try dir("remote"), back = try dir("back")
+        try Data("new".utf8).write(to: remote.appendingPathComponent("f.txt"))
+        try Data("old".utf8).write(to: back.appendingPathComponent("f.txt"))
+        try await session().download(name: "f.txt", isDirectory: false, from: remote.path, toLocalDirectory: back, as: "f.txt", replacing: true, progress: { _ in })
+        XCTAssertEqual(try String(contentsOf: back.appendingPathComponent("f.txt"), encoding: .utf8), "new")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: back.path), ["f.txt"], "no scratch left")
     }
 
     func testUploadIsRefusedWithoutConfirmationAndInReadOnly() async throws {
@@ -375,11 +398,13 @@ final class FileOperationTests: XCTestCase {
     }
 
     func testRefusalsAndPolicy() async throws {
-        for path in ["/", "/etc", "/usr/lib", "/home", "/home/brian", "/opt", "/opt/stacks", "/srv/data", "/var/lib/docker/volumes"] {
+        for path in ["/", "/etc", "/usr/lib", "/home", "/home/brian", "/opt", "/opt/stacks", "/srv/data", "/var/lib/docker/volumes",
+                     "/var/lib/mysql", "/var/lib/postgresql/16", "/home/brian/.ssh", "/root/.ssh", "/var/www/html"] {
             XCTAssertNotNil(FileOperationCommands.deleteProblem(folder: path), path)
         }
         XCTAssertNil(FileOperationCommands.deleteProblem(folder: "/opt/stacks/old"))
         XCTAssertNil(FileOperationCommands.deleteProblem(folder: "/home/brian/Downloads"))
+        XCTAssertNil(FileOperationCommands.deleteProblem(folder: "/var/www/html/old-site"))
         XCTAssertNil(FileOperationCommands.command(for: .delete(in: "/opt", name: "stacks", isFolder: true)))
         for bad in ["", ".", "..", "a/b", "x\ny"] {
             XCTAssertNil(FileOperationCommands.command(for: .makeFolder(in: "/tmp", name: bad)), bad)

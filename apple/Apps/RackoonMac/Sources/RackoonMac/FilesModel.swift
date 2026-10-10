@@ -28,7 +28,8 @@ final class FileTransfer: Identifiable {
 
     var isFinished: Bool { if case .running = state { false } else if case .waiting = state { false } else { true } }
     var fraction: Double? { total.flatMap { $0 > 0 ? min(1, Double(bytes) / Double($0)) : nil } }
-    func setProgress(_ b: Int64) { bytes = b }
+    /// Updates arrive as separate tasks, so they can come late or out of order: only ever move forward, and never after the end.
+    func setProgress(_ b: Int64) { if !isFinished, b > bytes { bytes = b } }
     func setTotal(_ t: Int64?) { total = t }
     func set(_ s: State) { state = s }
     func cancel() { task?.cancel(); if state == .waiting { state = .cancelled } }
@@ -77,6 +78,7 @@ final class FilesModel {
     func start() {
         guard !started else { return }
         started = true
+        Self.removeOldDragScratch()
         local.open(NSHomeDirectory())
         let remote = remote, session = session
         Task {
@@ -128,6 +130,8 @@ final class FilesModel {
     }
 
     private func upload(items: [LocalItem]) {
+        // One batch at a time: a second batch would replace the first one's confirm sheet.
+        if preparing || pending != nil || conflict != nil { notice = "Finish the current upload first."; return }
         let existing = Set(remote.rows.map(\.name))
         let clashes = items.map(\.name).filter(existing.contains).sorted()
         let destination = remote.path
@@ -156,7 +160,8 @@ final class FilesModel {
             defer { preparing = false }
             var jobs: [(row: LocalItem, target: String, source: LocalSource, intent: Intent)] = []
             for (row, target) in plan {
-                let url = row.url
+                // A link to a folder uploads the folder it points to (tar would otherwise archive the link itself).
+                let url = row.isDirectory ? row.url.resolvingSymlinksInPath() : row.url
                 let source: LocalSource
                 do {
                     if row.isDirectory {
@@ -553,6 +558,18 @@ final class FilesModel {
 
     // MARK: helpers
 
+    /// Files dragged out to Finder are downloaded into scratch folders that can't be removed right after the drop (the
+    /// receiver may still be copying). Old ones are removed when the Files screen opens.
+    nonisolated static func removeOldDragScratch() {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory
+        for url in (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        where url.lastPathComponent.hasPrefix("rackoon-drag-") || url.lastPathComponent.hasPrefix("rackoon-upload-") {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if Date().timeIntervalSince(modified) > 3600 { try? fm.removeItem(at: url) }
+        }
+    }
+
     /// "report.pdf" -> "report copy.pdf" -> "report copy 2.pdf", skipping names in `taken`.
     nonisolated static func copyName(_ name: String, avoiding taken: Set<String>) -> String {
         let ns = name as NSString
@@ -635,11 +652,7 @@ struct DemoTransfers: FileTransferring {
         switch sink {
         case .file(let url): try Data("Demo file: nothing was downloaded.\n".utf8).write(to: url)
         case .folder(let into):
-            // The command ends with the quoted folder name: tar -C '<dir>' -cf - -- '<name>'
-            let name = remoteCommand.split(separator: "'").last.map(String.init) ?? "folder"
-            let dir = into.appendingPathComponent(name)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try Data("Demo file.\n".utf8).write(to: dir.appendingPathComponent("README.txt"))
+            try Data("Demo file.\n".utf8).write(to: into.appendingPathComponent("README.txt"))
         }
     }
 }

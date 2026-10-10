@@ -6,8 +6,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 name="Rackoon"
-for arg in "$@"; do [ "$arg" = "--dev" ] && name="Rackoon Dev"; done
-"$root/tools/make-app" "$@"
+dev=()
+rest=()
+for arg in "$@"; do
+  if [ "$arg" = "--dev" ]; then name="Rackoon Dev"; dev=(--dev); else rest+=("$arg"); fi
+done
+# make-app only reads --dev as its first argument
+"$root/tools/make-app" ${dev[@]+"${dev[@]}"} ${rest[@]+"${rest[@]}"}
 src="$root/build/$name.app"
 dest="/Applications/$name.app"
 if pgrep -f "$dest/Contents/MacOS/RackoonMac" >/dev/null 2>&1; then

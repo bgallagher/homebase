@@ -200,11 +200,16 @@ public enum FileTransferCommands {
         #"T=$(mktemp -d {tmpdir}) || exit 1; mkdir "$T/x"; cat > "$T/in.tar"; if [ "$(wc -c < "$T/in.tar")" -ne {bytes} ]; then echo 'The upload was interrupted, so nothing was changed.' >&2; rc=1; else tar -xf "$T/in.tar" -C "$T/x" --no-same-owner; rc=$?; if [ $rc -eq 0 ]; then if [ -d {dest} ]; then cp -a -- "$T"/x/{src}/. {dest}/; else mv -- "$T"/x/{src} {dest}; fi; rc=$?; fi; fi; rm -rf -- "$T"; exit $rc"#
 
     public static let downloadFileTemplate = "cat -- {path}"
-    public static let downloadFolderTemplate = "tar -C {parent} -cf - -- {name}"
+    /// Archives the folder's CONTENTS (`cd` follows a link, so `current -> releases/v3` sends the folder it points to,
+    /// while links inside the folder stay links). The app unpacks them into a folder named after the entry.
+    public static let downloadFolderTemplate = "tar -C {path} -cf - ."
 
     /// `newName` is the name on the server (it differs from the local name for "keep both").
+    /// The temporary name adds 14 bytes (`.` + `.rackoon-part`), and file names are limited to 255.
+    static let maxUploadNameBytes = 240
+
     public static func uploadFile(directory: String, newName: String, bytes: Int64) -> String? {
-        guard validName(newName), let dest = ShellQuote.quotePath(RemotePath.join(directory, newName)),
+        guard validName(newName), newName.utf8.count <= maxUploadNameBytes, let dest = ShellQuote.quotePath(RemotePath.join(directory, newName)),
               let tmp = ShellQuote.quotePath(RemotePath.join(directory, ".\(newName).rackoon-part")) else { return nil }
         return Template.fill(uploadFileTemplate, ["dest": dest, "tmp": tmp, "bytes": String(bytes)])
     }
@@ -222,8 +227,8 @@ public enum FileTransferCommands {
     }
 
     public static func downloadFolder(directory: String, name: String) -> String? {
-        guard validName(name), let parent = ShellQuote.quotePath(directory), let n = ShellQuote.quote(name) else { return nil }
-        return Template.fill(downloadFolderTemplate, ["parent": parent, "name": n])
+        guard validName(name), let path = ShellQuote.quotePath(RemotePath.join(directory, name)) else { return nil }
+        return Template.fill(downloadFolderTemplate, ["path": path])
     }
 
     /// A name that can be one path component and one shell word.
@@ -263,7 +268,14 @@ public enum FileOperationCommands {
     /// (so /opt/stacks and /srv/data stay out of reach; use a terminal for those).
     public static func deleteProblem(folder path: String) -> String? {
         if let reason = StackRemoval.unsafeFolderReason(path) { return reason }
-        if path.split(separator: "/").count < 3 { return "\(path) is too high up to delete from here. Use a terminal if you really mean it." }
+        let parts = path.split(separator: "/").map(String.init)
+        if parts.count < 3 { return "\(path) is too high up to delete from here. Use a terminal if you really mean it." }
+        // Where databases and services keep their data, and a user's own dot folders (.ssh, .config, .gnupg...).
+        if parts[0] == "var", ["lib", "www", "mail", "spool", "backups"].contains(parts[1]), parts.count < 4 || parts[1] == "lib" {
+            return "\(path) holds service data. Use a terminal if you really mean it."
+        }
+        if ["home", "Users"].contains(parts[0]), parts.count == 3, parts[2].hasPrefix(".") { return "\(path) is a settings folder in a home folder" }
+        if parts[0] == "root", parts.count == 2 { return "\(path) is a settings folder in a home folder" }
         return nil
     }
 
@@ -341,6 +353,16 @@ public struct FilesSession: Sendable {
         try await transfers.upload(source, remoteCommand: intent.command, progress: progress)
     }
 
+    /// Moves a finished download into place. Replacing swaps it in atomically, so a failure keeps the old item.
+    private static func place(_ new: URL, at final: URL, replacing: Bool) throws {
+        let fm = FileManager.default
+        if replacing, fm.fileExists(atPath: final.path) {
+            _ = try fm.replaceItemAt(final, withItemAt: new)
+        } else {
+            try fm.moveItem(at: new, to: final)
+        }
+    }
+
     // MARK: download (reads only)
 
     /// Downloads `name` from `directory` into the local folder `localDirectory` as `localName`. The data goes to a
@@ -355,17 +377,14 @@ public struct FilesSession: Sendable {
         defer { try? fm.removeItem(at: scratch) }
         if isDirectory {
             guard let command = FileTransferCommands.downloadFolder(directory: directory, name: name) else { throw TransferError.badName(name) }
-            try fm.createDirectory(at: scratch, withIntermediateDirectories: false)
-            try await transfers.download(remoteCommand: command, to: .folder(into: scratch), progress: progress)
             let extracted = scratch.appendingPathComponent(name, isDirectory: true)
-            guard fm.fileExists(atPath: extracted.path) else { throw TransferError.failed("The server sent no folder.") }
-            if replacing, fm.fileExists(atPath: final.path) { try fm.removeItem(at: final) }
-            try fm.moveItem(at: extracted, to: final)
+            try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
+            try await transfers.download(remoteCommand: command, to: .folder(into: extracted), progress: progress)
+            try Self.place(extracted, at: final, replacing: replacing)
         } else {
             guard let command = FileTransferCommands.downloadFile(directory: directory, name: name) else { throw TransferError.badName(name) }
             try await transfers.download(remoteCommand: command, to: .file(scratch), progress: progress)
-            if replacing, fm.fileExists(atPath: final.path) { try fm.removeItem(at: final) }
-            try fm.moveItem(at: scratch, to: final)
+            try Self.place(scratch, at: final, replacing: replacing)
         }
     }
 

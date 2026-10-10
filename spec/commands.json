@@ -363,8 +363,8 @@
     {
       "id": "files_download_folder",
       "kind": "query",
-      "description": "Download a folder as a tar stream on stdout (<name>/...). {parent} is the absolute folder, {name} the single-quoted entry name.",
-      "script": "tar -C {parent} -cf - -- {name}",
+      "description": "Download a folder as a tar stream of its contents on stdout. {path} is the absolute single-quoted folder; tar changes into it, which follows a symlink to a folder (links inside stay links). The app unpacks it into a folder named after the entry.",
+      "script": "tar -C {path} -cf - .",
       "timeoutSeconds": 0,
       "distros": [
         "debian",

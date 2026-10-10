@@ -505,6 +505,17 @@ if args.count > 2, args[2] == "files-test" {
     check((try? String(contentsOf: back.appendingPathComponent("tree dir/sub/it's.txt"), encoding: .utf8)) == "two", "folder came back intact")
     check(!FileManager.default.fileExists(atPath: back.appendingPathComponent("tree dir/._a b.txt").path), "no ._ files in the archive")
 
+    // 4b. a symlink to a folder downloads the folder it points to
+    _ = await sh("cd \(remoteDir) && ln -s 'tree dir' current")
+    let linkBack = localDir.appendingPathComponent("linkback")
+    try? FileManager.default.createDirectory(at: linkBack, withIntermediateDirectories: true)
+    do { try await session.download(name: "current", isDirectory: true, from: remoteDir, toLocalDirectory: linkBack, as: "current", replacing: false, progress: { _ in }) }
+    catch { check(false, "link download failed: \(error)") }
+    check((try? String(contentsOf: linkBack.appendingPathComponent("current/sub/it's.txt"), encoding: .utf8)) == "two", "a link to a folder downloads the folder's contents")
+    var isLinkDir: ObjCBool = false
+    _ = FileManager.default.fileExists(atPath: linkBack.appendingPathComponent("current").path, isDirectory: &isLinkDir)
+    check(isLinkDir.boolValue, "and it arrives as a real folder, not a link")
+
     // 5. cancel mid-upload leaves nothing behind
     let huge = localDir.appendingPathComponent("huge.bin")
     try Data(count: 80_000_000).write(to: huge)
