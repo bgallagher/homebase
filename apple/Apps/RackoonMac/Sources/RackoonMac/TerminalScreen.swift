@@ -51,9 +51,23 @@ struct TerminalScreen: View {
 
     private func endedOverlay(_ tab: TerminalTab) -> some View {
         VStack(spacing: 10) {
-            Text(tab.exitCode.map { "Session ended (exit \($0))" } ?? "Session ended")
-                .font(.headline)
-            Button("Reconnect") { tab.reconnect() }.keyboardShortcut(.defaultAction)
+            if let next = tab.reconnecting {
+                Text("Connection lost").font(.headline)
+                HStack(spacing: 6) {
+                    Text("Reconnecting").foregroundStyle(Theme.textMuted)
+                    Text(next.at, style: .timer).monospacedDigit().foregroundStyle(Theme.textMuted)
+                    Text("(attempt \(next.attempt) of \(next.of))").foregroundStyle(Theme.textMuted)
+                }
+                .font(.callout)
+                HStack {
+                    Button("Reconnect Now") { tab.reconnect() }.handCursor().keyboardShortcut(.defaultAction)
+                    Button("Cancel") { tab.cancelAutoReconnect() }.handCursor()
+                }
+            } else {
+                Text(tab.exitCode.map { "Session ended (exit \($0))" } ?? "Session ended")
+                    .font(.headline)
+                Button("Reconnect") { tab.reconnect() }.handCursor().keyboardShortcut(.defaultAction)
+            }
         }
         .padding(20)
         .foregroundStyle(Theme.textPrimary)

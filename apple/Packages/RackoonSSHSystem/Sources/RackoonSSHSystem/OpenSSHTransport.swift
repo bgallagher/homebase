@@ -47,7 +47,11 @@ public struct OpenSSHTransport: SSHTransport {
     /// Options for non-interactive command execution.
     /// Arguments for an interactive shell (`ssh -t`), used by the terminal view.
     public static func terminalArguments(for server: Server) -> [String] {
+        // Keepalives make a dead link end the session (ssh exits 255 after about 45 s of silence), which is
+        // what lets a terminal tab notice the drop and reconnect itself; without them ssh waits for TCP.
         var args = ["-t",
+                    "-o", "ServerAliveInterval=15",
+                    "-o", "ServerAliveCountMax=3",
                     "-o", "ControlMaster=auto",
                     "-o", "ControlPersist=120",
                     "-o", "ControlPath=\(controlDirectory())/%C"]

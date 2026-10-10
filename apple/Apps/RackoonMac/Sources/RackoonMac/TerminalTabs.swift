@@ -13,6 +13,8 @@ final class TerminalTab: Identifiable {
     var title: String
     private(set) var isRunning = true
     private(set) var exitCode: Int32?
+    /// While an automatic reconnect is pending or under way: which attempt (1-based) and when it starts.
+    private(set) var reconnecting: (attempt: Int, of: Int, at: Date)?
     @ObservationIgnored let view: LocalProcessTerminalView
     @ObservationIgnored private let server: Server
     /// Run instead of a login shell (e.g. `docker exec` for a container shell); nil for a normal shell.
@@ -33,6 +35,17 @@ final class TerminalTab: Identifiable {
     @ObservationIgnored private var viaRelay = false
     /// Bumped on every launch, so a delayed signal meant for an earlier session can never reach a newer relay.
     @ObservationIgnored private var launchGeneration = 0
+    @ObservationIgnored private var launchedAt = Date()
+    @ObservationIgnored private var failedAttempts = 0
+    @ObservationIgnored private var reconnectTask: Task<Void, Never>?
+
+    /// ssh exits 255 when the connection itself fails or drops; anything else is the remote command's own status
+    /// (including 0 when the user typed `exit`), which must never be retried.
+    static let connectionLostExit: Int32 = 255
+    static let maxAutoAttempts = 5
+    /// A session that lasted at least this long counts as having worked, so the retry budget starts over.
+    static let healthyAfter: TimeInterval = 10
+    static func backoff(attempt: Int) -> TimeInterval { min(pow(2, Double(attempt - 1)), 15) }   // 1, 2, 4, 8, 15 s
 
     init(server: Server, title: String, theme: TerminalTheme, remoteCommand: String? = nil) {
         self.server = server
@@ -51,6 +64,7 @@ final class TerminalTab: Identifiable {
     private func launch() {
         isRunning = true
         exitCode = nil
+        launchedAt = Date()
         let ssh = OpenSSHTransport.terminalArguments(for: server) + (remoteCommand.map { [$0] } ?? [])
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
         launchGeneration += 1
@@ -91,13 +105,24 @@ final class TerminalTab: Identifiable {
 
     func apply(_ theme: TerminalTheme) { view.applyRackoonTheme(theme) }
 
+    /// Manual reconnect (the button): starts a fresh screen and a fresh retry budget.
     func reconnect() {
         guard !isRunning else { return }
+        cancelAutoReconnect()
+        failedAttempts = 0
         view.resetToInitialState()
         launch()
     }
 
+    /// Stops waiting for the next automatic attempt and leaves the tab ended with the Reconnect button.
+    func cancelAutoReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnecting = nil
+    }
+
     func close() {
+        cancelAutoReconnect()
         if isRunning { view.terminate() }
         isRunning = false
     }
@@ -105,6 +130,24 @@ final class TerminalTab: Identifiable {
     fileprivate func ended(exitCode: Int32?) {
         isRunning = false
         self.exitCode = exitCode
+        guard exitCode == Self.connectionLostExit else { failedAttempts = 0; return }
+        if Date().timeIntervalSince(launchedAt) >= Self.healthyAfter { failedAttempts = 0 }
+        guard failedAttempts < Self.maxAutoAttempts else { return }
+        failedAttempts += 1
+        scheduleReconnect(attempt: failedAttempts)
+    }
+
+    private func scheduleReconnect(attempt: Int) {
+        let delay = Self.backoff(attempt: attempt)
+        reconnecting = (attempt, Self.maxAutoAttempts, Date().addingTimeInterval(delay))
+        view.feed(text: "\r\n\u{1B}[2m[connection lost, reconnecting in \(Int(delay)) s]\u{1B}[0m\r\n")
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            self.reconnecting = nil
+            self.launch()
+        }
     }
 
     /// SwiftTerm calls these off the main actor; forward what we need.
