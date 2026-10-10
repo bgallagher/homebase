@@ -12,7 +12,7 @@ let package = Package(
         .executable(name: "rackoon-pty", targets: ["RackoonPTY"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.99.0"),
     ],
     targets: [
         .target(

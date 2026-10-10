@@ -7,9 +7,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 tools/check-spec
   swift-macos:
-    runs-on: macos-15
+    # SwiftTerm 1.99 needs Swift 6.2+. On an older toolchain SwiftPM silently picked SwiftTerm 1.20.0, which lacks the
+    # APIs the app uses, so CI failed on every push. macos-26 ships Xcode 26 (Swift 6.2+).
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - run: swift --version
       - run: swift test
         working-directory: apple
       - run: swift build --product RackoonMac
