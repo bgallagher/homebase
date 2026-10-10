@@ -87,3 +87,25 @@ Xcode is installed on the dev machine. There is no `.xcodeproj` yet. The Mac app
 - Menu bar (`RackoonApp.swift`): the front window publishes focused values and `Commands` structs read them, so items grey out when they don't apply. `AppActions` (from `ContentView`: current screen, servers, go/select/add/refresh/open terminal, IPs) drives **Go** (⌘1–6 screens, ⌘[ ⌘] previous/next server, ⌥⌘1–9 servers) and **Server** (⌘R refresh, ⇧⌘R Read-only, copy IP/Tailscale IP, ⌥⌘T terminal, ⇧⌘N add server). `screenRefresh` is set by the showing screen (Docker/Bookmarks reload the container list, Updates re-reads the update list (never runs apt-get update); Overview and others fall back to the poll refresh). `screenAdd` is the screen's "new" item on File ⌘N (Add Container on the Docker overview, Add Bookmark on Bookmarks; nil when read-only or a page is open). `TerminalActions` drives File (New Tab ⌘T, Close ⌘W) and **Terminal** (Rename ⇧⌘E via `TerminalTab.renameRequest`, ⇧⌘[ ⇧⌘] tabs, Reconnect). **View** adds Theme and Highlight Terminal Output (same `AppearanceStore`), Help links to GitHub. Menu items only navigate or call what the buttons call, so confirms and Read-only still apply. Not built: Back to Stacks / stack tab shortcuts (that state lives inside `StackDetail`), a status-bar item.
 - Not built yet: Keychain secrets (BatchMode means password auth does not work; keys and ssh-agent do), editing a server.
 - The server stays untouched: no agent, standard SSH commands only (Debian/Ubuntu and apt for the MVP).
+
+## Paddle integration
+
+When writing or modifying code that integrates with Paddle:
+
+- Always check current Paddle documentation via the `paddle-docs` MCP server before suggesting code. The Paddle API and SDKs evolve frequently — do not rely on training data alone.
+- Use the official Paddle SDK for the language in use:
+  - Node.js → `@paddle/paddle-node-sdk`
+  - Python → `paddle-python-sdk` (imports as `paddle_billing`)
+  - Go → `github.com/PaddleHQ/paddle-go-sdk/v5`
+  - PHP → `paddlehq/paddle-php-sdk`
+- All development uses the sandbox environment. Sandbox API keys contain `_sdbx`; sandbox client-side tokens are prefixed with `test_`.
+- Always verify webhook signatures before acting on the payload:
+  - Node: `paddle.webhooks.unmarshal()`
+  - Python: `Verifier().verify(request, secret)`
+  - Go: `paddle.NewWebhookVerifier()` with `Middleware`
+  - PHP: `(new Verifier())->verify($request, $secret)`
+- For destructive account changes (updating prices, archiving products, canceling subscriptions), ask for explicit confirmation before calling the `paddle-sandbox` or `paddle-live` MCP server.
+- Use `paddle-sandbox` by default. Only call `paddle-live` when the prompt explicitly mentions live, production, or real customer data.
+- API keys and webhook secrets live in environment variables — never inline credentials into code.
+
+Rackoon specifics: the Mac app is Swift and has no Paddle SDK, so it only opens a Paddle-hosted checkout link in the browser (Help > Feed the Rackoon…). Never put an API key in the app or the repo.
