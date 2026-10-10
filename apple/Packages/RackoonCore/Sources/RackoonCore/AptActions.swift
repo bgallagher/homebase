@@ -49,7 +49,7 @@ public enum AptAction: Sendable, Equatable {
 
     /// Turns a failure into something a person can act on. apt runs with LC_ALL=C so its messages are English;
     /// sudo's are not, but they always start with "sudo:", which is what we key on. Looks at both streams.
-    static func explain(stdout: String = "", stderr: String, exitCode: Int32) -> String {
+    public static func explain(stdout: String = "", stderr: String, exitCode: Int32) -> String {
         let lines = (stderr + "\n" + stdout).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         if lines.contains(where: { $0.hasPrefix("sudo:") }) {
             return "This user can't run apt with sudo without a password. Use root, or allow passwordless sudo for apt-get."

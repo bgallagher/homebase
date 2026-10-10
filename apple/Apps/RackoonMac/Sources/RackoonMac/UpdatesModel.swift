@@ -10,6 +10,8 @@ final class UpdatesModel {
     private(set) var loading = false
     /// An apt action is running (they take minutes, so the screen shows progress instead of freezing buttons silently).
     private(set) var working: String?
+    /// The latest install or refresh and what apt printed, kept until closed or replaced.
+    private(set) var output: ActionOutput?
     /// A change waiting for the user's yes (shown as a sheet).
     var pending: PendingAction?
 
@@ -60,23 +62,35 @@ final class UpdatesModel {
                                 destructive: false, run: { [weak self] in self?.run(action, label: label) })
     }
 
+    /// Runs the action with live output: apt's own progress in a terminal on the page, then the list is re-read.
     private func run(_ action: AptAction, label: String) {
         guard working == nil else { return }
         working = label
         let session = session
-        Task {
-            // The same policy that vetted the request vets it again here; a switch to read-only in between wins.
-            let confirmation = try? session.confirm(action)
-            await session.perform(action, confirmation: confirmation)
-            state = await session.state
-            working = nil
+        let title: String
+        switch action {
+        case .refresh: title = "apt-get update"
+        case .upgradeAll: title = "apt-get upgrade"
+        case .upgrade(let names): title = "apt-get install --only-upgrade (\(names.count) package\(names.count == 1 ? "" : "s"))"
         }
+        output = ActionOutput.launch(
+            scope: "updates", title: title,
+            work: { cols, rows, onEvent in
+                // The same policy that vetted the request vets it again here; a switch to read-only in between wins.
+                let confirmation = try? session.confirm(action)
+                await session.performStreaming(action, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
+            },
+            completion: { [weak self] in
+                self?.working = nil
+                Task { @MainActor in self?.state = await session.state }
+            })
     }
 
-    func dismissResult() {
-        // The session keeps the last result until the next action; clear the visible copy only.
-        state.actionOutput = nil
-        state.actionError = nil
+    func cancelOutput() { output?.task?.cancel() }
+
+    func dismissOutput() {
+        guard output?.isRunning != true else { return }
+        output = nil
     }
 }
 
@@ -106,7 +120,26 @@ private struct DemoUpdatesTransport: SSHTransport {
         return CommandResult(stdout: "Reading package lists...\nBuilding dependency tree...\n0 upgraded (demo, nothing was run)\n")
     }
 
+    /// Fake apt output, line by line with pauses, so the live terminal can be seen working. The exit marker at the end
+    /// is what a real run prints (see StreamedCommand).
     func stream(_ command: String) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { $0.finish() }
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                let lines = ["Reading package lists... Done", "Building dependency tree... Done",
+                             "The following packages will be upgraded:", "  libssl3t64 openssl", "2 upgraded, 0 newly installed, 0 to remove.",
+                             "Get:1 http://archive.ubuntu.com/ubuntu noble-security/main amd64 openssl amd64 3.0.13-0ubuntu3.5 [1,005 kB]",
+                             "Fetched 1,005 kB in 1s (1,100 kB/s)", "Preparing to unpack .../openssl_3.0.13-0ubuntu3.5_amd64.deb ...",
+                             "Unpacking openssl (3.0.13-0ubuntu3.5) over (3.0.13-0ubuntu3.4) ...",
+                             "Setting up openssl (3.0.13-0ubuntu3.5) ...", "(demo: nothing was installed)"]
+                for line in lines {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    if Task.isCancelled { break }
+                    continuation.yield(line + "\r\n")
+                }
+                continuation.yield("\r\n##rackoon-exit:0\r\n")
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }

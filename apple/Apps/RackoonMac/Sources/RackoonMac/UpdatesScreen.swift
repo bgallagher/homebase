@@ -3,12 +3,15 @@ import SwiftUI
 
 struct UpdatesScreen: View {
     let server: Server
+    /// The terminal theme, so the live output matches the terminals.
+    let theme: TerminalTheme
     @State private var model: UpdatesModel
     @State private var securityOnly = false
     private let safety = SafetyStore.shared
 
-    init(server: Server) {
+    init(server: Server, theme: TerminalTheme) {
         self.server = server
+        self.theme = theme
         _model = State(initialValue: UpdatesModel(server: server))
     }
 
@@ -17,9 +20,13 @@ struct UpdatesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header(state.snapshot)
-                if let working = model.working { WorkingBanner(text: working) }
+                if let run = model.output {
+                    ActionOutputPanel(run: run, theme: theme, cancel: model.cancelOutput, close: model.dismissOutput)
+                        .frame(height: 340)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
+                }
                 if let error = state.actionError { ErrorBanner(message: error) }
-                if let output = state.actionOutput, model.working == nil { DoneBanner(output: output, dismiss: model.dismissResult) }
                 if let error = state.error { ErrorBanner(message: error) }
                 if let snapshot = state.snapshot {
                     if snapshot.rebootRequired { RebootBanner() }
@@ -195,45 +202,6 @@ private struct PackageRow: View {
             .frame(maxWidth: 320, alignment: .trailing)
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
-    }
-}
-
-private struct WorkingBanner: View {
-    let text: String
-    var body: some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(text).fontWeight(.medium)
-                Text("This can take a few minutes. It keeps running on the server if you leave this screen.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
-            }
-            Spacer()
-        }
-        .padding(12).background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
-private struct DoneBanner: View {
-    let output: String
-    let dismiss: () -> Void
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Done").fontWeight(.medium)
-                if !output.isEmpty {
-                    Text(output).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
-                        .textSelection(.enabled).lineLimit(5)
-                }
-            }
-            Spacer()
-            Button(action: dismiss) {
-                Image(systemName: "xmark").font(.system(size: 11)).frame(width: 24, height: 24).contentShape(Rectangle())
-            }
-            .buttonStyle(.pointer).foregroundStyle(Theme.textMuted).help("Dismiss")
-        }
-        .padding(12).background(Theme.ok.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

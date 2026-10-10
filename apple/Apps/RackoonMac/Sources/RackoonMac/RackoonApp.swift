@@ -180,7 +180,7 @@ struct ContentView: View {
                         selection = .terminal
                     }).id(server.id)
                 case .updates:
-                    UpdatesScreen(server: server).id(server.id)
+                    UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:

@@ -227,7 +227,7 @@ private struct StackDetail: View {
             header
                 .onChange(of: model.output?.id) { _, id in
                     // Starting Pull, Update, Restart... on this stack shows its live output.
-                    if id != nil, model.output?.stackName == stack.name { tab = .output }
+                    if id != nil, model.output?.scope == stack.name { tab = .output }
                 }
             HStack(alignment: .top, spacing: 20) {
                 containers.frame(width: 320)

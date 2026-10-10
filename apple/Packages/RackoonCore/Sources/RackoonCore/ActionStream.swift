@@ -103,3 +103,61 @@ public enum ActionStreamEvent: Sendable, Equatable {
     /// `exitCode` is nil if the connection ended or the run was cancelled before the command reported one.
     case finished(exitCode: Int32?)
 }
+
+public enum ANSI {
+    /// Text without terminal escape sequences and carriage returns, for matching on what a command printed.
+    public static func strip(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\x{1B}\[[0-9;?]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\x{1B}[()][0-9A-Za-z]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\r", with: "")
+    }
+}
+
+/// What a streamed run came to.
+public struct StreamedRun: Sendable {
+    /// The command's own exit code; nil if the connection ended or the run was cancelled before it reported one.
+    public var exitCode: Int32?
+    public var cancelled: Bool
+    /// Why the stream itself failed (ssh could not start, ...), if it did.
+    public var transportError: String?
+    /// The visible text it printed, capped, for recognising known failures (sudo, apt lock) afterwards.
+    public var text: String
+
+    public var succeeded: Bool { exitCode == 0 }
+
+    /// A short reason for a run that did not succeed, or nil if it did.
+    public func failureMessage(label: String) -> String? {
+        if let code = exitCode { return code == 0 ? nil : "\(label) failed (exit \(code)). The output shows why." }
+        if let transportError { return transportError }
+        return cancelled ? "Cancelled. The command was interrupted on the server."
+                         : "The connection ended before \(label) reported a result."
+    }
+}
+
+public enum StreamRunner {
+    /// Runs `command` over `transport.stream` with a pty of the given size, passing the output on as it arrives and
+    /// reading the exit code from the in-band marker. Cancelling the calling task stops the remote command.
+    public static func run(transport: SSHTransport, command: String, cols: Int, rows: Int,
+                           onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async -> StreamedRun {
+        var parser = StreamOutputParser()
+        var transportError: String?
+        var text = ""
+        func keep(_ shown: String) {
+            onEvent(.output(shown))
+            if text.utf8.count < 200_000 { text += shown }
+        }
+        do {
+            for try await chunk in transport.stream(StreamedCommand.wrap(command, cols: cols, rows: rows)) {
+                let shown = parser.push(chunk)
+                if !shown.isEmpty { keep(shown) }
+            }
+        } catch {
+            transportError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+        let rest = parser.finish()
+        if !rest.text.isEmpty { keep(rest.text) }
+        let cancelled = Task.isCancelled
+        onEvent(.finished(exitCode: rest.exitCode))
+        return StreamedRun(exitCode: rest.exitCode, cancelled: cancelled, transportError: transportError, text: text)
+    }
+}

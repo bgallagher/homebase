@@ -39,6 +39,37 @@ public actor UpdatesSession {
         return try policy.confirm(intent)
     }
 
+    /// Runs an apt action with its output streamed live (over a pty, so apt draws its normal progress), then re-reads
+    /// the update list. Ignored while another action is running. Cancelling the calling task stops apt on the server.
+    public func performStreaming(_ action: AptAction, confirmation: Confirmation?, cols: Int, rows: Int,
+                                 onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
+        guard !state.isWorking else { onEvent(.finished(exitCode: nil)); return }
+        state.actionError = nil
+        state.actionOutput = nil
+        guard let intent = action.intent else {
+            state.actionError = "Refusing to run apt: invalid package name."
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        do { try policy.authorize(intent, with: confirmation) } catch {
+            state.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        state.isWorking = true
+        let run = await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows, onEvent: onEvent)
+        if run.succeeded {
+            state.actionOutput = ANSI.strip(run.text).split(separator: "\n").suffix(5).joined(separator: "\n")
+        } else if let code = run.exitCode {
+            // Known causes get a readable sentence (sudo asking for a password, another apt holding the lock).
+            state.actionError = AptAction.explain(stdout: ANSI.strip(run.text), stderr: "", exitCode: code)
+        } else {
+            state.actionError = run.failureMessage(label: "apt")
+        }
+        state.isWorking = false
+        await refresh()
+    }
+
     /// Runs an apt action, then re-reads the update list. Ignored while another action is running.
     public func perform(_ action: AptAction, confirmation: Confirmation?) async {
         guard !state.isWorking else { return }

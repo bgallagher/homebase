@@ -221,3 +221,82 @@ final class StreamingActionTests: XCTestCase {
         XCTAssertEqual(got.events.last, .finished(exitCode: 0))
     }
 }
+
+final class AptStreamingTests: XCTestCase {
+    private func read(_ name: String) throws -> String {
+        try String(contentsOf: specDir.appendingPathComponent("fixtures/updates/\(name).out.txt"), encoding: .utf8)
+    }
+    private final class Collector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [ActionStreamEvent] = []
+        func add(_ e: ActionStreamEvent) { lock.withLock { items.append(e) } }
+        var events: [ActionStreamEvent] { lock.withLock { items } }
+        var text: String { events.compactMap { if case .output(let s) = $0 { s } else { nil } }.joined() }
+    }
+
+    func testStreamsAptThenRereadsTheList() async throws {
+        let t = FakeTransport([.success(CommandResult(stdout: try read("ubuntu-24.04-current")))])
+        t.streamChunks = ["Reading package lists... Done\r\n", "\u{1B}[1mProgress: [ 50%]\u{1B}[0m\r", "\r\n##rackoon-exit:0\r\n"]
+        let session = UpdatesSession(transport: t)
+        let got = Collector()
+        let action = AptAction.upgrade(packages: ["openssl"])
+        await session.performStreaming(action, confirmation: try session.confirm(action), cols: 100, rows: 24, onEvent: { got.add($0) })
+        XCTAssertEqual(t.streamedCommands, [StreamedCommand.wrap(action.command!, cols: 100, rows: 24)])
+        XCTAssertTrue(got.text.contains("Reading package lists"))
+        XCTAssertEqual(got.events.last, .finished(exitCode: 0))
+        let state = await session.state
+        XCTAssertFalse(state.isWorking)
+        XCTAssertNil(state.actionError)
+        XCTAssertEqual(state.actionOutput?.contains("Progress: [ 50%]"), true, "the done message is plain text, no escapes")
+        XCTAssertEqual(state.actionOutput?.contains("\u{1B}"), false)
+        XCTAssertEqual(state.snapshot?.packages.count, 0, "the list is re-read afterwards")
+    }
+
+    func testSudoAndLockFailuresAreExplainedFromTheStreamedText() async throws {
+        for (output, expected) in [("sudo: a password is required\r\n", "passwordless sudo"),
+                                   ("E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1234\r\n", "lock")] {
+            let t = FakeTransport([.success(CommandResult(stdout: try read("synthetic-security-pending")))])
+            t.streamChunks = [output, "\r\n##rackoon-exit:1\r\n"]
+            let session = UpdatesSession(transport: t)
+            let got = Collector()
+            await session.performStreaming(.refresh, confirmation: try session.confirm(.refresh), cols: 80, rows: 24, onEvent: { got.add($0) })
+            let state = await session.state
+            XCTAssertTrue(state.actionError?.contains(expected) == true, state.actionError ?? "nil")
+            XCTAssertEqual(got.events.last, .finished(exitCode: 1))
+            XCTAssertEqual(state.snapshot?.securityCount, 3, "the list still refreshes after a failure")
+        }
+    }
+
+    func testAnEndedStreamWithoutAnExitCodeIsAFailure() async throws {
+        let t = FakeTransport([.success(CommandResult(stdout: try read("ubuntu-24.04-current")))])
+        t.streamChunks = ["Get:1 http://archive.ubuntu.com noble InRelease\r\n"]
+        let session = UpdatesSession(transport: t)
+        await session.performStreaming(.upgradeAll, confirmation: try session.confirm(.upgradeAll), cols: 80, rows: 24, onEvent: { _ in })
+        let error = await session.state.actionError
+        XCTAssertEqual(error, "The connection ended before apt reported a result.")
+    }
+
+    func testNothingStartsWithoutConfirmationOrInReadOnlyMode() async throws {
+        let t = FakeTransport([])
+        t.streamChunks = ["should never run"]
+        let session = UpdatesSession(transport: t)
+        let got = Collector()
+        await session.performStreaming(.upgradeAll, confirmation: nil, cols: 80, rows: 24, onEvent: { got.add($0) })
+        XCTAssertTrue(t.streamedCommands.isEmpty)
+        XCTAssertEqual(got.events, [.finished(exitCode: nil)])
+        var error = await session.state.actionError
+        XCTAssertEqual(error, PolicyError.notConfirmed.errorDescription)
+        let ro = UpdatesSession(transport: t, policy: ActionPolicy(readOnly: true))
+        await ro.performStreaming(.refresh, confirmation: nil, cols: 80, rows: 24, onEvent: { _ in })
+        error = await ro.state.actionError
+        XCTAssertEqual(error, PolicyError.readOnly.errorDescription)
+        XCTAssertTrue(t.streamedCommands.isEmpty)
+        await ro.performStreaming(.upgrade(packages: ["x; reboot"]), confirmation: nil, cols: 80, rows: 24, onEvent: { _ in })
+        XCTAssertTrue(t.streamedCommands.isEmpty)
+    }
+
+    func testANSIStripping() {
+        XCTAssertEqual(ANSI.strip("\u{1B}[1;32mok\u{1B}[0m\r\n\u{1B}[2K\u{1B}[1Aline\u{1B}[?25l"), "ok\nline")
+        XCTAssertEqual(ANSI.strip("plain"), "plain")
+    }
+}

@@ -269,26 +269,8 @@ public actor DockerSession {
         working.actionError = nil
         publish(working)
 
-        var parser = StreamOutputParser()
-        var failure: String?
-        do {
-            for try await chunk in transport.stream(StreamedCommand.wrap(intent.command, cols: cols, rows: rows)) {
-                let shown = parser.push(chunk)
-                if !shown.isEmpty { onEvent(.output(shown)) }
-            }
-        } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-        }
-        let rest = parser.finish()
-        if !rest.text.isEmpty { onEvent(.output(rest.text)) }
-        let cancelled = Task.isCancelled
-        if let code = rest.exitCode, code != 0 {
-            failure = "\(label) failed (exit \(code)). The output shows why."
-        } else if rest.exitCode == nil, failure == nil {
-            failure = cancelled ? "Cancelled. The command was interrupted on the server."
-                                : "The connection ended before \(label) reported a result."
-        }
-        onEvent(.finished(exitCode: rest.exitCode))
+        let run = await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows, onEvent: onEvent)
+        let failure = run.failureMessage(label: label)
 
         var done = state
         done.busy.subtract(ids)

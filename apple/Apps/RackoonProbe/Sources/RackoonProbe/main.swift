@@ -277,6 +277,32 @@ if args.count > 2, args[2] == "compose-test" {
     print(failures == 0 ? "compose-test: all passed" : "compose-test: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "apt-stream-check" {
+    // Streams apt through the app's own wrapper and runner. `-s` SIMULATES: nothing is installed or changed.
+    final class Sink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text = ""
+        func add(_ e: ActionStreamEvent) { if case .output(let t) = e { lock.withLock { text += t } } }
+        var output: String { lock.withLock { text } }
+    }
+    let sink = Sink()
+    let command = #"if [ "$(id -u)" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get -s upgrade -y -o Dpkg::Options::=--force-confold"#
+    let run = await StreamRunner.run(transport: transport, command: command, cols: 100, rows: 24, onEvent: { sink.add($0) })
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) { print("\(ok ? "PASS" : "FAIL") \(what)"); if !ok { failures += 1 } }
+    let plain = ANSI.strip(sink.output)
+    check(run.exitCode == 0, "apt-get -s upgrade finishes with exit 0: \(String(describing: run.exitCode))")
+    check(plain.contains("Reading package lists"), "apt's own output arrives: \(plain.split(separator: "\n").first.map(String.init) ?? "(none)")")
+    check(!sink.output.contains("##rackoon-exit"), "no marker leaks")
+    check(!sink.output.contains("\u{FFFD}"), "no broken characters")
+    check(plain.contains("upgraded,"), "apt prints its summary line: \(plain.split(separator: "\n").last { $0.contains("upgraded,") }.map(String.init) ?? "(missing)")")
+    // The friendly-failure path: a stream that prints sudo's message and exits 1.
+    let bad = await StreamRunner.run(transport: transport, command: "echo 'sudo: a password is required'; exit 1", cols: 100, rows: 24, onEvent: { _ in })
+    check(bad.exitCode == 1, "a failing command reports its exit code through the same runner: \(String(describing: bad.exitCode))")
+    check(AptAction.explain(stdout: ANSI.strip(bad.text), stderr: "", exitCode: 1).contains("passwordless sudo"), "and its streamed text is recognised as the sudo failure")
+    print(failures == 0 ? "apt-stream-check: all passed" : "apt-stream-check: \(failures) FAILED")
+    exit(failures == 0 ? 0 : 1)
+}
 if args.count > 2, args[2] == "updates" {
     let session = UpdatesSession(transport: transport)
     let t0 = Date()
