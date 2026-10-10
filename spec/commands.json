@@ -74,6 +74,39 @@
         "debian",
         "ubuntu"
       ]
+    },
+    {
+      "id": "apt_refresh",
+      "kind": "action",
+      "description": "apt-get update: refresh the package lists. Installs nothing. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get update",
+      "timeoutSeconds": 300,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "apt_upgrade",
+      "kind": "action",
+      "description": "apt-get upgrade: install every available upgrade. Never installs new packages or removes any, and held packages stay. Keeps existing config files. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::=--force-confold",
+      "timeoutSeconds": 1800,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "apt_upgrade_packages",
+      "kind": "action",
+      "description": "apt-get install --only-upgrade for the named packages only (used for security updates). {packages} is a space-separated list; each must match ^[a-z0-9][a-z0-9+.-]+$. Runs as root, or through `sudo -n` (never prompts) for other users; it fails with sudo's message if that is not allowed.",
+      "script": "if [ \"$(id -u)\" -eq 0 ]; then S=; else S='sudo -n'; fi; $S env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -o Dpkg::Options::=--force-confold {packages}",
+      "timeoutSeconds": 1800,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
     }
   ]
 }

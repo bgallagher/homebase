@@ -5,6 +5,12 @@ public struct UpdatesState: Sendable, Equatable {
     /// Why the last refresh failed. The last good snapshot stays beside it.
     public var error: String?
     public var updatedAt: Date?
+    /// An apt action is running.
+    public var isWorking = false
+    /// Why the last apt action failed, until the next one starts.
+    public var actionError: String?
+    /// Tail of the last successful action's output, for a "done" message.
+    public var actionOutput: String?
     public init() {}
 }
 
@@ -20,9 +26,46 @@ public actor UpdatesSession {
     """
 
     private let transport: SSHTransport
+    private let policy: ActionPolicy
     public private(set) var state = UpdatesState()
 
-    public init(transport: SSHTransport) { self.transport = transport }
+    public init(transport: SSHTransport, policy: ActionPolicy = ActionPolicy()) {
+        self.transport = transport
+        self.policy = policy
+    }
+
+    public nonisolated func confirm(_ action: AptAction) throws -> Confirmation {
+        guard let intent = action.intent else { throw PolicyError.invalidTarget }
+        return try policy.confirm(intent)
+    }
+
+    /// Runs an apt action, then re-reads the update list. Ignored while another action is running.
+    public func perform(_ action: AptAction, confirmation: Confirmation?) async {
+        guard !state.isWorking else { return }
+        guard let intent = action.intent else {
+            state.actionError = "Refusing to run apt: invalid package name."
+            return
+        }
+        do { try policy.authorize(intent, with: confirmation) } catch {
+            state.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            return
+        }
+        state.isWorking = true
+        state.actionError = nil
+        state.actionOutput = nil
+        do {
+            let result = try await transport.run(intent.command, timeout: action.timeout)
+            if result.exitCode == 0 {
+                state.actionOutput = result.stdout.split(separator: "\n").suffix(5).joined(separator: "\n")
+            } else {
+                state.actionError = AptAction.explain(stderr: result.stderr, exitCode: result.exitCode)
+            }
+        } catch {
+            state.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+        state.isWorking = false
+        await refresh()
+    }
 
     @discardableResult
     public func refresh() async -> UpdatesState {
