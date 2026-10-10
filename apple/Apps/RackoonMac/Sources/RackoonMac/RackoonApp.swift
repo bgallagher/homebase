@@ -5,6 +5,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        AppIcon.installDockIcon()
         NSApp.activate(ignoringOtherApps: true)
     }
 }
@@ -35,8 +36,15 @@ struct RackoonApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            AboutCommand()
             TerminalCommands()
         }
+
+        Window("About Rackoon", id: AboutView.windowID) {
+            AboutView()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
     }
 }
 
@@ -48,6 +56,16 @@ struct TerminalActions {
 
 extension FocusedValues {
     @Entry var terminalActions: TerminalActions?
+}
+
+struct AboutCommand: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Rackoon") { openWindow(id: AboutView.windowID) }
+        }
+    }
 }
 
 struct TerminalCommands: Commands {

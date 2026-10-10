@@ -34,7 +34,7 @@ let package = Package(
             path: "Apps/RackoonMac",
             exclude: ["Resources/SOURCES.md"],
             sources: ["Sources/RackoonMac"],
-            resources: [.copy("Resources/themes.json")]
+            resources: [.copy("Resources/themes.json"), .copy("Resources/rackoon-icon.png")]
         ),
         .executableTarget(
             name: "RackoonProbe",
