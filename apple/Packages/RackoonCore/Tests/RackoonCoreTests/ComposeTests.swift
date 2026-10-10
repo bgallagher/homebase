@@ -139,7 +139,41 @@ final class ComposeActionTests: XCTestCase {
         XCTAssertEqual(transport.commands.count, 2, "runs, then refreshes")
         let state = await session.state
         XCTAssertTrue(state.busy.isEmpty)
+        XCTAssertTrue(state.busyStacks.isEmpty, "cleared when the action finishes")
         XCTAssertNil(state.actionError)
+    }
+
+    /// While the command runs, the stack is busy by name, even for containers that did not exist when it started.
+    func testStackIsBusyByNameWhileTheCommandRuns() async throws {
+        final class Gate: SSHTransport, @unchecked Sendable {
+            let started = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            var count = 0
+            let snapshot: String
+            init(snapshot: String) { self.snapshot = snapshot }
+            func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult {
+                count += 1
+                if count == 1 {
+                    started.continuation.yield()
+                    for await _ in release.stream { break }
+                    return CommandResult(stdout: "")
+                }
+                return CommandResult(stdout: snapshot)
+            }
+            func stream(_ command: String) -> AsyncThrowingStream<String, Error> { AsyncThrowingStream { $0.finish() } }
+        }
+        let s = stack()
+        let gate = Gate(snapshot: try fixture("ubuntu-24.04-compose"))
+        let session = DockerSession(transport: gate)
+        let confirmation = try session.confirm(.up, stack: s)
+        let task = Task { await session.perform(.up, stack: s, confirmation: confirmation) }
+        for await _ in gate.started.stream { break }
+        let during = await session.state
+        XCTAssertEqual(during.busyStacks, ["media"])
+        gate.release.continuation.yield()
+        await task.value
+        let after = await session.state
+        XCTAssertTrue(after.busyStacks.isEmpty)
     }
 
     func testFailureReportsTheLastLinesOfStderr() async throws {

@@ -60,6 +60,9 @@ public struct DockerState: Sendable, Equatable {
     public var updatedAt: Date?
     /// Containers with an action in flight.
     public var busy: Set<String> = []
+    /// Compose projects with a whole-stack action in flight. Keyed by name, not container id: `up -d` creates
+    /// containers with new ids, and the poll keeps replacing the snapshot underneath a long action.
+    public var busyStacks: Set<String> = []
     /// Why the last action failed, until the next action starts.
     public var actionError: String?
     public init() {}
@@ -182,6 +185,7 @@ public actor DockerSession {
         let ids = Set(stack.containers.map(\.id))
         var working = state
         working.busy.formUnion(ids)
+        working.busyStacks.insert(stack.name)
         working.actionError = nil
         publish(working)
 
@@ -200,6 +204,7 @@ public actor DockerSession {
 
         var done = state
         done.busy.subtract(ids)
+        done.busyStacks.remove(stack.name)
         done.actionError = failure
         publish(done)
         await refresh()

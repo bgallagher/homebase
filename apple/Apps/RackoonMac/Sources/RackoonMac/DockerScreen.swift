@@ -114,7 +114,7 @@ private struct StackCard: View {
             if !collapsed {
                 Divider().overlay(Theme.border)
                 ForEach(stack.containers) { c in
-                    ContainerRow(container: c, selected: c.id == selectedID, compact: compact, busy: busy.contains(c.id),
+                    ContainerRow(container: c, selected: c.id == selectedID, compact: compact, busy: busy.contains(c.id) || stackBusy,
                                  model: model)
                     if c.id != stack.containers.last?.id { Divider().overlay(Theme.border).padding(.leading, 14) }
                 }
@@ -126,7 +126,7 @@ private struct StackCard: View {
     /// Whole-stack actions. A native menu: items are disabled with the reason shown first when they cannot run.
     private var stackMenu: some View {
         let reason = model.composeBlockedReason(for: stack)
-        let working = stack.containers.contains { busy.contains($0.id) }
+        let working = stackBusy || stack.containers.contains { busy.contains($0.id) }
         return Group {
             if working {
                 ProgressView().controlSize(.small).frame(width: 28, height: 28)
@@ -150,6 +150,9 @@ private struct StackCard: View {
         }
         .padding(.trailing, 12)
     }
+
+    /// A whole-stack compose action is running on this stack (matched by project name, see DockerState.busyStacks).
+    private var stackBusy: Bool { model.state.busyStacks.contains(stack.name) }
 
     private var subtitle: String {
         let n = stack.containers.count
