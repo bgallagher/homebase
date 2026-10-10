@@ -135,7 +135,7 @@ final class DockerSessionTests: XCTestCase {
             .success(CommandResult(stdout: try fixture("ubuntu-24.04-compose"))),   // refresh after
         ])
         let session = DockerSession(transport: transport)
-        await session.perform(.restart, containerID: "abcdef012345")
+        await session.perform(.restart, containerID: "abcdef012345", confirmation: try? session.confirm(.restart, containerID: "abcdef012345"))
         XCTAssertEqual(transport.commands.first, "docker restart abcdef012345")
         XCTAssertEqual(transport.commands.count, 2)
         let state = await session.state
@@ -150,11 +150,11 @@ final class DockerSessionTests: XCTestCase {
             .success(CommandResult(stdout: try fixture("ubuntu-24.04-compose"))),
         ])
         let session = DockerSession(transport: transport)
-        await session.perform(.stop, containerID: "abcdef012345")
+        await session.perform(.stop, containerID: "abcdef012345", confirmation: try? session.confirm(.stop, containerID: "abcdef012345"))
         var state = await session.state
         XCTAssertEqual(state.actionError, "Error: No such container")
 
-        await session.perform(.stop, containerID: "x; reboot")
+        await session.perform(.stop, containerID: "x; reboot", confirmation: try? session.confirm(.stop, containerID: "x; reboot"))
         state = await session.state
         XCTAssertEqual(transport.commands.count, 2, "invalid id was not sent")
         XCTAssertTrue(state.actionError?.contains("invalid container id") == true)

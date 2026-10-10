@@ -2,6 +2,12 @@ import Foundation
 
 public enum DockerAction: String, Sendable, CaseIterable {
     case start, stop, restart
+
+    /// What running this action on a container would do, for the policy and the confirmation dialog.
+    public func intent(containerID: String) -> Intent? {
+        guard let command = DockerSession.actionCommand(self, id: containerID) else { return nil }
+        return Intent(summary: "\(rawValue.capitalized) container \(containerID)", command: command, risk: .mutate)
+    }
 }
 
 public struct DockerState: Sendable, Equatable {
@@ -43,13 +49,15 @@ public actor DockerSession {
 
     private let transport: SSHTransport
     private let interval: TimeInterval
+    private let policy: ActionPolicy
     public private(set) var state = DockerState()
     private var loop: Task<Void, Never>?
     private var continuations: [UUID: AsyncStream<DockerState>.Continuation] = [:]
 
-    public init(transport: SSHTransport, interval: TimeInterval = 10) {
+    public init(transport: SSHTransport, interval: TimeInterval = 10, policy: ActionPolicy = ActionPolicy()) {
         self.transport = transport
         self.interval = interval
+        self.policy = policy
     }
 
     public func updates() -> AsyncStream<DockerState> {
@@ -95,14 +103,29 @@ public actor DockerSession {
         }
     }
 
+    /// Call after the user has agreed (or straight away for actions the UI treats as low-risk).
+    public nonisolated func confirm(_ action: DockerAction, containerID: String) throws -> Confirmation {
+        guard let intent = action.intent(containerID: containerID) else { throw PolicyError.invalidTarget }
+        return try policy.confirm(intent)
+    }
+
     /// Runs the action, then refreshes so the list shows the result.
-    public func perform(_ action: DockerAction, containerID: String) async {
-        guard let command = Self.actionCommand(action, id: containerID) else {
+    public func perform(_ action: DockerAction, containerID: String, confirmation: Confirmation?) async {
+        guard let intent = action.intent(containerID: containerID) else {
             var next = state
             next.actionError = "Refusing to run \(action.rawValue): invalid container id."
             publish(next)
             return
         }
+        do {
+            try policy.authorize(intent, with: confirmation)
+        } catch {
+            var next = state
+            next.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            publish(next)
+            return
+        }
+        let command = intent.command
         var working = state
         working.busy.insert(containerID)
         working.actionError = nil

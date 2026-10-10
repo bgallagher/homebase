@@ -58,14 +58,14 @@ if args.count > 2, args[2] == "docker" {
     }
     // Harmless: starting an already-running container is a no-op that echoes its id.
     if let running = snap.containers.first(where: { $0.isRunning }) {
-        await session.perform(.start, containerID: running.id)
+        await session.perform(.start, containerID: running.id, confirmation: try? session.confirm(.start, containerID: running.id))
         state = await session.state
         print("no-op start of \(running.name): actionError=\(state.actionError ?? "none"), busy=\(state.busy.count)")
     }
-    await session.perform(.start, containerID: "0123456789ab")
+    await session.perform(.start, containerID: "0123456789ab", confirmation: try? session.confirm(.start, containerID: "0123456789ab"))
     state = await session.state
     print("start of nonexistent id: actionError=\(state.actionError ?? "none")")
-    await session.perform(.restart, containerID: "x; reboot")
+    await session.perform(.restart, containerID: "x; reboot", confirmation: try? session.confirm(.restart, containerID: "x; reboot"))
     state = await session.state
     print("injection attempt: actionError=\(state.actionError ?? "none")")
     exit(0)

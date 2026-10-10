@@ -55,7 +55,8 @@ final class DockerModel {
 
     func perform(_ action: DockerAction, on container: DockerContainer) {
         let session = session
-        Task { await session.perform(action, containerID: container.id) }
+        let confirmation = try? session.confirm(action, containerID: container.id)
+        Task { await session.perform(action, containerID: container.id, confirmation: confirmation) }
     }
 
     /// Clicking the container that is already open closes its logs.
