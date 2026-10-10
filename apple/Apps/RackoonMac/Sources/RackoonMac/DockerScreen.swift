@@ -118,6 +118,8 @@ struct DockerScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
+        .focusedSceneValue(\.screenRefresh, { model.refresh() })
+        .focusedSceneValue(\.screenAdd, canAddContainer ? ScreenAdd(title: "Add Container…", run: startNewStack) : nil)
         // Fetch the icon of any bookmarked site that has none yet.
         .onChange(of: model.bookmarkItems.map(\.bookmark.href), initial: true) { _, hrefs in FaviconStore.shared.ensure(hrefs) }
         .onAppear {
@@ -155,6 +157,11 @@ struct DockerScreen: View {
         bookmarking = draft
     }
 
+    /// The same conditions as the Add Container button: on the overview, with data, and not read-only.
+    private var canAddContainer: Bool {
+        openStack == nil && newStack == nil && !SafetyStore.shared.readOnly && model.state.snapshot != nil
+    }
+
     private func startNewStack() {
         let draft = AddContainerModel(server: server, folder: model.suggestedStackFolder)
         attach(draft)
@@ -189,7 +196,10 @@ struct DockerScreen: View {
                 }
             }
             Spacer()
-            Button(action: model.refresh) { Label("Refresh", systemImage: "arrow.clockwise") }
+            Button(action: model.refresh) {
+                if model.refreshing { Label { Text("Refreshing…") } icon: { ProgressView().controlSize(.small) } }
+                else { Label("Refresh", systemImage: "arrow.clockwise") }
+            }
                 .buttonStyle(.bordered).controlSize(.large).handCursor()
             let blocked = SafetyStore.shared.readOnly ? "Read-only mode is on" : nil
             Button(action: startNewStack) { Label("Add Container", systemImage: "plus") }

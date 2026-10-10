@@ -43,6 +43,9 @@ struct RackoonApp: App {
         .commands {
             AboutCommand()
             TerminalCommands()
+            ViewCommands()
+            GoCommands()
+            ServerCommands()
         }
 
         Window("About Rackoon", id: AboutView.windowID) {
@@ -57,10 +60,152 @@ struct RackoonApp: App {
 struct TerminalActions {
     var newTab: () -> Void
     var closeTab: () -> Void
+    var renameTab: () -> Void
+    var nextTab: () -> Void
+    var previousTab: () -> Void
+    /// Nil while the tab is connected.
+    var reconnect: (() -> Void)?
 }
 
 extension FocusedValues {
     @Entry var terminalActions: TerminalActions?
+}
+
+/// What the Go and Server menus act on. Published by the front window; every item only navigates or triggers the
+/// same request a button makes, so mutations still meet the confirm sheet and the Read-only switch.
+struct AppActions {
+    var screen: Screen
+    var go: (Screen) -> Void
+    var servers: [Server]
+    var selectedServerID: String?
+    var selectServer: (Server) -> Void
+    var addServer: () -> Void
+    var refresh: () -> Void
+    var openTerminalHere: () -> Void
+    var ipAddress: String?
+    var tailscaleIP: String?
+}
+
+extension FocusedValues {
+    @Entry var appActions: AppActions?
+    /// Set by the screen that is showing, so Server > Refresh Now reloads what that screen shows.
+    @Entry var screenRefresh: (() -> Void)?
+    /// The "new thing" the showing screen offers (Add Container, Add Bookmark); nil when it can't be done right now.
+    @Entry var screenAdd: ScreenAdd?
+}
+
+private func copyToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
+struct ViewCommands: Commands {
+    private let appearance = AppearanceStore.shared
+
+    var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            Menu("Theme") {
+                Toggle("Automatic", isOn: Binding(get: { appearance.isAutomatic }, set: { _ in appearance.select(ThemeCatalog.automaticID) }))
+                Divider()
+                ForEach(appearance.themes, id: \.id) { theme in
+                    Toggle(theme.name, isOn: Binding(
+                        get: { !appearance.isAutomatic && appearance.selectionID == theme.id },
+                        set: { _ in appearance.select(theme.id) }))
+                }
+            }
+            Toggle("Highlight Terminal Output", isOn: Binding(get: { appearance.highlightOutput }, set: { appearance.setHighlight($0) }))
+        }
+        CommandGroup(replacing: .help) {
+            Link("Rackoon on GitHub", destination: URL(string: "https://github.com/bgallagher/rackoon")!)
+        }
+    }
+}
+
+struct ScreenAdd {
+    var title: String
+    var run: () -> Void
+}
+
+struct GoCommands: Commands {
+    @FocusedValue(\.appActions) private var actions
+
+    private static let screens: [(Screen, KeyEquivalent)] = [
+        (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.terminal, "5"), (.command, "6"),
+    ]
+
+    var body: some Commands {
+        CommandMenu("Go") {
+            ForEach(Self.screens, id: \.0) { screen, key in
+                Button(screen.title) { actions?.go(screen) }
+                    .keyboardShortcut(key)
+                    .disabled(actions == nil || actions?.servers.isEmpty == true)
+            }
+            Divider()
+            Button("Previous Server") { step(-1) }
+                .keyboardShortcut("[")
+                .disabled((actions?.servers.count ?? 0) < 2)
+            Button("Next Server") { step(1) }
+                .keyboardShortcut("]")
+                .disabled((actions?.servers.count ?? 0) < 2)
+            Menu("Servers") {
+                ForEach(Array((actions?.servers ?? []).enumerated()), id: \.element.id) { index, server in
+                    let item = Toggle(server.name, isOn: Binding(
+                        get: { server.id == actions?.selectedServerID },
+                        set: { _ in actions?.selectServer(server) }))
+                    // Only the first nine get a shortcut; later ones are reachable from the menu or ⌘[ ⌘].
+                    if index < 9 {
+                        item.keyboardShortcut(Self.serverKey(index), modifiers: [.command, .option])
+                    } else {
+                        item
+                    }
+                }
+            }
+            .disabled(actions?.servers.isEmpty ?? true)
+        }
+    }
+
+    private static func serverKey(_ index: Int) -> KeyEquivalent {
+        let digits: [Character] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+        return KeyEquivalent(digits[index])
+    }
+
+    private func step(_ delta: Int) {
+        guard let actions, actions.servers.count > 1 else { return }
+        let current = actions.servers.firstIndex { $0.id == actions.selectedServerID } ?? 0
+        let next = (current + delta + actions.servers.count) % actions.servers.count
+        actions.selectServer(actions.servers[next])
+    }
+}
+
+struct ServerCommands: Commands {
+    @FocusedValue(\.appActions) private var actions
+    @FocusedValue(\.screenRefresh) private var screenRefresh
+
+    var body: some Commands {
+        CommandMenu("Server") {
+            let hasServer = actions?.selectedServerID != nil
+            Button("Refresh Now") { if let screenRefresh { screenRefresh() } else { actions?.refresh() } }
+                .keyboardShortcut("r")
+                .disabled(!hasServer)
+            Toggle("Read-only Mode", isOn: Binding(
+                get: { SafetyStore.shared.readOnly },
+                set: { SafetyStore.shared.setReadOnly($0) }))
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            Divider()
+            Button("Copy IP Address") { if let ip = actions?.ipAddress { copyToPasteboard(ip) } }
+                .disabled(actions?.ipAddress == nil)
+            if let ts = actions?.tailscaleIP {
+                Button("Copy Tailscale IP") { copyToPasteboard(ts) }
+            }
+            Divider()
+            Button("Open Terminal Here") { actions?.openTerminalHere() }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .disabled(!hasServer)
+            Button("Add Server…") { actions?.addServer() }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(actions == nil)
+        }
+    }
 }
 
 struct AboutCommand: Commands {
@@ -75,8 +220,28 @@ struct AboutCommand: Commands {
 
 struct TerminalCommands: Commands {
     @FocusedValue(\.terminalActions) private var actions
+    @FocusedValue(\.screenAdd) private var add
 
     var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button(add?.title ?? "New…") { add?.run() }
+                .keyboardShortcut("n")
+                .disabled(add == nil)
+        }
+        CommandMenu("Terminal") {
+            Button("Rename Tab…") { actions?.renameTab() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(actions == nil)
+            Button("Next Tab") { actions?.nextTab() }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(actions == nil)
+            Button("Previous Tab") { actions?.previousTab() }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(actions == nil)
+            Divider()
+            Button("Reconnect") { actions?.reconnect?() }
+                .disabled(actions?.reconnect == nil)
+        }
         // Replace File > Close so Cmd+W closes the current tab when a terminal is showing,
         // and still closes the window everywhere else.
         CommandGroup(replacing: .saveItem) {
@@ -123,6 +288,7 @@ struct ContentView: View {
             if model.servers.isEmpty { showingAdd = true }
         }
         .focusedSceneValue(\.terminalActions, terminalActions)
+        .focusedSceneValue(\.appActions, appActions)
         .sheet(isPresented: $showingAdd) {
             AddServerSheet(existing: model.servers, canCancel: !model.servers.isEmpty) { server in
                 showingAdd = false
@@ -141,7 +307,31 @@ struct ContentView: View {
         guard selection == .terminal, let server = model.selected else { return nil }
         return TerminalActions(
             newTab: { terminals.newTab(for: server) },
-            closeTab: { if let tab = terminals.selectedTab(for: server) { terminals.close(tab, for: server) } })
+            closeTab: { if let tab = terminals.selectedTab(for: server) { terminals.close(tab, for: server) } },
+            renameTab: { terminals.selectedTab(for: server)?.renameRequest += 1 },
+            nextTab: { terminals.stepTab(1, for: server) },
+            previousTab: { terminals.stepTab(-1, for: server) },
+            reconnect: terminals.selectedTab(for: server).flatMap { tab in
+                tab.isRunning || tab.reconnecting != nil ? nil : { tab.reconnect() }
+            })
+    }
+
+    private var appActions: AppActions {
+        AppActions(
+            screen: selection,
+            go: { screen in if screen.isAvailable { selection = screen } },
+            servers: model.servers,
+            selectedServerID: model.selectedID,
+            selectServer: { server in selection = .overview; model.select(server) },
+            addServer: { showingAdd = true },
+            refresh: { model.refresh() },
+            openTerminalHere: {
+                guard let server = model.selected else { return }
+                terminals.newTab(for: server)
+                selection = .terminal
+            },
+            ipAddress: model.state.overview?.ipAddress,
+            tailscaleIP: model.state.overview?.tailscaleIP)
     }
 
     private var updateBadge: UpdateBadge? {

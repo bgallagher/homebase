@@ -47,6 +47,12 @@ struct BookmarksScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
+        .focusedSceneValue(\.screenRefresh, {
+            model.refresh()
+            FaviconStore.shared.ensure(model.bookmarkItems.map(\.bookmark.href))
+        })
+        .focusedSceneValue(\.screenAdd, SafetyStore.shared.readOnly || model.bookmarkableStacks.isEmpty
+                           ? nil : ScreenAdd(title: "Add Bookmark…", run: add))
         .onAppear { model.attach() }
         .onDisappear { model.detach() }
         // A "Read-only mode is on" banner must not outlive the switch that caused it.
@@ -67,7 +73,10 @@ struct BookmarksScreen: View {
                     .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
             }
             Spacer()
-            Button(action: model.refresh) { Label("Refresh", systemImage: "arrow.clockwise") }
+            Button(action: model.refresh) {
+                if model.refreshing { Label { Text("Refreshing…") } icon: { ProgressView().controlSize(.small) } }
+                else { Label("Refresh", systemImage: "arrow.clockwise") }
+            }
                 .buttonStyle(.bordered).controlSize(.large).handCursor()
             let blocked = SafetyStore.shared.readOnly ? "Read-only mode is on" : (model.bookmarkableStacks.isEmpty ? "No stack has a container to bookmark yet" : nil)
             Button(action: add) { Label("Add Bookmark", systemImage: "plus") }

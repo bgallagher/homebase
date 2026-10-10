@@ -1,10 +1,21 @@
 import AppKit
 import SwiftUI
 
-/// The Rackoon mascot. Source of truth is assets/icon/rackoon-icon.svg; the bundled PNG is a 1024 px render of it.
+/// Which build this is. The installed app is the stable one; anything else is a dev build, with its own icon (the mascot
+/// with caution tape) so the two can be told apart in the Dock and the app switcher: `swift run` (no bundle), or an app
+/// built with `tools/make-app --dev` (bundle id ending in `.dev`).
+enum AppBuild {
+    static var isDev: Bool {
+        guard let id = Bundle.main.bundleIdentifier else { return true }   // `swift run`: no bundle at all
+        return id.hasSuffix(".dev") || Bundle.main.bundleURL.pathExtension != "app"
+    }
+}
+
+/// The Rackoon mascot. Source of truth is assets/icon/rackoon-icon.svg (and rackoon-icon-dev.svg for dev builds); the
+/// bundled PNGs are 1024 px renders of them.
 @MainActor
 enum AppIcon {
-    static let artwork: NSImage? = AppResources.url(forResource: "rackoon-icon", withExtension: "png")
+    static let artwork: NSImage? = AppResources.url(forResource: AppBuild.isDev ? "rackoon-icon-dev" : "rackoon-icon", withExtension: "png")
         .flatMap { NSImage(contentsOf: $0) }
 
     /// The artwork is a full-bleed square. The Dock expects the macOS shape: a rounded square inset on a

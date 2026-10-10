@@ -14,6 +14,8 @@ final class TerminalTab: Identifiable {
     /// What the tab was called when it opened ("Shell 2", "Shell · web"), restored when a rename is left empty.
     @ObservationIgnored let defaultTitle: String
     private(set) var isRunning = true
+    /// Bumped by Terminal > Rename Tab…; the tab strip starts editing when it changes.
+    var renameRequest = 0
     private(set) var exitCode: Int32?
     /// While an automatic reconnect is pending or under way: which attempt (1-based) and when it starts.
     private(set) var reconnecting: (attempt: Int, of: Int, at: Date)?
@@ -235,6 +237,13 @@ final class TerminalStore {
     }
 
     func select(_ tab: TerminalTab, for server: Server) { selected[server.id] = tab.id }
+
+    /// Selects the next (+1) or previous (-1) tab, wrapping around.
+    func stepTab(_ delta: Int, for server: Server) {
+        let list = tabs(for: server)
+        guard list.count > 1, let current = selectedTab(for: server), let i = list.firstIndex(where: { $0.id == current.id }) else { return }
+        selected[server.id] = list[(i + delta + list.count) % list.count].id
+    }
 
     func close(_ tab: TerminalTab, for server: Server) {
         guard var list = tabs[server.id], let i = list.firstIndex(where: { $0.id == tab.id }) else { return }

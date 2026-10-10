@@ -125,6 +125,7 @@ private struct TabButton: View {
             Button("Close Tab", action: close)
         }
         .onHover { hovering = $0 }
+        .onChange(of: tab.renameRequest) { _, _ in if selected && !editing { beginEditing() } }
     }
 
     private func beginEditing() {

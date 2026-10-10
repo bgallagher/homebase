@@ -1,13 +1,26 @@
 #!/bin/bash
 # Build an unsigned (ad-hoc signed) Rackoon.app into build/. Signing and notarizing for distribution need
 # an Apple Developer account and are not done here.
-#   usage: tools/make-app [version]      version defaults to 0.1.0
+#   usage: tools/make-app [--dev] [version]      version defaults to 0.1.0
+# --dev builds "Rackoon Dev.app" (bundle id com.bgallagher.rackoon.dev) with the caution-tape icon, so it can sit next to
+# the installed stable Rackoon.app and be told apart in the Dock and the app switcher. Both read the same saved servers.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+dev=0
+if [ "${1:-}" = "--dev" ]; then dev=1; shift; fi
 version="${1:-0.1.0}"
 build_number="$(git -C "$root" rev-list --count HEAD 2>/dev/null || echo 1)"
-out="$root/build/Rackoon.app"
-bundle_id="com.bgallagher.rackoon"
+if [ "$dev" = 1 ]; then
+  app_name="Rackoon Dev"
+  bundle_id="com.bgallagher.rackoon.dev"
+  icon_png="$root/apple/Apps/RackoonMac/Resources/rackoon-icon-dev.png"
+  version="$version-dev"
+else
+  app_name="Rackoon"
+  bundle_id="com.bgallagher.rackoon"
+  icon_png="$root/apple/Apps/RackoonMac/Resources/rackoon-icon.png"
+fi
+out="$root/build/$app_name.app"
 
 cd "$root/apple"
 swift build -c release --product RackoonMac
@@ -22,7 +35,7 @@ cp -R "$bin/Rackoon_RackoonMac.bundle" "$out/Contents/Resources/"   # themes + a
 
 iconset="$root/build/AppIcon.iconset"
 rm -rf "$iconset"
-swift "$root/tools/make-icns.swift" "$root/apple/Apps/RackoonMac/Resources/rackoon-icon.png" "$iconset"
+swift "$root/tools/make-icns.swift" "$icon_png" "$iconset"
 iconutil -c icns "$iconset" -o "$out/Contents/Resources/AppIcon.icns"
 rm -rf "$iconset"
 
@@ -33,8 +46,8 @@ cat > "$out/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleExecutable</key><string>RackoonMac</string>
   <key>CFBundleIdentifier</key><string>$bundle_id</string>
-  <key>CFBundleName</key><string>Rackoon</string>
-  <key>CFBundleDisplayName</key><string>Rackoon</string>
+  <key>CFBundleName</key><string>$app_name</string>
+  <key>CFBundleDisplayName</key><string>$app_name</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$build_number</string>

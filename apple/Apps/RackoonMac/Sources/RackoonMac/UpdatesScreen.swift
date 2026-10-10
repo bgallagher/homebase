@@ -42,6 +42,8 @@ struct UpdatesScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(Theme.textPrimary)
+        // Re-reads the update list like the reload button; Refresh Lists (apt-get update) stays a deliberate button.
+        .focusedSceneValue(\.screenRefresh, { model.load() })
         .onAppear { model.load() }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
     }

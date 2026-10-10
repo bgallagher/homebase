@@ -24,7 +24,7 @@ struct AboutView: View {
 
             VStack(spacing: 4) {
                 Text("Rackoon").font(.system(size: 24, weight: .bold)).foregroundStyle(Theme.textPrimary)
-                Text("Version \(Self.version)").font(.callout).foregroundStyle(Theme.textSecondary)
+                Text("Version \(Self.version)" + (AppBuild.isDev ? " · dev build" : "")).font(.callout).foregroundStyle(Theme.textSecondary)
             }
             Text("Manage your servers over plain SSH. Nothing to install on them.")
                 .font(.callout).foregroundStyle(Theme.textSecondary)

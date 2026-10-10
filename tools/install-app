@@ -1,0 +1,19 @@
+#!/bin/bash
+# Build Rackoon and install it into /Applications.
+#   usage: tools/install-app [--dev] [version]
+# Without --dev this installs the stable "Rackoon.app"; with it, "Rackoon Dev.app" (caution-tape icon) beside it.
+# The app is ad-hoc signed and built on this Mac, so it opens without the right-click-Open step. Quit it first.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+name="Rackoon"
+for arg in "$@"; do [ "$arg" = "--dev" ] && name="Rackoon Dev"; done
+"$root/tools/make-app" "$@"
+src="$root/build/$name.app"
+dest="/Applications/$name.app"
+if pgrep -f "$dest/Contents/MacOS/RackoonMac" >/dev/null 2>&1; then
+  echo "$name is running: quit it, then run this again." >&2
+  exit 1
+fi
+rm -rf "$dest"
+ditto "$src" "$dest"
+echo "installed $dest"

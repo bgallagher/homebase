@@ -49,6 +49,12 @@ struct OverviewView: View {
                 }
             }
             Spacer()
+            Button(action: model.refresh) {
+                if model.refreshing { Label { Text("Refreshing…") } icon: { ProgressView().controlSize(.small) } }
+                else { Label("Refresh", systemImage: "arrow.clockwise") }
+            }
+            .buttonStyle(.bordered).controlSize(.large).handCursor()
+            .disabled(model.refreshing)
             Button("Reboot…") { model.requestReboot(server) }
                 .buttonStyle(.bordered).controlSize(.large).handCursor()
                 .disabled(SafetyStore.shared.readOnly || model.reboots[server.id]?.isActive == true)

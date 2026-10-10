@@ -67,6 +67,9 @@
 **Looks**
 - 45 themes (two of them Rackoon's own) that drive the whole app and its terminals, with Automatic following macOS light and dark.
 
+**Keyboard**
+- ⌘1–6 switch screens, ⌘[ / ⌘] switch servers (⌥⌘1–9 pick one), ⌘R refreshes the current screen (on Updates it re-reads the update list), ⇧⌘R toggles Read-only, ⌘N adds a container or bookmark, ⌘T / ⌘W open and close terminal tabs, ⇧⌘E renames a tab, ⇧⌘[ / ⇧⌘] move between tabs.
+
 ## Roadmap
 
 - Alerts and Security (shown as "Soon" in the sidebar), and bookmark links derived automatically from Traefik host rules or published ports.
@@ -77,6 +80,16 @@
 ## Install
 
 Download `Rackoon-<version>-macos-arm64.zip` from the [Releases](https://github.com/bgallagher/rackoon/releases) page (Apple silicon, macOS 14 or later). The app is ad-hoc signed and not notarized, so the first launch needs **right-click, Open**.
+
+To keep a stable copy installed while you work on the code, build the stable app into `/Applications` and run development builds beside it: a dev build has its own icon (the mascot behind yellow caution tape) so you can tell them apart in the Dock.
+
+```
+tools/install-app            # the stable Rackoon.app in /Applications
+tools/install-app --dev      # optional: Rackoon Dev.app, with the caution-tape icon
+swift run RackoonMac         # a development run also gets the caution-tape icon
+```
+
+Both read the same saved servers.
 
 ## Build from source
 

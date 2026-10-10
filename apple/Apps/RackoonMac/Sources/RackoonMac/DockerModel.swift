@@ -100,9 +100,18 @@ final class DockerModel {
         Task { await session.stop() }
     }
 
+    /// True while a manual refresh is running, so the Refresh buttons can show it.
+    private(set) var refreshing = false
+
     func refresh() {
+        guard !refreshing else { return }
+        refreshing = true
         let session = session
-        Task { await session.refresh() }
+        Task {
+            await session.refresh()
+            try? await Task.sleep(for: .milliseconds(500))   // long enough to be seen when the answer is instant
+            refreshing = false
+        }
     }
 
     /// Stop and restart ask first, showing the exact command. Start runs straight away (it cannot break anything).

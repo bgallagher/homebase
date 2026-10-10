@@ -175,8 +175,17 @@ final class AppModel {
         reboots[server.id] = nil
     }
 
+    /// True while a manual refresh is running (the Overview's Refresh button shows it).
+    private(set) var refreshing = false
+
     func refresh() {
-        if let session { Task { await session.refresh() } }
+        guard let session, !refreshing else { return }
+        refreshing = true
+        Task {
+            await session.refresh()
+            try? await Task.sleep(for: .milliseconds(500))   // long enough to be seen when the answer is instant
+            refreshing = false
+        }
     }
 
     /// The user confirmed the fingerprint shown in the trust sheet.
