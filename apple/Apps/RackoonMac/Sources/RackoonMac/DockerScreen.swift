@@ -250,8 +250,9 @@ private struct StackDetail: View {
             .font(.system(size: 13))
             HStack(alignment: .center, spacing: 10) {
                 Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
-                // A pill, so it centres on the title instead of sitting on its baseline.
-                Badge(text: summary.text, color: summary.color)
+                // A pill, centred on the lowercase body of the title (its x-height), which is what the eye reads.
+                // Centring on the full text box puts it about 2 pt too high, because ascenders pull that centre up.
+                Badge(text: summary.text, color: summary.color).offset(y: 2)
                 Spacer()
                 if !stack.isStandalone { actions }
             }
