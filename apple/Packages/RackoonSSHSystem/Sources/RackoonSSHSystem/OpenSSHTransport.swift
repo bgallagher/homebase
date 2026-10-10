@@ -129,13 +129,21 @@ public struct OpenSSHTransport: SSHTransport {
             process.standardOutput = out
             process.standardError = out
             process.standardInput = input
+            // Chunks can end in the middle of a multi-byte character; the chunker holds that tail for the next chunk.
+            let chunker = LockedChunker()
             out.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty { return }
-                continuation.yield(String(decoding: data, as: UTF8.self))
+                let text = chunker.push(data)
+                if !text.isEmpty { continuation.yield(text) }
             }
             process.terminationHandler = { _ in
                 out.fileHandleForReading.readabilityHandler = nil
+                // Whatever the pipe still holds when the process exits.
+                let rest = out.fileHandleForReading.readDataToEndOfFile()
+                var tail = rest.isEmpty ? "" : chunker.push(rest)
+                tail += chunker.finish()
+                if !tail.isEmpty { continuation.yield(tail) }
                 continuation.finish()
             }
             continuation.onTermination = { _ in
@@ -150,6 +158,14 @@ public struct OpenSSHTransport: SSHTransport {
             }
         }
     }
+}
+
+/// `Utf8Chunker` behind a lock: the pipe's readability handler and the termination handler run on different threads.
+private final class LockedChunker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var chunker = Utf8Chunker()
+    func push(_ data: Data) -> String { lock.lock(); defer { lock.unlock() }; return chunker.push(data) }
+    func finish() -> String { lock.lock(); defer { lock.unlock() }; return chunker.finish() }
 }
 
 private final class TimeoutFlag: @unchecked Sendable {

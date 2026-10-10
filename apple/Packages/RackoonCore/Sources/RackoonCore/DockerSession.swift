@@ -224,6 +224,61 @@ public actor DockerSession {
         await refresh()
     }
 
+    /// Runs a whole-stack compose action with live output and then refreshes. The command is the same one `perform`
+    /// runs; only the way it is run differs (a pty, so compose draws its normal progress, and an exit-code marker).
+    /// Cancelling the calling task stops the remote command (Ctrl-C through the pty).
+    public func performStreaming(_ action: ComposeAction, stack: DockerStack, confirmation: Confirmation?,
+                                 cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
+        guard let intent = action.intent(for: stack) else {
+            var next = state
+            next.actionError = "Refusing to \(action.rawValue) \(stack.name): it has no usable compose project."
+            publish(next)
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        do { try policy.authorize(intent, with: confirmation) } catch {
+            var next = state
+            next.actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            publish(next)
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        let ids = Set(stack.containers.map(\.id))
+        var working = state
+        working.busy.formUnion(ids)
+        working.busyStacks.insert(stack.name)
+        working.actionError = nil
+        publish(working)
+
+        var parser = StreamOutputParser()
+        var failure: String?
+        do {
+            for try await chunk in transport.stream(StreamedCommand.wrap(intent.command, cols: cols, rows: rows)) {
+                let shown = parser.push(chunk)
+                if !shown.isEmpty { onEvent(.output(shown)) }
+            }
+        } catch {
+            failure = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+        let rest = parser.finish()
+        if !rest.text.isEmpty { onEvent(.output(rest.text)) }
+        let cancelled = Task.isCancelled
+        if let code = rest.exitCode, code != 0 {
+            failure = "docker compose \(action.rawValue) failed (exit \(code)). The output shows why."
+        } else if rest.exitCode == nil, failure == nil {
+            failure = cancelled ? "Cancelled. The command was interrupted on the server."
+                                : "The connection ended before docker compose reported a result."
+        }
+        onEvent(.finished(exitCode: rest.exitCode))
+
+        var done = state
+        done.busy.subtract(ids)
+        done.busyStacks.remove(stack.name)
+        done.actionError = failure
+        publish(done)
+        await refresh()
+    }
+
     /// Runs the action, then refreshes so the list shows the result.
     public func perform(_ action: DockerAction, containerID: String, confirmation: Confirmation?) async {
         guard let intent = action.intent(containerID: containerID) else {

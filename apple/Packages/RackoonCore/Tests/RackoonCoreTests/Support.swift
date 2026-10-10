@@ -15,6 +15,9 @@ final class FakeTransport: SSHTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var queue: [Result<CommandResult, Error>]
     private(set) var commands: [String] = []
+    /// What `stream` yields, chunk by chunk, before finishing; and what it was asked to run.
+    var streamChunks: [String] = []
+    private(set) var streamedCommands: [String] = []
 
     init(_ responses: [Result<CommandResult, Error>]) { queue = responses }
 
@@ -30,6 +33,10 @@ final class FakeTransport: SSHTransport, @unchecked Sendable {
     }
 
     func stream(_ command: String) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { $0.finish() }
+        lock.lock(); streamedCommands.append(command); let chunks = streamChunks; lock.unlock()
+        return AsyncThrowingStream { continuation in
+            for chunk in chunks { continuation.yield(chunk) }
+            continuation.finish()
+        }
     }
 }

@@ -23,6 +23,8 @@ final class DockerModel {
     var pending: PendingAction?
     /// A whole-stack compose action is running (they take minutes), e.g. "Pulling images for media…".
     private(set) var composeWorking: String?
+    /// The most recent stack action and everything it printed, kept until dismissed or replaced by the next one.
+    private(set) var output: StackOutput?
     @ObservationIgnored private let serverName: String
     @ObservationIgnored private let session: DockerSession
     @ObservationIgnored private let transport: SSHTransport
@@ -124,15 +126,36 @@ final class DockerModel {
         run(action, on: stack, label: "Updating \(stack.name)…")
     }
 
+    /// Runs a stack action with its output streamed into `output`, which the detail page shows as a live terminal.
     private func run(_ action: ComposeAction, on stack: DockerStack, label: String) {
         guard composeWorking == nil else { return }
         composeWorking = label
+        let run = StackOutput(stackName: stack.name, title: "docker compose \(action.rawValue)")
+        output = run
         let session = session
-        Task {
+        // Events cross from the session actor to the main actor through a stream, which keeps them in order.
+        let (events, continuation) = AsyncStream<ActionStreamEvent>.makeStream()
+        let consumer = Task { @MainActor in
+            for await event in events { run.apply(event) }
+        }
+        run.task = Task { @MainActor in
+            await run.waitForTerminalSize()
             let confirmation = try? session.confirm(action, stack: stack)
-            await session.perform(action, stack: stack, confirmation: confirmation)
+            await session.performStreaming(action, stack: stack, confirmation: confirmation, cols: run.cols, rows: run.rows,
+                                           onEvent: { continuation.yield($0) })
+            continuation.finish()
+            await consumer.value
+            run.finish(cancelled: Task.isCancelled)
             composeWorking = nil
         }
+    }
+
+    /// Stops the running action (Ctrl-C reaches the command on the server).
+    func cancelOutput() { output?.task?.cancel() }
+
+    func dismissOutput() {
+        guard output?.phase != .running, output?.phase != .starting else { return }
+        output = nil
     }
 
     func perform(_ action: DockerAction, on container: DockerContainer) {
@@ -190,5 +213,58 @@ final class DockerModel {
         logTarget = nil
         logLines = []
         logsLive = false
+    }
+}
+
+
+/// One streamed stack action: its output so far, its state, and the size of the terminal that shows it.
+@MainActor @Observable
+final class StackOutput: Identifiable {
+    enum Phase: Equatable { case starting, running, succeeded, failed(Int32?), cancelled }
+
+    nonisolated let id = UUID()
+    let stackName: String
+    let title: String
+    private(set) var phase: Phase = .starting
+    /// Everything received, in chunks. The terminal view feeds only the chunks it has not shown yet.
+    private(set) var chunks: [String] = []
+    private(set) var cols = 100
+    private(set) var rows = 24
+    @ObservationIgnored private var sized = false
+    @ObservationIgnored var task: Task<Void, Never>?
+    @ObservationIgnored private var sawFinish = false
+    @ObservationIgnored private var exitCode: Int32?
+
+    init(stackName: String, title: String) {
+        self.stackName = stackName
+        self.title = title
+    }
+
+    /// The terminal view tells us its real size, so the remote pty (and compose's cursor-moving progress) matches it.
+    func reportSize(cols: Int, rows: Int) {
+        guard cols > 10, rows > 2 else { return }
+        self.cols = cols
+        self.rows = rows
+        sized = true
+    }
+
+    /// The Output tab has to be on screen before the size is known. Wait for it briefly, then use what we have.
+    func waitForTerminalSize() async {
+        for _ in 0..<30 where !sized { try? await Task.sleep(for: .milliseconds(50)) }
+        if sized { try? await Task.sleep(for: .milliseconds(250)) }   // the first report can be a default size, before layout settles
+        phase = .running
+    }
+
+    func apply(_ event: ActionStreamEvent) {
+        switch event {
+        case .output(let text): chunks.append(text)
+        case .finished(let code): sawFinish = true; exitCode = code
+        }
+    }
+
+    func finish(cancelled: Bool) {
+        if cancelled { phase = .cancelled }
+        else if sawFinish, exitCode == 0 { phase = .succeeded }
+        else { phase = .failed(exitCode) }
     }
 }

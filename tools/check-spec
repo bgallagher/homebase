@@ -27,7 +27,7 @@ for c in commands:
     for key in ("id", "script", "timeoutSeconds"):
         if key not in c:
             errors.append(f"commands.json: {cid or '?'} missing '{key}'")
-    if c.get("kind") in ("action", "stream", "interactive", "query"):
+    if c.get("kind") in ("action", "stream", "interactive", "query", "template"):
         continue  # parameterised actions, streams and terminal commands: no parsed output, so no fixtures
     outs = sorted((spec / "fixtures" / str(cid)).glob("*.out.txt"))
     if not outs:

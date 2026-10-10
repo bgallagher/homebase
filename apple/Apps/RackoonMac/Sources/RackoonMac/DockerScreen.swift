@@ -38,7 +38,8 @@ struct DockerScreen: View {
                 } else {
                     overviewHeader(state.snapshot)
                 }
-                if let working = model.composeWorking { ComposeBanner(text: working) }
+                // On a stack's page the Output tab shows the run; the banner is for the overview.
+                if stack == nil, let working = model.composeWorking { ComposeBanner(text: working) }
                 if let error = state.actionError { ErrorBanner(message: error) }
                 if let error = state.error { ErrorBanner(message: error) }
                 if stack == nil {
@@ -224,6 +225,10 @@ private struct StackDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
+                .onChange(of: model.output?.id) { _, id in
+                    // Starting Pull, Update, Restart... on this stack shows its live output.
+                    if id != nil, model.output?.stackName == stack.name { tab = .output }
+                }
             HStack(alignment: .top, spacing: 20) {
                 containers.frame(width: 320)
                 panel.frame(maxWidth: .infinity)

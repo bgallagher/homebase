@@ -201,6 +201,42 @@ if args.count > 2, args[2] == "compose-test" {
         return state.actionError
     }
 
+    // Live output: a real compose run over a pty, with the exit code coming back in-band.
+    final class Sink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text = "", code: Int32??
+        func add(_ e: ActionStreamEvent) { lock.withLock { switch e { case .output(let t): text += t; case .finished(let c): code = .some(c) } } }
+        var output: String { lock.withLock { text } }
+        var exitCode: Int32?? { lock.withLock { code } }
+    }
+    for action in [ComposeAction.restart, .up] {
+        let sink = Sink()
+        let t0 = Date()
+        await session.performStreaming(action, stack: current, confirmation: try? session.confirm(action, stack: current),
+                                       cols: 100, rows: 24, onEvent: { sink.add($0) })
+        let out = sink.output
+        print("   streamed \(action.rawValue) in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s, \(out.count) chars")
+        check(sink.exitCode == .some(0), "streamed \(action.rawValue) finishes with exit 0: \(String(describing: sink.exitCode))")
+        check(out.contains("Container") || out.contains("web"), "streamed \(action.rawValue) shows compose's own progress text")
+        check(!out.contains("##rackoon-exit"), "the exit marker is never shown")
+        check(out.contains("\u{1B}["), "output arrives with its terminal escapes (progress redraws), not stripped")
+        check(!out.contains("\u{FFFD}"), "no multi-byte character was cut in two (no U+FFFD); saw \(Set(out.filter { !$0.isASCII }).count) kinds of non-ASCII characters")
+        let after = await session.state
+        check(after.busyStacks.isEmpty && after.actionError == nil, "\(action.rawValue): busy cleared, no error")
+        if let refreshed = await theStack() { current = refreshed }
+    }
+    // A failing command reports its real exit code.
+    do {
+        let sink = Sink()
+        var broken = current
+        broken.configFile = "/tmp/rackoon-probe-stack/does-not-exist.yaml"; broken.configFiles = [broken.configFile!]
+        await session.performStreaming(.up, stack: broken, confirmation: try? session.confirm(.up, stack: broken),
+                                       cols: 100, rows: 24, onEvent: { sink.add($0) })
+        let code: Int32? = sink.exitCode ?? nil
+        check((code ?? 0) != 0, "a failing run reports a non-zero exit code: \(String(describing: sink.exitCode))")
+        check((await session.state.actionError ?? "").contains("failed (exit"), "and an error that points at the output")
+    }
+
     check(await run(.pull) == nil, "pull succeeds")
     stack = await theStack(); current = stack ?? current
     check(ids(stack) == original, "pull leaves containers untouched")

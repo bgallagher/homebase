@@ -227,6 +227,17 @@
         "debian",
         "ubuntu"
       ]
+    },
+    {
+      "id": "stream_wrap",
+      "kind": "template",
+      "description": "Wraps an action's command to stream its output live: stty sets the pty to the terminal that will show it ({cols}x{rows}), the command runs in a subshell, and its exit code is printed as a final ##rackoon-exit:<n> line (a streamed ssh gives output but no exit status). Used with a pty (ssh -tt) so docker compose draws its normal progress.",
+      "script": "stty cols {cols} rows {rows} 2>/dev/null; ( {command} ); rk=$?; echo; echo \"##rackoon-exit:$rk\"",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
     }
   ]
 }

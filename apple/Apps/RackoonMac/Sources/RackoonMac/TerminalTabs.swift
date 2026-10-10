@@ -89,16 +89,7 @@ final class TerminalTab: Identifiable {
 
     private static func readyMarker(pid: pid_t) -> String { "/tmp/rk-\(getuid())/relay-\(pid).ready" }
 
-    /// Sets the ANSI palette first, then the default colours (installing a palette can reset them).
-    func apply(_ theme: TerminalTheme) {
-        view.installColors(theme.ansiRGB.map { Color(red8: UInt16($0.r), green8: UInt16($0.g), blue8: UInt16($0.b)) })
-        view.nativeBackgroundColor = theme.backgroundRGB.nsColor
-        view.nativeForegroundColor = theme.foregroundRGB.nsColor
-        view.caretColor = theme.cursorRGB.nsColor
-        // A theme's own selection colour is used as is; without one, a translucent foreground stays readable.
-        view.selectedTextBackgroundColor = theme.selection == nil
-            ? theme.foregroundRGB.nsColor.withAlphaComponent(0.3) : theme.selectionRGB.nsColor
-    }
+    func apply(_ theme: TerminalTheme) { view.applyRackoonTheme(theme) }
 
     func reconnect() {
         guard !isRunning else { return }
@@ -190,5 +181,18 @@ final class TerminalStore {
         tabs[server.id] = nil
         selected[server.id] = nil
         counters[server.id] = nil
+    }
+}
+
+extension TerminalView {
+    /// Sets the ANSI palette first, then the default colours (installing a palette can reset them).
+    func applyRackoonTheme(_ theme: TerminalTheme) {
+        installColors(theme.ansiRGB.map { Color(red8: UInt16($0.r), green8: UInt16($0.g), blue8: UInt16($0.b)) })
+        nativeBackgroundColor = theme.backgroundRGB.nsColor
+        nativeForegroundColor = theme.foregroundRGB.nsColor
+        caretColor = theme.cursorRGB.nsColor
+        // A theme's own selection colour is used as is; without one, a translucent foreground stays readable.
+        selectedTextBackgroundColor = theme.selection == nil
+            ? theme.foregroundRGB.nsColor.withAlphaComponent(0.3) : theme.selectionRGB.nsColor
     }
 }

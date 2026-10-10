@@ -3,6 +3,7 @@ import SwiftUI
 
 enum PanelSelection: Hashable {
     case logs
+    case output
     case file(EditableFile)
 }
 
@@ -21,6 +22,7 @@ struct StackPanel: View {
             tabBar
             switch tab {
             case .logs: logs
+            case .output: outputPanel
             case .file(let file): FileEditorBody(editor: editor, file: file, theme: theme, serverName: serverName)
             }
         }
@@ -34,6 +36,10 @@ struct StackPanel: View {
     private var tabBar: some View {
         HStack(spacing: 4) {
             TabButton(label: "Logs", dirty: false, selected: tab == .logs) { tab = .logs }
+            if let run = model.output, run.stackName == stack.name {
+                TabButton(label: "Output", dirty: false, running: run.phase == .starting || run.phase == .running,
+                          selected: tab == .output) { tab = .output }
+            }
             ForEach(editor.files, id: \.self) { file in
                 TabButton(label: file.fileName, dirty: editor.isDirty(file), selected: tab == .file(file)) { tab = .file(file) }
             }
@@ -46,6 +52,65 @@ struct StackPanel: View {
         .padding(.horizontal, 12).frame(height: 42)
         .background(Theme.sidebar)
         .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
+    }
+
+    /// The live output of the last stack action (pull, update, restart, ...): a read-only terminal, with Cancel while it runs.
+    @ViewBuilder private var outputPanel: some View {
+        if let run = model.output, run.stackName == stack.name {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    switch run.phase {
+                    case .starting, .running: ProgressView().controlSize(.small)
+                    case .succeeded: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+                    case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(Theme.danger)
+                    case .cancelled: Image(systemName: "stop.circle.fill").foregroundStyle(Theme.warn)
+                    }
+                    Text(run.title).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                    Text(status(of: run.phase)).font(.system(size: 12)).foregroundStyle(statusColor(of: run.phase))
+                    Spacer()
+                    if run.phase == .starting || run.phase == .running {
+                        Button("Cancel") { model.cancelOutput() }
+                            .buttonStyle(.bordered).controlSize(.small).handCursor()
+                            .help("Stops the command on the server (Ctrl-C)")
+                    } else {
+                        Button("Close") { model.dismissOutput(); tab = .logs }
+                            .buttonStyle(.bordered).controlSize(.small).handCursor()
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Theme.sidebar.opacity(0.6))
+                .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
+                OutputTerminalView(run: run, theme: theme).id(run.id)
+                    .padding(.leading, 6)
+                    .background(Color(nsColor: theme.backgroundRGB.nsColor))
+            }
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: "terminal").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
+                Text("Run Pull, Update, Restart or Rebuild to watch it here.").foregroundStyle(Theme.textMuted)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: theme.backgroundRGB.nsColor))
+        }
+    }
+
+    private func status(of phase: StackOutput.Phase) -> String {
+        switch phase {
+        case .starting: "Starting…"
+        case .running: "Running"
+        case .succeeded: "Finished"
+        case .failed(let code): code.map { "Failed (exit \($0))" } ?? "Ended without a result"
+        case .cancelled: "Cancelled"
+        }
+    }
+
+    private func statusColor(of phase: StackOutput.Phase) -> Color {
+        switch phase {
+        case .starting, .running: Theme.textMuted
+        case .succeeded: Theme.ok
+        case .failed: Theme.danger
+        case .cancelled: Theme.warn
+        }
     }
 
     @ViewBuilder private var logs: some View {
@@ -65,6 +130,7 @@ struct StackPanel: View {
 private struct TabButton: View {
     let label: String
     let dirty: Bool
+    var running = false
     let selected: Bool
     let action: () -> Void
 
@@ -73,6 +139,7 @@ private struct TabButton: View {
             HStack(spacing: 6) {
                 Text(label).font(.system(size: 12, design: .monospaced))
                 if dirty { Circle().fill(Theme.accent).frame(width: 6, height: 6).help("Unsaved changes") }
+                if running { ProgressView().controlSize(.mini) }
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .foregroundStyle(selected ? Theme.textPrimary : Theme.textMuted)
