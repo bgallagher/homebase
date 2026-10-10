@@ -10,6 +10,20 @@
       "fix": "docker"
     },
     {
+      "id": "container_unhealthy",
+      "severity": "warning",
+      "condition": "each name in unhealthyContainers",
+      "message": "{name} is unhealthy.",
+      "fix": "docker"
+    },
+    {
+      "id": "security_updates",
+      "severity": "warning",
+      "condition": "securityUpdates > 0",
+      "message": "{n} security update(s) are available.",
+      "fix": "updates"
+    },
+    {
       "id": "reboot_required",
       "severity": "warning",
       "condition": "rebootRequired is true",

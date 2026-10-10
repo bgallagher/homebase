@@ -1,40 +1,41 @@
 {
-  "hostname": "ubuntu-4gb-hel1-1",
-  "os": {
-    "id": "ubuntu",
-    "name": "Ubuntu",
-    "version": "24.04",
-    "prettyName": "Ubuntu 24.04.5 LTS"
-  },
-  "uptimeSeconds": 85981.37,
-  "load1": 0.65,
-  "load5": 0.48,
-  "load15": 0.33,
   "cores": 4,
   "cpu": {
-    "total": 33954281,
-    "idle": 31564917
-  },
-  "memory": {
-    "totalBytes": 8127717376,
-    "availableBytes": 5790593024
+    "idle": 31564917,
+    "total": 33954281
   },
   "disks": [
     {
       "filesystem": "/dev/sda1",
       "mount": "/",
       "totalBytes": 39973924864,
-      "usedBytes": 17170952192,
-      "usePercent": 45
+      "usePercent": 45,
+      "usedBytes": 17170952192
     },
     {
       "filesystem": "/dev/sda15",
       "mount": "/boot/efi",
       "totalBytes": 264281088,
-      "usedBytes": 148992,
-      "usePercent": 1
+      "usePercent": 1,
+      "usedBytes": 148992
     }
   ],
+  "hostname": "ubuntu-4gb-hel1-1",
+  "load1": 0.65,
+  "load15": 0.33,
+  "load5": 0.48,
+  "memory": {
+    "availableBytes": 5790593024,
+    "totalBytes": 8127717376
+  },
+  "os": {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "prettyName": "Ubuntu 24.04.5 LTS",
+    "version": "24.04"
+  },
   "rebootRequired": false,
-  "unhealthyContainers": []
+  "securityUpdates": 0,
+  "unhealthyContainers": [],
+  "uptimeSeconds": 85981.37
 }

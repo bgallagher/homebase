@@ -1,0 +1,41 @@
+{
+  "cores": 4,
+  "cpu": {
+    "idle": 31564917,
+    "total": 33954281
+  },
+  "disks": [
+    {
+      "filesystem": "/dev/sda1",
+      "mount": "/",
+      "totalBytes": 39973924864,
+      "usePercent": 45,
+      "usedBytes": 17170952192
+    },
+    {
+      "filesystem": "/dev/sda15",
+      "mount": "/boot/efi",
+      "totalBytes": 264281088,
+      "usePercent": 1,
+      "usedBytes": 148992
+    }
+  ],
+  "hostname": "ubuntu-4gb-hel1-1",
+  "load1": 0.65,
+  "load15": 0.33,
+  "load5": 0.48,
+  "memory": {
+    "availableBytes": 5790593024,
+    "totalBytes": 8127717376
+  },
+  "os": {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "prettyName": "Ubuntu 24.04.5 LTS",
+    "version": "24.04"
+  },
+  "rebootRequired": true,
+  "securityUpdates": 3,
+  "unhealthyContainers": [],
+  "uptimeSeconds": 85981.37
+}

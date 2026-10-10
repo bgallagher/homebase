@@ -1,0 +1,12 @@
+##apt
+ok
+##upgradable
+Listing...
+WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+curl/stable-security 7.88.1-10+deb12u8 amd64 [upgradable from: 7.88.1-10+deb12u7]
+bash/stable 5.2.15-2+b7 amd64
+foo-security-tools/stable 1.0-1 amd64 [upgradable from: 0.9-1]
+##held
+##refreshed
+##reboot
+no

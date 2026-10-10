@@ -31,4 +31,6 @@ Filesystem        1-blocks        Used   Available Capacity Mounted on
 /dev/sda15       264281088      148992   264132096       1% /boot/efi
 ##reboot
 no
+##security
+0
 ##unhealthy

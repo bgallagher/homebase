@@ -44,6 +44,8 @@ public struct Overview: Sendable, Codable, Equatable {
     public var rebootRequired: Bool
     /// Names of containers whose health check is failing (empty if docker is absent).
     public var unhealthyContainers: [String]
+    /// Packages apt can upgrade from a security suite (0 if apt is absent).
+    public var securityUpdates: Int
 
     /// CPU use (0 to 100) between an earlier reading and this one, or nil if no time passed.
     public func cpuPercent(since previous: Overview) -> Double? {

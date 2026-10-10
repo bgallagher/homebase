@@ -42,6 +42,18 @@ if args.count > 2, args[2] == "hostkey" {
     exit(0)
 }
 let transport = OpenSSHTransport(host: args[1])
+if args.count > 2, args[2] == "updates" {
+    let session = UpdatesSession(transport: transport)
+    let t0 = Date()
+    let state = await session.refresh()
+    print("updates poll: \(String(format: "%.2f", Date().timeIntervalSince(t0)))s")
+    if let e = state.error { print("error: \(e)"); exit(1) }
+    guard let snap = state.snapshot else { exit(1) }
+    print("\(snap.packages.count) upgradable, \(snap.securityCount) security, \(snap.held.count) held, reboot required: \(snap.rebootRequired)")
+    if let t = snap.refreshedAt { print("package lists refreshed \(Date(timeIntervalSince1970: TimeInterval(t)))") }
+    for p in snap.packages.prefix(10) { print("   \(p.isSecurity ? "SEC" : "   ") \(p.name) \(p.oldVersion ?? "?") -> \(p.newVersion)") }
+    exit(0)
+}
 if args.count > 2, args[2] == "docker" {
     let session = DockerSession(transport: transport)
     let t0 = Date()

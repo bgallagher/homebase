@@ -42,6 +42,19 @@ final class OverviewTests: XCTestCase {
         XCTAssertNil(a.cpuPercent(since: a))
     }
 
+    func testSecurityUpdatesAttention() throws {
+        let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/overview/synthetic-security-updates.out.txt"), encoding: .utf8)
+        var o = try OverviewParser.parse(text)
+        XCTAssertEqual(o.securityUpdates, 3)
+        o.rebootRequired = false
+        let items = Attention.evaluate(o)
+        XCTAssertEqual(items.map(\.id), ["security_updates"])
+        XCTAssertEqual(items[0].message, "3 security updates are available.")
+        XCTAssertEqual(items[0].fix, "updates")
+        o.securityUpdates = 1
+        XCTAssertEqual(Attention.evaluate(o)[0].message, "1 security update is available.")
+    }
+
     func testAttentionRules() throws {
         let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/overview/ubuntu-24.04.out.txt"), encoding: .utf8)
         var o = try OverviewParser.parse(text)

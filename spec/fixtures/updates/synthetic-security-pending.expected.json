@@ -1,0 +1,58 @@
+{
+  "held" : [
+    "linux-image-generic",
+    "docker-ce"
+  ],
+  "packages" : [
+    {
+      "architecture" : "amd64",
+      "isSecurity" : true,
+      "name" : "openssl",
+      "newVersion" : "3.0.13-0ubuntu3.5",
+      "oldVersion" : "3.0.13-0ubuntu3.4",
+      "suite" : "noble-updates,noble-security"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : true,
+      "name" : "libssl3t64",
+      "newVersion" : "3.0.13-0ubuntu3.5",
+      "oldVersion" : "3.0.13-0ubuntu3.4",
+      "suite" : "noble-updates,noble-security"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : false,
+      "name" : "libc6",
+      "newVersion" : "2.39-0ubuntu8.4",
+      "oldVersion" : "2.39-0ubuntu8.3",
+      "suite" : "noble-updates"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : false,
+      "name" : "linux-image-generic",
+      "newVersion" : "6.8.0-52.53",
+      "oldVersion" : "6.8.0-51.52",
+      "suite" : "noble-updates"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : true,
+      "name" : "ubuntu-pro-client",
+      "newVersion" : "33.3~24.04",
+      "oldVersion" : "33.2~24.04",
+      "suite" : "noble-infra-security"
+    },
+    {
+      "architecture" : "arm64",
+      "isSecurity" : false,
+      "name" : "docker-ce",
+      "newVersion" : "5:27.5.1-1~ubuntu.24.04~noble",
+      "oldVersion" : "5:27.4.0-1~ubuntu.24.04~noble",
+      "suite" : "noble"
+    }
+  ],
+  "rebootRequired" : true,
+  "refreshedAt" : 1735689600
+}

@@ -1,0 +1,31 @@
+{
+  "held" : [
+
+  ],
+  "packages" : [
+    {
+      "architecture" : "amd64",
+      "isSecurity" : true,
+      "name" : "curl",
+      "newVersion" : "7.88.1-10+deb12u8",
+      "oldVersion" : "7.88.1-10+deb12u7",
+      "suite" : "stable-security"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : false,
+      "name" : "bash",
+      "newVersion" : "5.2.15-2+b7",
+      "suite" : "stable"
+    },
+    {
+      "architecture" : "amd64",
+      "isSecurity" : false,
+      "name" : "foo-security-tools",
+      "newVersion" : "1.0-1",
+      "oldVersion" : "0.9-1",
+      "suite" : "stable"
+    }
+  ],
+  "rebootRequired" : false
+}

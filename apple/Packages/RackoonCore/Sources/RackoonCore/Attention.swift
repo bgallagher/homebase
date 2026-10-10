@@ -29,6 +29,13 @@ public enum Attention {
                 id: "container_unhealthy:\(name)", severity: .warning,
                 message: "\(name) is unhealthy.", fix: "docker"))
         }
+        if overview.securityUpdates > 0 {
+            let n = overview.securityUpdates
+            items.append(AttentionItem(
+                id: "security_updates", severity: .warning,
+                message: n == 1 ? "1 security update is available." : "\(n) security updates are available.",
+                fix: "updates"))
+        }
         if overview.rebootRequired {
             items.append(AttentionItem(
                 id: "reboot_required", severity: .warning,

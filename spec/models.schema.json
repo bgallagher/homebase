@@ -54,7 +54,8 @@
         "memory",
         "disks",
         "rebootRequired",
-        "unhealthyContainers"
+        "unhealthyContainers",
+        "securityUpdates"
       ],
       "properties": {
         "hostname": {
@@ -167,6 +168,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "securityUpdates": {
+          "type": "integer",
+          "description": "Packages apt can upgrade from a security suite (0 if apt is absent)."
         }
       }
     },
@@ -294,6 +299,64 @@
               }
             }
           }
+        }
+      }
+    },
+    "UpdatesSnapshot": {
+      "type": "object",
+      "required": [
+        "packages",
+        "held",
+        "rebootRequired"
+      ],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "suite",
+              "newVersion",
+              "architecture",
+              "isSecurity"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "suite": {
+                "type": "string",
+                "description": "apt's suite list, e.g. noble-updates,noble-security"
+              },
+              "newVersion": {
+                "type": "string"
+              },
+              "oldVersion": {
+                "type": "string"
+              },
+              "architecture": {
+                "type": "string"
+              },
+              "isSecurity": {
+                "type": "boolean",
+                "description": "true when any suite ends in -security"
+              }
+            }
+          }
+        },
+        "held": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "refreshedAt": {
+          "type": "integer",
+          "description": "Unix time the package lists were last refreshed, when known"
+        },
+        "rebootRequired": {
+          "type": "boolean"
         }
       }
     }
