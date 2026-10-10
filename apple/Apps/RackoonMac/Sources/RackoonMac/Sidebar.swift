@@ -94,6 +94,7 @@ struct Sidebar: View {
                 }
             }
             Spacer()
+            SafetySection()
             AppearanceSection()
         }
         .padding(.top, 44).padding(.bottom, 16).padding(.horizontal, 12) // top clears the traffic lights
@@ -101,6 +102,34 @@ struct Sidebar: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.sidebar)
         .foregroundStyle(Theme.textPrimary)
+    }
+}
+
+/// Read-only switch. While on, no screen can change anything on a server (the service layer refuses too).
+private struct SafetySection: View {
+    private let safety = SafetyStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.bottom, 8)
+            SectionLabel("Safety")
+            HStack(spacing: 10) {
+                Image(systemName: safety.readOnly ? "lock.fill" : "lock.open")
+                    .frame(width: 18)
+                    .foregroundStyle(safety.readOnly ? Theme.warn : Theme.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Read-only").fontWeight(.medium)
+                    Text(safety.readOnly ? "Changes are blocked" : "Changes ask first")
+                        .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                }
+                Spacer(minLength: 0)
+                Toggle("Read-only mode", isOn: Binding(get: { safety.readOnly }, set: { safety.setReadOnly($0) }))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            .padding(8)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(safety.readOnly ? Theme.warn.opacity(0.6) : Theme.border))
+            .padding(.bottom, 10)
+        }
     }
 }
 

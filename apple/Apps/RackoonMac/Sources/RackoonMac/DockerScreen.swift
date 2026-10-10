@@ -8,7 +8,6 @@ struct DockerScreen: View {
     let theme: TerminalTheme
     @State private var model: DockerModel
     @State private var collapsed: Set<String> = []
-    @State private var confirmStop: DockerContainer?
 
     init(server: Server, theme: TerminalTheme) {
         self.server = server
@@ -32,7 +31,7 @@ struct DockerScreen: View {
                             StackCard(stack: stack, collapsed: collapsed.contains(stack.id),
                                       toggle: { toggle(stack.id) }, model: model,
                                       selectedID: model.logTarget?.id, compact: model.logTarget != nil,
-                                      busy: state.busy, askStop: { confirmStop = $0 })
+                                      busy: state.busy)
                         }
                     } else if state.error == nil {
                         HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading containers…") }
@@ -51,12 +50,7 @@ struct DockerScreen: View {
         .foregroundStyle(Theme.textPrimary)
         .onAppear { model.start() }
         .onDisappear { model.stop() }
-        .confirmationDialog("Stop \(confirmStop?.name ?? "")?", isPresented: Binding(
-            get: { confirmStop != nil }, set: { if !$0 { confirmStop = nil } }), presenting: confirmStop) { c in
-            Button("Stop \(c.name)", role: .destructive) { model.perform(.stop, on: c) }
-        } message: { c in
-            Text("\(c.name) will stop until you start it again.")
-        }
+        .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
     }
 
     private func toggle(_ id: String) {
@@ -96,7 +90,6 @@ private struct StackCard: View {
     let selectedID: String?
     let compact: Bool
     let busy: Set<String>
-    let askStop: (DockerContainer) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -118,7 +111,7 @@ private struct StackCard: View {
                 Divider().overlay(Theme.border)
                 ForEach(stack.containers) { c in
                     ContainerRow(container: c, selected: c.id == selectedID, compact: compact, busy: busy.contains(c.id),
-                                 model: model, askStop: askStop)
+                                 model: model)
                     if c.id != stack.containers.last?.id { Divider().overlay(Theme.border).padding(.leading, 14) }
                 }
             }
@@ -149,7 +142,6 @@ private struct ContainerRow: View {
     let compact: Bool
     let busy: Bool
     let model: DockerModel
-    let askStop: (DockerContainer) -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -178,14 +170,14 @@ private struct ContainerRow: View {
                 if busy {
                     ProgressView().controlSize(.small).frame(width: 28, height: 28)
                 } else {
-                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)") {
-                        model.perform(.restart, on: container)
+                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)", mutates: true) {
+                        model.request(.restart, on: container)
                     }
                     if container.isRunning {
-                        IconButton(symbol: "stop.fill", help: "Stop \(container.name)") { askStop(container) }
+                        IconButton(symbol: "stop.fill", help: "Stop \(container.name)", mutates: true) { model.request(.stop, on: container) }
                     } else {
-                        IconButton(symbol: "play.fill", help: "Start \(container.name)") {
-                            model.perform(.start, on: container)
+                        IconButton(symbol: "play.fill", help: "Start \(container.name)", mutates: true) {
+                            model.request(.start, on: container)
                         }
                     }
                 }
@@ -231,16 +223,21 @@ private struct IconButton: View {
     let symbol: String
     let help: String
     var tint: Color = Theme.textSecondary
+    /// Changes something on the server, so it is disabled in read-only mode.
+    var mutates = false
     let action: () -> Void
 
     var body: some View {
+        let blocked = mutates && SafetyStore.shared.readOnly
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12))
                 .frame(width: 28, height: 28).contentShape(Rectangle())
         }
         .buttonStyle(.pointer)
         .foregroundStyle(tint)
-        .help(help)
+        .disabled(blocked)
+        .opacity(blocked ? 0.4 : 1)
+        .help(blocked ? "Read-only mode is on" : help)
     }
 }
 
@@ -280,8 +277,8 @@ private struct LogPanel: View {
                 if busy {
                     ProgressView().controlSize(.small).frame(width: 28, height: 28)
                 } else {
-                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)") {
-                        model.perform(.restart, on: container)
+                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)", mutates: true) {
+                        model.request(.restart, on: container)
                     }
                 }
                 IconButton(symbol: "xmark", help: "Close logs", action: model.closeLogs)

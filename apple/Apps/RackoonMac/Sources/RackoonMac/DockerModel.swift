@@ -19,6 +19,9 @@ final class DockerModel {
     private(set) var logsLive = false
     private(set) var logError: String?
 
+    /// A stop or restart waiting for the user's yes (shown as a sheet by the Docker screen).
+    var pending: PendingAction?
+    @ObservationIgnored private let serverName: String
     @ObservationIgnored private let session: DockerSession
     @ObservationIgnored private let transport: SSHTransport
     @ObservationIgnored private var listener: Task<Void, Never>?
@@ -29,7 +32,8 @@ final class DockerModel {
     init(server: Server) {
         let transport = OpenSSHTransport(server: server)
         self.transport = transport
-        session = DockerSession(transport: transport)
+        serverName = server.name
+        session = DockerSession(transport: transport, policy: SafetyStore.shared.policy)
     }
 
     func start() {
@@ -51,6 +55,22 @@ final class DockerModel {
     func refresh() {
         let session = session
         Task { await session.refresh() }
+    }
+
+    /// Stop and restart ask first, showing the exact command. Start runs straight away (it cannot break anything).
+    /// Does nothing in read-only mode; the buttons are disabled then, and the session would refuse anyway.
+    func request(_ action: DockerAction, on container: DockerContainer) {
+        guard !SafetyStore.shared.readOnly else { return }
+        guard action != .start else { perform(action, on: container); return }
+        guard let intent = action.intent(containerID: container.id) else { return }
+        let stopping = action == .stop
+        pending = PendingAction(
+            title: "\(stopping ? "Stop" : "Restart") \(container.name)?",
+            message: stopping ? "\(container.name) will stop until you start it again."
+                              : "\(container.name) will be restarted. Connections to it drop for a moment.",
+            serverName: serverName, command: intent.command,
+            destructive: stopping,
+            run: { [weak self] in self?.perform(action, on: container) })
     }
 
     func perform(_ action: DockerAction, on container: DockerContainer) {
