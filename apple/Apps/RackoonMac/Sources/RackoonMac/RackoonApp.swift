@@ -136,13 +136,15 @@ struct ViewCommands: Commands {
             Toggle("Highlight Terminal Output", isOn: Binding(get: { appearance.highlightOutput }, set: { appearance.setHighlight($0) }))
         }
         CommandGroup(replacing: .help) {
-            if LicenceStore.shared.isSupporter {
-                Text("Thanks for supporting Rackoon")
-            } else if let url = Supporter.url {
-                Link("Feed the Rackoon…", destination: url)
+            if Supporter.menuItemsVisible {
+                if LicenceStore.shared.isSupporter {
+                    Text("Thanks for supporting Rackoon")
+                } else if let url = Supporter.url {
+                    Link("Feed the Rackoon…", destination: url)
+                }
+                Button("Enter Licence…") { openWindow(id: LicenceSheetWindow.id) }
+                Divider()
             }
-            Button("Enter Licence…") { openWindow(id: LicenceSheetWindow.id) }
-            Divider()
             Link("Rackoon on GitHub", destination: URL(string: "https://github.com/bgallagher/rackoon")!)
         }
     }

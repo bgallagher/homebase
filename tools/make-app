@@ -60,6 +60,7 @@ cat > "$out/Contents/Info.plist" <<PLIST
     <key>CFBundleURLName</key><string>$bundle_id</string>
     <key>CFBundleURLSchemes</key><array><string>$url_scheme</string></array>
   </dict></array>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Brian Gallagher</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>

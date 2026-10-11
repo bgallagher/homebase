@@ -27,6 +27,10 @@ enum Supporter {
 
     /// The hosted checkout's "Redirect URL" (Paddle > Settings > Hosted checkouts) is `<scheme>://purchase-complete`: after paying,
     /// the browser hands the buyer back to the app, which says to check the email. Dev and stable builds use different schemes.
+    /// Help > Feed the Rackoon… and Enter Licence… are shown in dev builds only until the live checkout, live key pair and live
+    /// licence service exist (see "Going live" in docs/licence-setup.md). Then make this `true`.
+    static var menuItemsVisible: Bool { AppBuild.isDev }
+
     static var returnScheme: String { AppBuild.isDev ? "rackoon-dev" : "rackoon" }
     static let returnHost = "purchase-complete"
 

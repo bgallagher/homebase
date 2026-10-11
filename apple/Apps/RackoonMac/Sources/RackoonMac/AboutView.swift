@@ -32,6 +32,11 @@ struct AboutView: View {
             Text("Manage your servers over plain SSH. Nothing to install on them.")
                 .font(.callout).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 250)
+            HStack(spacing: 4) {
+                Text("Developed by").foregroundStyle(Theme.textMuted)
+                Link("Brian Gallagher", destination: URL(string: "https://github.com/bgallagher")!)
+            }
+            .font(.callout)
             Text("Terminal themes from the iTerm2-Color-Schemes collection (MIT).")
                 .font(.caption).foregroundStyle(Theme.textMuted)
                 .multilineTextAlignment(.center).frame(maxWidth: 250)

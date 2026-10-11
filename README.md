@@ -136,4 +136,4 @@ The server logic is small, so it is written twice (Swift now, Kotlin later) and 
 
 ## Licence
 
-Not yet chosen. The bundled terminal themes come from the MIT-licensed [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) collection (see `apple/Apps/RackoonMac/Resources/SOURCES.md`).
+Developed by [Brian Gallagher](https://github.com/bgallagher). Not yet licensed for reuse (no licence chosen). The bundled terminal themes come from the MIT-licensed [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) collection (see `apple/Apps/RackoonMac/Resources/SOURCES.md`).

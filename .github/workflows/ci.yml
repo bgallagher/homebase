@@ -75,8 +75,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          # A tag with a suffix (v0.1.0-alpha.1, v0.2.0-beta.1) is published as a pre-release; plain v1.2.3 is a normal release.
+          PRE=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* $PRE \
             --repo "$GITHUB_REPOSITORY" \
             --title "Rackoon ${GITHUB_REF_NAME#v}" \
             --generate-notes \
-            --notes "Apple silicon Mac build. It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
+            --notes "Developed by Brian Gallagher (https://github.com/bgallagher). Apple silicon Mac build. It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
