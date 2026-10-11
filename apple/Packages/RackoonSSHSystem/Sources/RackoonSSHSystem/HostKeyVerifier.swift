@@ -1,5 +1,6 @@
 import Foundation
 import RackoonCore
+import Subprocess
 
 /// What the user is asked to confirm the first time we meet a host.
 public struct HostKeyOffer: Sendable, Equatable {
@@ -50,7 +51,7 @@ public struct HostKeyVerifier: Sendable {
                     "-o", "UserKnownHostsFile=\(knownHostsPath)"]
         if let port = server.port { args += ["-p", String(port)] }
         args += [server.sshDestination, "true"]
-        let result = await Self.run("/usr/bin/ssh", args)
+        let result = await Self.run(.path("/usr/bin/ssh"), args)
         switch Self.classify(exitCode: result.code, stderr: result.stderr) {
         case .trusted: return .trusted
         case .changedKey:
@@ -66,7 +67,7 @@ public struct HostKeyVerifier: Sendable {
         var gArgs = ["-G"]
         if let port = server.port { gArgs += ["-p", String(port)] }
         gArgs.append(server.sshDestination)
-        let config = await Self.run("/usr/bin/ssh", gArgs)
+        let config = await Self.run(.path("/usr/bin/ssh"), gArgs)
         var hostname = server.host, port = server.port ?? 22
         for line in config.stdout.split(separator: "\n") {
             let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
@@ -75,12 +76,12 @@ public struct HostKeyVerifier: Sendable {
             if parts[0] == "port", let p = Int(parts[1]) { port = p }
         }
 
-        let scan = await Self.run("/usr/bin/ssh-keyscan", ["-T", "8", "-p", String(port), hostname])
+        let scan = await Self.run(.path("/usr/bin/ssh-keyscan"), ["-T", "8", "-p", String(port), hostname])
         let lines = scan.stdout.split(separator: "\n").filter { !$0.hasPrefix("#") }.joined(separator: "\n")
         guard !lines.isEmpty else {
             return .failed("Could not read the host key from \(hostname):\(port). \(scan.stderr)")
         }
-        let keygen = await Self.run("/usr/bin/ssh-keygen", ["-l", "-f", "-"], stdin: lines + "\n")
+        let keygen = await Self.run(.path("/usr/bin/ssh-keygen"), ["-l", "-f", "-"], stdin: lines + "\n")
         let prints = keygen.stdout.split(separator: "\n").map(String.init)
         guard keygen.code == 0, !prints.isEmpty else {
             return .failed("Could not compute the host key fingerprint.")
@@ -101,33 +102,22 @@ public struct HostKeyVerifier: Sendable {
 
     private struct Result { var stdout: String; var stderr: String; var code: Int32 }
 
-    private static func run(_ executable: String, _ args: [String], stdin: String? = nil) async -> Result {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = args
-            let out = Pipe(), err = Pipe(), input = Pipe()
-            process.standardOutput = out
-            process.standardError = err
-            process.standardInput = stdin == nil ? FileHandle.nullDevice : input
-            let outTask = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }
-            let errTask = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-            // Set before run() so a fast exit cannot be missed.
-            process.terminationHandler = { p in
-                Task {
-                    let o = String(decoding: await outTask.value, as: UTF8.self)
-                    let e = String(decoding: await errTask.value, as: UTF8.self)
-                    continuation.resume(returning: Result(stdout: o, stderr: e, code: p.terminationStatus))
-                }
-            }
-            do { try process.run() } catch {
-                continuation.resume(returning: Result(stdout: "", stderr: error.localizedDescription, code: -1))
-                return
-            }
+    private static func run(_ executable: Executable, _ args: [String], stdin: String? = nil) async -> Result {
+        do {
             if let stdin {
-                input.fileHandleForWriting.write(Data(stdin.utf8))
-                try? input.fileHandleForWriting.close()
+                let result = try await Subprocess.run(executable, arguments: Arguments(args), input: .string(stdin),
+                                                      output: .bytes(limit: 1 << 20), error: .bytes(limit: 1 << 20))
+                return Result(stdout: String(decoding: result.standardOutput, as: UTF8.self),
+                              stderr: String(decoding: result.standardError, as: UTF8.self),
+                              code: OpenSSHTransport.exitCode(result.terminationStatus))
             }
+            let result = try await Subprocess.run(executable, arguments: Arguments(args), input: .none,
+                                                  output: .bytes(limit: 1 << 20), error: .bytes(limit: 1 << 20))
+            return Result(stdout: String(decoding: result.standardOutput, as: UTF8.self),
+                          stderr: String(decoding: result.standardError, as: UTF8.self),
+                          code: OpenSSHTransport.exitCode(result.terminationStatus))
+        } catch {
+            return Result(stdout: "", stderr: "\(error)", code: -1)
         }
     }
 }

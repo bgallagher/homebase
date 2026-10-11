@@ -13,6 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.99.0"),
+        .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "1.0.1"),
     ],
     targets: [
         .target(
@@ -21,7 +22,7 @@ let package = Package(
         ),
         .target(
             name: "RackoonSSHSystem",
-            dependencies: ["RackoonCore"],
+            dependencies: ["RackoonCore", .product(name: "Subprocess", package: "swift-subprocess")],
             path: "Packages/RackoonSSHSystem/Sources/RackoonSSHSystem"
         ),
         .executableTarget(

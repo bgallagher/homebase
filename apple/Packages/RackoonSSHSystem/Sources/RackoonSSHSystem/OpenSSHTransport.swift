@@ -1,5 +1,6 @@
 import Foundation
 import RackoonCore
+import Subprocess
 
 public enum OpenSSHError: Error, LocalizedError {
     case timedOut(TimeInterval)
@@ -71,39 +72,42 @@ public struct OpenSSHTransport: SSHTransport {
         ]
     }
 
+    /// Most output one command may produce (a safety net; the largest real answers are a few hundred KB).
+    static let outputLimit = 64 * 1024 * 1024
+
     public func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = baseArguments() + [command]
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = FileHandle.nullDevice
-
-        // Drain pipes concurrently so a large output cannot fill the buffer and deadlock.
-        let outTask = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }
-        let errTask = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-
-        do { try process.run() } catch {
-            throw OpenSSHError.launchFailed(error.localizedDescription)
+        let arguments = Arguments(baseArguments() + [command])
+        do {
+            return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+                group.addTask {
+                    let result = try await Subprocess.run(
+                        .path("/usr/bin/ssh"), arguments: arguments, input: .none,
+                        output: .bytes(limit: Self.outputLimit), error: .bytes(limit: Self.outputLimit))
+                    return CommandResult(stdout: String(decoding: result.standardOutput, as: UTF8.self),
+                                         stderr: String(decoding: result.standardError, as: UTF8.self),
+                                         exitCode: Self.exitCode(result.terminationStatus))
+                }
+                // The timer: whichever finishes first wins; cancelling the loser stops ssh (Subprocess kills it).
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    return nil
+                }
+                let first = try await group.next() ?? nil
+                group.cancelAll()
+                guard let first else { throw OpenSSHError.timedOut(timeout) }
+                return first
+            }
+        } catch let error as SubprocessError {
+            throw OpenSSHError.launchFailed("\(error)")
         }
+    }
 
-        let timedOut = TimeoutFlag()
-        let killer = Task.detached {
-            try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-            timedOut.set()
-            process.terminate()
+    /// An exit status as ssh (and the old `Process`) reported it: the code, or the signal number if it was killed by one.
+    static func exitCode(_ status: TerminationStatus) -> Int32 {
+        switch status {
+        case .exited(let code): code
+        case .signaled(let signal): signal
         }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { _ in c.resume() }
-            if !process.isRunning { process.terminationHandler = nil; c.resume() }
-        }
-        killer.cancel()
-
-        let stdout = String(decoding: await outTask.value, as: UTF8.self)
-        let stderr = String(decoding: await errTask.value, as: UTF8.self)
-        if timedOut.value { throw OpenSSHError.timedOut(timeout) }
-        return CommandResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
     }
 
     /// Streams combined output over a forced remote pseudo-terminal (`-tt`), so lines end in \r\n.
@@ -111,7 +115,8 @@ public struct OpenSSHTransport: SSHTransport {
     /// Stopping the stream sends Ctrl-C through that terminal first, which makes the remote command exit
     /// and ssh finish on its own. Killing the local ssh alone is not enough: some servers (Tailscale SSH,
     /// as found in testing) leave the remote process running, so a quiet `docker logs -f` would stay
-    /// behind forever. The kill is only a fallback if ssh has not exited a couple of seconds after the Ctrl-C.
+    /// behind forever. The kill is only a fallback if ssh has not exited about two seconds after the Ctrl-C
+    /// (the teardown sequence below: swift-subprocess kills the process when its grace period ends).
     ///
     /// Streams deliberately do NOT use the shared ControlMaster connection: in testing, Ctrl-C written to
     /// a multiplexed client never reached the remote command, but on its own connection it does.
@@ -126,55 +131,57 @@ public struct OpenSSHTransport: SSHTransport {
             command,
         ]
         return AsyncThrowingStream { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            process.arguments = args
-            let out = Pipe(), input = Pipe()
-            process.standardOutput = out
-            process.standardError = out
-            process.standardInput = input
-            // Chunks can end in the middle of a multi-byte character; the chunker holds that tail for the next chunk.
-            let chunker = LockedChunker()
-            out.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty { return }
-                let text = chunker.push(data)
-                if !text.isEmpty { continuation.yield(text) }
-            }
-            process.terminationHandler = { _ in
-                out.fileHandleForReading.readabilityHandler = nil
-                // Whatever the pipe still holds when the process exits.
-                let rest = out.fileHandleForReading.readDataToEndOfFile()
-                var tail = rest.isEmpty ? "" : chunker.push(rest)
-                tail += chunker.finish()
-                if !tail.isEmpty { continuation.yield(tail) }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in
-                guard process.isRunning else { return }
-                try? input.fileHandleForWriting.write(contentsOf: Data([0x03])) // Ctrl-C to the remote pty
-                DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-                    if process.isRunning { process.terminate() }
+            let input = StdinBox()
+            var options = PlatformOptions()
+            // On cancellation: signal 0 delivers nothing (a pure grace period of two seconds for ssh to end by itself after
+            // the Ctrl-C below), then swift-subprocess sends the final kill.
+            options.teardownSequence = [.send(signal: Signal(rawValue: 0), allowedDurationToNextStep: .seconds(2))]
+            let task = Task {
+                do {
+                    // Chunks can end in the middle of a multi-byte character; the chunker holds that tail for the next chunk.
+                    var chunker = Utf8Chunker()
+                    _ = try await Subprocess.run(
+                        .path("/usr/bin/ssh"), arguments: Arguments(args), platformOptions: options,
+                        input: .inputWriter, output: .sequence, error: .combinedWithOutput
+                    ) { execution in
+                        input.set(execution.standardInputWriter)
+                        defer { input.clear() }
+                        for try await buffer in execution.standardOutput {
+                            let text = chunker.push(Data(buffer.withUnsafeBytes { Array($0) }))
+                            if !text.isEmpty { continuation.yield(text) }
+                        }
+                        let tail = chunker.finish()
+                        if !tail.isEmpty { continuation.yield(tail) }
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: OpenSSHError.launchFailed("\(error)"))
                 }
             }
-            do { try process.run() } catch {
-                continuation.finish(throwing: OpenSSHError.launchFailed(error.localizedDescription))
+            continuation.onTermination = { _ in
+                // Ctrl-C to the remote pty first, then cancel: the task's teardown gives ssh its grace period.
+                Task {
+                    await input.sendInterrupt()
+                    task.cancel()
+                }
             }
         }
     }
 }
 
-/// `Utf8Chunker` behind a lock: the pipe's readability handler and the termination handler run on different threads.
-private final class LockedChunker: @unchecked Sendable {
+/// The running ssh's stdin writer, reachable from outside the run body so a cancelled stream can type Ctrl-C into it.
+private final class StdinBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var chunker = Utf8Chunker()
-    func push(_ data: Data) -> String { lock.lock(); defer { lock.unlock() }; return chunker.push(data) }
-    func finish() -> String { lock.lock(); defer { lock.unlock() }; return chunker.finish() }
-}
+    private var writer: StandardInputWriter?
 
-private final class TimeoutFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    func set() { lock.lock(); flag = true; lock.unlock() }
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
+    func set(_ w: StandardInputWriter) { lock.withLock { writer = w } }
+    func clear() { lock.withLock { writer = nil } }
+
+    /// Errors are ignored: the process may already be gone.
+    func sendInterrupt() async {
+        let w = lock.withLock { writer }
+        _ = try? await w?.write([0x03])
+    }
 }

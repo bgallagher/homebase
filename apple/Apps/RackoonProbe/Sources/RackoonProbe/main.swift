@@ -460,7 +460,7 @@ if args.count > 2, args[2] == "files-test" {
     let policy = ActionPolicy()
     let session = FilesSession(transport: transport, transfers: OpenSSHTransport(host: args[1]), policy: policy)
     func fileSource(_ url: URL) -> LocalSource { .file(url, bytes: Int64((try? Data(contentsOf: url).count) ?? 0)) }
-    func folderSource(_ url: URL) -> LocalSource { .folder(url, bytes: (try? LocalArchive.size(of: url)) ?? 0) }
+    func folderSource(_ url: URL) async -> LocalSource { .folder(url, bytes: (try? await LocalArchive.size(of: url)) ?? 0) }
     func up(_ source: LocalSource, as name: String, progress: @escaping @Sendable (Int64) -> Void = { _ in }) async throws {
         guard let intent = session.uploadIntent(source, toDirectory: remoteDir, as: name) else { throw TransferError.badName(name) }
         try await session.upload(source, toDirectory: remoteDir, as: name, confirmation: try session.confirm(intent), progress: progress)
@@ -496,7 +496,7 @@ if args.count > 2, args[2] == "files-test" {
     try FileManager.default.createDirectory(at: tree.appendingPathComponent("sub"), withIntermediateDirectories: true)
     try Data("one".utf8).write(to: tree.appendingPathComponent("a b.txt"))
     try Data("two".utf8).write(to: tree.appendingPathComponent("sub/it's.txt"))
-    do { try await up(folderSource(tree), as: "tree dir") } catch { check(false, "folder upload failed: \(error)") }
+    do { try await up(await folderSource(tree), as: "tree dir") } catch { check(false, "folder upload failed: \(error)") }
     let listing = try? await session.list(remoteDir + "/tree dir")
     check(Set(listing?.entries.map(\.name) ?? []) == ["a b.txt", "sub"], "the server lists the uploaded folder: \(listing?.entries.map(\.name) ?? [])")
     check((await sh("ls -A \(remoteDir) | grep -c '^.rackoon-'")).stdout.hasPrefix("0"), "scratch folder removed")

@@ -166,7 +166,7 @@ final class FilesModel {
                 do {
                     if row.isDirectory {
                         // The server checks the exact size of what arrives, so measure the folder's archive first.
-                        let bytes = try await Task.detached { try LocalArchive.size(of: url) }.value
+                        let bytes = try await LocalArchive.size(of: url)
                         source = .folder(url, bytes: bytes)
                     } else {
                         source = .file(url, bytes: row.size ?? 0)
