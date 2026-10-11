@@ -70,45 +70,49 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            SectionLabel("Servers")
-            ForEach(servers) { server in
-                let isSelected = server.id == selectedID
-                Button { onSelect(server) } label: {
-                    HStack(spacing: 10) {
-                        StatusDot(status: isSelected ? status : .none, glow: isSelected)
-                        Text(server.name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1)
-                        Spacer()
+            // Servers and screens scroll when the window is short; Safety and Appearance stay put at the bottom.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionLabel("Servers")
+                    ForEach(servers) { server in
+                        let isSelected = server.id == selectedID
+                        Button { onSelect(server) } label: {
+                            HStack(spacing: 10) {
+                                StatusDot(status: isSelected ? status : .none, glow: isSelected)
+                                Text(server.name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 9)
+                            .background(isSelected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
+                            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.pointer)
+                        .contextMenu { Button("Remove \(server.name)", role: .destructive) { onRemove(server) } }
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 9)
-                    .background(isSelected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
-                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.pointer)
-                .contextMenu { Button("Remove \(server.name)", role: .destructive) { onRemove(server) } }
-            }
-            Button(action: onAddServer) {
-                Label("Add server", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.vertical, 9)
-                    .foregroundStyle(Theme.textMuted)
-                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.pointer)
-            .padding(.top, 4)
+                    Button(action: onAddServer) {
+                        Label("Add server", systemImage: "plus")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10).padding(.vertical, 9)
+                            .foregroundStyle(Theme.textMuted)
+                            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pointer)
+                    .padding(.top, 4)
 
-            if let name = selectedName {
-                Divider().padding(.vertical, 12)
-                SectionLabel(name)
-                ForEach(Screen.allCases) { screen in
-                    NavRow(screen: screen, selected: selection == screen,
-                           badge: screen == .updates ? updates : nil) {
-                        if screen.isAvailable { selection = screen }
+                    if let name = selectedName {
+                        Divider().padding(.vertical, 12)
+                        SectionLabel(name)
+                        ForEach(Screen.allCases) { screen in
+                            NavRow(screen: screen, selected: selection == screen,
+                                   badge: screen == .updates ? updates : nil) {
+                                if screen.isAvailable { selection = screen }
+                            }
+                        }
                     }
                 }
             }
-            Spacer()
             SafetySection()
             AppearanceSection()
         }
