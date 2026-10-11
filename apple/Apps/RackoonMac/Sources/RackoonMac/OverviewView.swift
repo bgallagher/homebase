@@ -281,17 +281,25 @@ struct ErrorBanner: View {
 }
 
 enum Format {
+    /// "3d 4h", "2h 5m", "7m": uptime at the resolution that matters. Zero trailing units are dropped ("1h", not "1h 0m").
     static func uptime(_ seconds: Double) -> String {
-        let s = Int(seconds)
-        let d = s / 86400, h = s % 86400 / 3600, m = s % 3600 / 60
-        return d > 0 ? "\(d)d \(h)h" : h > 0 ? "\(h)h \(m)m" : "\(m)m"
+        let s = max(0, Int(seconds))
+        return abbreviated(s, units: s >= 86400 ? [.day, .hour] : s >= 3600 ? [.hour, .minute] : [.minute], fallback: "\(s / 60)m")
     }
+
     /// "45s", "1m 12s", "1h 5m": for short waits, where uptime's minute resolution would read "0m".
     static func duration(_ seconds: Double) -> String {
         let s = max(0, Int(seconds))
-        if s < 60 { return "\(s)s" }
-        if s < 3600 { return "\(s / 60)m \(s % 60)s" }
-        return "\(s / 3600)h \(s % 3600 / 60)m"
+        return abbreviated(s, units: s >= 3600 ? [.hour, .minute] : s >= 60 ? [.minute, .second] : [.second], fallback: "\(s)s")
+    }
+
+    private static func abbreviated(_ seconds: Int, units: NSCalendar.Unit, fallback: String) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = .dropAll
+        formatter.allowedUnits = units
+        return formatter.string(from: TimeInterval(seconds)) ?? fallback
     }
     static func percent(_ v: Double) -> String { String(format: "%.0f%%", v) }
     static func load(_ v: Double) -> String { String(format: "%.2f", v) }

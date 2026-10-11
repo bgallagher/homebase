@@ -300,3 +300,25 @@ final class StackFileSessionTests: XCTestCase {
         XCTAssertTrue(t.commands.isEmpty)
     }
 }
+
+final class LineDiffPropertyTests: XCTestCase {
+    /// Whatever the inputs, the "same + added" lines rebuild the new text and the "same + removed" lines rebuild the old one,
+    /// with consistent 1-based line numbers.
+    func testDiffAlwaysRebuildsBothSides() {
+        var generator = SystemRandomNumberGenerator()
+        let alphabet = ["a", "b", "c", "", "  x", "y"]
+        for _ in 0..<300 {
+            let old = (0..<Int.random(in: 0...12, using: &generator)).map { _ in alphabet.randomElement(using: &generator)! }
+            let new = (0..<Int.random(in: 0...12, using: &generator)).map { _ in alphabet.randomElement(using: &generator)! }
+            let oldText = old.isEmpty ? "" : old.joined(separator: "\n") + "\n"
+            let newText = new.isEmpty ? "" : new.joined(separator: "\n") + "\n"
+            let lines = LineDiff.lines(old: oldText, new: newText)
+            XCTAssertEqual(lines.filter { $0.kind != .removed }.map(\.text), new, "new side for \(old) -> \(new)")
+            XCTAssertEqual(lines.filter { $0.kind != .added }.map(\.text), old, "old side for \(old) -> \(new)")
+            XCTAssertEqual(lines.compactMap(\.newNumber), Array(1...max(1, new.count)).prefix(new.count).map { $0 })
+            XCTAssertEqual(lines.compactMap(\.oldNumber), Array(1...max(1, old.count)).prefix(old.count).map { $0 })
+        }
+        XCTAssertEqual(LineDiff.changeCount(old: "a\nb\n", new: "a\nb\n"), 0)
+        XCTAssertEqual(LineDiff.changeCount(old: "a\nb\n", new: "a\nc\n"), 2)
+    }
+}

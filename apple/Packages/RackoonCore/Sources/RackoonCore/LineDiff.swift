@@ -1,7 +1,7 @@
 import Foundation
 
-/// A small line diff (longest common subsequence). Used to highlight changed lines in the editor and to show
-/// what a save would change in the confirmation dialog. Files here are at most 64 KiB, so O(n*m) is fine.
+/// A line diff on top of the standard library's `CollectionDifference`. Used to highlight changed lines in the editor and to
+/// show what a save would change in the confirmation dialog.
 public enum LineDiff {
     public enum Kind: Sendable, Equatable { case same, added, removed }
 
@@ -15,23 +15,23 @@ public enum LineDiff {
 
     public static func lines(old: String, new: String) -> [Line] {
         let a = split(old), b = split(new)
-        let n = a.count, m = b.count
-        // lcs[i][j] = length of the longest common subsequence of a[i...] and b[j...]
-        var lcs = [[Int]](repeating: [Int](repeating: 0, count: m + 1), count: n + 1)
-        for i in stride(from: n - 1, through: 0, by: -1) {
-            for j in stride(from: m - 1, through: 0, by: -1) {
-                lcs[i][j] = a[i] == b[j] ? lcs[i + 1][j + 1] + 1 : max(lcs[i + 1][j], lcs[i][j + 1])
+        // The standard library's diff (Myers' algorithm) finds the minimal removals and insertions.
+        var removed = Set<Int>(), inserted = Set<Int>()
+        for change in b.difference(from: a) {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
             }
         }
         var out: [Line] = []
         var i = 0, j = 0
-        while i < n || j < m {
-            if i < n, j < m, a[i] == b[j] {
-                out.append(Line(kind: .same, text: a[i], oldNumber: i + 1, newNumber: j + 1)); i += 1; j += 1
-            } else if j < m, i == n || lcs[i][j + 1] >= lcs[i + 1][j] {
+        while i < a.count || j < b.count {
+            if i < a.count, removed.contains(i) {
+                out.append(Line(kind: .removed, text: a[i], oldNumber: i + 1, newNumber: nil)); i += 1
+            } else if j < b.count, inserted.contains(j) {
                 out.append(Line(kind: .added, text: b[j], oldNumber: nil, newNumber: j + 1)); j += 1
             } else {
-                out.append(Line(kind: .removed, text: a[i], oldNumber: i + 1, newNumber: nil)); i += 1
+                out.append(Line(kind: .same, text: b[j], oldNumber: i + 1, newNumber: j + 1)); i += 1; j += 1
             }
         }
         return out
