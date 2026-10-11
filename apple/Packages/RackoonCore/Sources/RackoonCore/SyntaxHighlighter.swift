@@ -141,6 +141,18 @@ public enum SyntaxHighlighter {
 /// A quick local check of `.env` syntax, so a typo shows immediately without a round trip.
 /// The server's `docker compose config` still has the final say.
 public enum EnvSyntax {
+    /// The variable names a .env text defines (`NAME=value` and `export NAME=value` lines; comments and odd lines skipped).
+    public static func names(in text: String) -> [String] {
+        text.components(separatedBy: "\n").compactMap { raw in
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { return nil }
+            if line.hasPrefix("export ") { line = String(line.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+            guard let eq = line.firstIndex(of: "=") else { return nil }
+            let name = line[..<eq].trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? nil : name
+        }
+    }
+
     public static func check(_ text: String) -> [ComposeIssue] {
         var issues: [ComposeIssue] = []
         for (index, raw) in text.components(separatedBy: "\n").enumerated() {

@@ -92,3 +92,18 @@ public enum EditorChecks {
         return m.contains("validating") || m.contains("schema") || m.contains("additional property")
     }
 }
+
+extension ValidationResult {
+    /// Names of the `${VARIABLES}` compose says are not set (`The "DB_PASSWORD" variable is not set. Defaulting to a blank
+    /// string.`), in the order reported, each once. A file that needs them fails (or misbehaves) until they have values.
+    public var unsetVariables: [String] {
+        var seen = Set<String>(), out: [String] = []
+        for issue in issues {
+            guard let open = issue.message.range(of: "The \""), let close = issue.message.range(of: "\" variable is not set") else { continue }
+            guard open.upperBound <= close.lowerBound else { continue }
+            let name = String(issue.message[open.upperBound..<close.lowerBound])
+            if name.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil, seen.insert(name).inserted { out.append(name) }
+        }
+        return out
+    }
+}

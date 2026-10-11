@@ -56,6 +56,10 @@ final class AddContainerModel {
     /// What the last read of the hand-edited compose text put into the form, and whether the form can show all of it.
     @ObservationIgnored private var reflectedSpec: ContainerSpec?
     private var reflectedLossless = false
+    /// Set while the pasted file defines several services: the form can't edit that, but it shows what is in the file.
+    private(set) var servicesInFile: ComposeFormParser.Overview?
+    /// The stack name this page filled in from the file's `name:`, so a later paste can replace it but a typed name is kept.
+    @ObservationIgnored private var autoStackName: String?
 
     /// No side effects here: SwiftUI may construct this more than once. `start()` begins the checks.
     init(server: Server, folder: String) {
@@ -84,12 +88,57 @@ final class AddContainerModel {
 
     private var existingStack: DockerStack? { existingName.flatMap { name in stacksNow().first { $0.name == name } } }
 
+    /// Everything typed or pasted for a new stack, kept while the page shows the other target so switching back doesn't lose it.
+    private struct NewStackDraft {
+        var composeOverride: String?
+        var envOverride: String?
+        var spec: ContainerSpec
+        var stackName: String
+        var reflectedSpec: ContainerSpec?
+        var reflectedLossless: Bool
+        var servicesInFile: ComposeFormParser.Overview?
+        var autoStackName: String?
+    }
+    @ObservationIgnored private var newStackDraft: NewStackDraft?
+
     func setTarget(_ new: Target) {
         guard new != target else { return }
+        if target == .newStack {
+            newStackDraft = NewStackDraft(composeOverride: composeOverride, envOverride: envOverride, spec: spec, stackName: stackName,
+                                          reflectedSpec: reflectedSpec, reflectedLossless: reflectedLossless,
+                                          servicesInFile: servicesInFile, autoStackName: autoStackName)
+        }
         target = new
         composeOverride = nil; envOverride = nil
+        if new == .newStack, let draft = newStackDraft {
+            composeOverride = draft.composeOverride; envOverride = draft.envOverride
+            spec = draft.spec; stackName = draft.stackName
+            reflectedSpec = draft.reflectedSpec; reflectedLossless = draft.reflectedLossless
+            servicesInFile = draft.servicesInFile; autoStackName = draft.autoStackName
+            newStackDraft = nil
+        } else if new == .existing {
+            servicesInFile = nil   // the existing-stack page shows its own file, not the pasted one
+        }
         notice = nil
         scheduleChecks()
+    }
+
+    /// Variables the compose file uses that `.env` doesn't set (from the server's own check of the current text).
+    var missingVariables: [String] {
+        guard validatedKey == key, let validation else { return [] }
+        let defined = Set(EnvSyntax.names(in: envText))
+        return validation.unsetVariables.filter { !defined.contains($0) }
+    }
+
+    /// Appends `NAME=` lines for the missing variables to `.env` and shows that tab, ready to be filled in.
+    func addMissingVariables() {
+        let missing = missingVariables
+        guard !missing.isEmpty else { return }
+        var text = envText
+        if !text.isEmpty, !text.hasSuffix("\n") { text += "\n" }
+        text += missing.map { "\($0)=" }.joined(separator: "\n") + "\n"
+        tab = .env
+        setText(text, for: .env)
     }
 
     func chooseExisting(_ name: String) {
@@ -162,12 +211,21 @@ final class AddContainerModel {
     /// Typed or pasted compose text fills the form in (like Dockge). The text stays as written; the form is a read-out
     /// until it is edited, and if the file uses things the form can't show, it stays a read-out (`formLocked`).
     private func reflectIntoForm(_ text: String) {
+        let overview = ComposeFormParser.overview(of: text)
+        // A compose project `name:` is a good stack name: fill it in unless the user typed their own.
+        if let project = overview.projectName, NewStackPlan(name: project, parentDirectory: folder, compose: "", env: "").nameProblem == nil,
+           stackName.isEmpty || stackName == autoStackName {
+            stackName = project
+            autoStackName = project
+        }
         if let parsed = ComposeFormParser.parse(text, env: envText) {
             spec = parsed.spec
             reflectedSpec = parsed.spec
             reflectedLossless = parsed.lossless
+            servicesInFile = nil
         } else {
             reflectedLossless = false
+            servicesInFile = overview.services.isEmpty ? nil : overview
         }
     }
 
@@ -177,7 +235,7 @@ final class AddContainerModel {
     var isHandEdited: Bool { composeOverride != nil || envOverride != nil }
 
     func resetToForm() {
-        composeOverride = nil; envOverride = nil; reflectedSpec = nil
+        composeOverride = nil; envOverride = nil; reflectedSpec = nil; servicesInFile = nil; newStackDraft = nil
         scheduleChecks()
     }
 
@@ -323,9 +381,16 @@ final class AddContainerModel {
                                   validatedText: validatedKey == k ? k : nil, text: k), serverName: serverName)
         }
         if let problem = insertProblem { rows.append(EditorCheckRow(id: "insert", state: .fail, title: "Add to stack", detail: problem)) }
-        rows.append(ContainerChecks.imageRow(spec, status: imageStatus))
-        rows += ContainerChecks.portRows(spec, listening: listening, containers: containersNow(), serverName: serverName)
-        rows.append(ContainerChecks.nameRow(spec, stack: target == .newStack ? stackName : existingName, containers: containersNow()))
+        if let file = servicesInFile {
+            // The image, port and name checks are for the one-container form; the server's compose check above covers the file.
+            let n = file.services.count
+            rows.append(EditorCheckRow(id: "services", state: .skipped, title: "Services",
+                                       detail: "\(n) services in this file: image and port checks cover the one-container form only"))
+        } else {
+            rows.append(ContainerChecks.imageRow(spec, status: imageStatus))
+            rows += ContainerChecks.portRows(spec, listening: listening, containers: containersNow(), serverName: serverName)
+            rows.append(ContainerChecks.nameRow(spec, stack: target == .newStack ? stackName : existingName, containers: containersNow()))
+        }
         if target == .existing, spec.activeEnv.contains(where: { EnvMerge.merge(existing: originalEnv, adding: [$0]).kept.contains($0.key) }) {
             let kept = EnvMerge.merge(existing: originalEnv, adding: spec.activeEnv).kept.joined(separator: ", ")
             rows.append(EditorCheckRow(id: "envkept", state: .warn, title: "Already in .env", detail: "\(kept) keeps its current value"))

@@ -95,6 +95,70 @@ public enum ComposeFormParser {
         return Parsed(spec: spec, lossless: lossless)
     }
 
+    /// A read-only summary of any compose file (several services, comments, extra keys): what the form can't edit but can
+    /// still show. Line based like the rest of this file; it reads only the project `name:`, each service's name,
+    /// `image:`, whether it has `build:`, and its published ports.
+    public struct Overview: Equatable, Sendable {
+        public struct Service: Equatable, Sendable {
+            public var name: String
+            public var image: String?
+            public var build: Bool
+            /// As written, e.g. `2283:2283` or `${TS_IP}:8080:80`.
+            public var ports: [String]
+        }
+        /// The compose project `name:`, if the file sets one (it makes a good stack name).
+        public var projectName: String?
+        public var services: [Service]
+    }
+
+    public static func overview(of text: String) -> Overview {
+        var out = Overview(projectName: nil, services: [])
+        var inServices = false
+        var serviceIndent: Int?
+        var keyIndent: Int?
+        var inPorts = false
+        for raw in text.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n") {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            let indent = raw.prefix { $0 == " " }.count
+            if indent == 0 {
+                inServices = trimmed == "services:"
+                inPorts = false
+                if trimmed.hasPrefix("name:") { out.projectName = unquote(stripComment(String(trimmed.dropFirst(5)))) }
+                continue
+            }
+            guard inServices else { continue }
+            if serviceIndent == nil { serviceIndent = indent }
+            if indent == serviceIndent {
+                inPorts = false
+                keyIndent = nil
+                if trimmed.hasSuffix(":") { out.services.append(Overview.Service(name: String(trimmed.dropLast()), image: nil, build: false, ports: [])) }
+                continue
+            }
+            guard !out.services.isEmpty else { continue }
+            if keyIndent == nil { keyIndent = indent }
+            let last = out.services.count - 1
+            if indent == keyIndent {
+                let (key, value) = split(trimmed)
+                inPorts = key == "ports"
+                switch key {
+                case "image": out.services[last].image = unquote(stripComment(value))
+                case "build": out.services[last].build = true
+                default: break
+                }
+            } else if inPorts, trimmed.hasPrefix("- ") {
+                out.services[last].ports.append(unquote(stripComment(String(trimmed.dropFirst(2)))))
+            }
+        }
+        return out
+    }
+
+    /// Removes a trailing ` # comment` from a scalar (outside quotes, which is enough for the values read here).
+    private static func stripComment(_ value: String) -> String {
+        guard let range = value.range(of: " #") else { return value.trimmingCharacters(in: .whitespaces) }
+        return String(value[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+    }
+
     private static func split(_ line: String) -> (String, String) {
         guard let colon = line.firstIndex(of: ":") else { return (line, "") }
         return (String(line[..<colon]).trimmingCharacters(in: .whitespaces),

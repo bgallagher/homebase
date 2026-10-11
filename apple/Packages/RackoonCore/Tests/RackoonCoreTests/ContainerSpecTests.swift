@@ -234,3 +234,86 @@ final class ComposeFormParserTests: XCTestCase {
         XCTAssertNotNil(ContainerSpec.portProblem(PortRow(host: "1.2.3:8080", container: "80")))
     }
 }
+
+final class ComposeOverviewTests: XCTestCase {
+    private let immich = """
+    #
+    # WARNING: To install Immich, follow our guide
+    #
+    name: immich
+
+    services:
+      immich-server:
+        container_name: immich_server
+        image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+        # extends:
+        #   file: hwaccel.transcoding.yml
+        volumes:
+          # Do not edit the next line.
+          - ${UPLOAD_LOCATION}:/data
+          - /etc/localtime:/etc/localtime:ro
+        env_file:
+          - .env
+        ports:
+          - '2283:2283'
+        depends_on:
+          - redis
+          - database
+        restart: always
+
+      immich-machine-learning:
+        container_name: immich_machine_learning
+        image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+        volumes:
+          - model-cache:/cache
+
+      redis:
+        container_name: immich_redis
+        image: docker.io/valkey/valkey:9@sha256:abc # pinned
+        healthcheck:
+          test: redis-cli ping || exit 1
+
+      database:
+        build: ./db
+        ports:
+          - "5432:5432"
+          - 127.0.0.1:8080:80
+
+    volumes:
+      model-cache:
+    """
+
+    func testOverviewOfAMultiServiceFileWithComments() {
+        // A multi-service file is not something the one-container form can show.
+        XCTAssertNil(ComposeFormParser.parse(immich))
+        let o = ComposeFormParser.overview(of: immich)
+        XCTAssertEqual(o.projectName, "immich")
+        XCTAssertEqual(o.services.map(\.name), ["immich-server", "immich-machine-learning", "redis", "database"])
+        XCTAssertEqual(o.services[0].image, "ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}")
+        XCTAssertEqual(o.services[0].ports, ["2283:2283"])
+        XCTAssertEqual(o.services[2].image, "docker.io/valkey/valkey:9@sha256:abc", "a trailing comment is dropped")
+        XCTAssertTrue(o.services[3].build)
+        XCTAssertNil(o.services[3].image)
+        XCTAssertEqual(o.services[3].ports, ["5432:5432", "127.0.0.1:8080:80"])
+        XCTAssertTrue(o.services[1].ports.isEmpty)
+    }
+
+    func testOverviewOfOddInput() {
+        XCTAssertEqual(ComposeFormParser.overview(of: "").services.count, 0)
+        XCTAssertEqual(ComposeFormParser.overview(of: "services:\n").services.count, 0)
+        XCTAssertNil(ComposeFormParser.overview(of: "services:\n  a:\n    image: x\n").projectName)
+        XCTAssertEqual(ComposeFormParser.overview(of: "name: \"my-app\"\nservices:\n  a:\n    image: x\n").projectName, "my-app")
+    }
+
+    func testUnsetVariablesAreReadFromComposeWarnings() {
+        let result = ValidationResult(issues: [
+            ComposeIssue(severity: .warning, line: nil, message: "The \"DB_PASSWORD\" variable is not set. Defaulting to a blank string."),
+            ComposeIssue(severity: .warning, line: nil, message: "The \"UPLOAD_LOCATION\" variable is not set. Defaulting to a blank string."),
+            ComposeIssue(severity: .warning, line: nil, message: "The \"DB_PASSWORD\" variable is not set. Defaulting to a blank string."),
+            ComposeIssue(severity: .error, line: nil, message: "invalid spec: :/var/lib/postgresql/data: empty section between colons"),
+            ComposeIssue(severity: .warning, line: nil, message: "The \"bad name\" variable is not set."),
+        ])
+        XCTAssertEqual(result.unsetVariables, ["DB_PASSWORD", "UPLOAD_LOCATION"])
+        XCTAssertEqual(ValidationResult(issues: []).unsetVariables, [])
+    }
+}

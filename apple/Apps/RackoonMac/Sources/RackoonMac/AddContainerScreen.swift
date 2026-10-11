@@ -47,10 +47,13 @@ struct AddContainerScreen: View {
         @Bindable var model = model
         return VStack(alignment: .leading, spacing: 18) {
             section("Add to") {
-                Segmented(options: [(AddContainerModel.Target.newStack, "New stack"), (.existing, "Existing stack")],
+                Segmented(options: [(AddContainerModel.Target.newStack, "New stack"), (.existing, "Existing stack")], equalWidth: true,
                           selection: Binding(get: { model.target }, set: { model.setTarget($0) }))
                 targetField
             }
+            if let file = model.servicesInFile {
+                servicesReadOut(file)
+            } else {
             section("Container") {
                 DesignField(text: $model.spec.name, placeholder: "container-name", hint: nil, mono: false, error: model.spec.nameProblem)
                     .onChange(of: model.spec.name) { _, _ in model.specChanged() }
@@ -99,13 +102,40 @@ struct AddContainerScreen: View {
                 Label("The file has settings this form can't show, so edit it on the right, or choose Reset to form.", systemImage: "lock")
                     .font(.system(size: 12)).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
             }
+            }
         }
-        .opacity(model.formLocked ? 0.55 : 1)
-        .disabled(model.formLocked)
+        .opacity(model.formLocked && model.servicesInFile == nil ? 0.55 : 1)
+        .disabled(model.formLocked && model.servicesInFile == nil)
         // Row edits (ports, volumes, env) arrive through the bindings above.
         .onChange(of: model.spec.ports) { _, _ in model.specChanged() }
         .onChange(of: model.spec.volumes) { _, _ in model.specChanged() }
         .onChange(of: model.spec.env) { _, _ in model.specChanged() }
+    }
+
+    /// A pasted file with several services can't be edited through the one-container form, so show what it contains.
+    private func servicesReadOut(_ file: ComposeFormParser.Overview) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(file.services.count) SERVICES IN THIS FILE").font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(file.services.enumerated()), id: \.offset) { index, service in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(service.name).font(.system(size: 13, weight: .semibold))
+                        Text(service.image ?? (service.build ? "built from source" : "no image"))
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1).truncationMode(.middle)
+                        if !service.ports.isEmpty {
+                            Text("ports " + service.ports.joined(separator: ", ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
+                    if index < file.services.count - 1 { Divider().overlay(Theme.border) }
+                }
+            }
+            .card()
+            Label("This file has several services, so it is edited as text on the right. Add the .env it needs on the .env tab, then Create and start. Reset to form starts over.", systemImage: "doc.text")
+                .font(.system(size: 12)).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder private var targetField: some View {
@@ -210,12 +240,39 @@ struct AddContainerScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             EditorChecksList(rows: model.rows)
+            missingVariablesBar
             footer
         }
         .frame(minHeight: 560)
         .background(Theme.background)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(failing ? Theme.danger.opacity(0.45) : Theme.border))
+    }
+
+    /// Compose says the file uses variables `.env` doesn't set (a file like Immich's): one click adds them, ready to fill in.
+    @ViewBuilder private var missingVariablesBar: some View {
+        let missing = model.missingVariables
+        if !missing.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "key").foregroundStyle(Theme.warn)
+                Text(missingText(missing))
+                    .font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                Spacer(minLength: 8)
+                Button("Add to .env") { model.addMissingVariables() }.buttonStyle(.bordered).controlSize(.small).handCursor()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Theme.warn.opacity(0.08))
+            .overlay(alignment: .top) { Theme.border.frame(height: 1) }
+        }
+    }
+
+    private func missingText(_ missing: [String]) -> String {
+        let count = missing.count
+        let noun = count == 1 ? "variable" : "variables"
+        let verb = count == 1 ? "isn't" : "aren't"
+        let names = missing.prefix(4).joined(separator: ", ")
+        let more = count > 4 ? " and \(count - 4) more" : ""
+        return "The file uses \(count) \(noun) that \(verb) set in .env: \(names)\(more)."
     }
 
     private var tabBar: some View {
@@ -299,6 +356,8 @@ private struct DesignField: View {
 /// The design's segmented control: a recessed track with the selected option raised.
 private struct Segmented<Value: Hashable>: View {
     let options: [(Value, String)]
+    /// Every segment the same width (two short options); otherwise a long label gets the room it needs first.
+    var equalWidth = false
     @Binding var selection: Value
 
     var body: some View {
@@ -306,14 +365,14 @@ private struct Segmented<Value: Hashable>: View {
             ForEach(options.indices, id: \.self) { i in
                 let (value, label) = options[i]
                 Button { selection = value } label: {
-                    Text(label).font(.system(size: 12.5)).lineLimit(1).fixedSize()
+                    Text(label).font(.system(size: 12.5)).lineLimit(1).fixedSize(horizontal: !equalWidth, vertical: false)
                         .padding(.horizontal, 12)          // inside the frame, so a long label keeps room around it
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .foregroundStyle(selection == value ? Theme.textPrimary : Theme.textMuted)
                         .background(selection == value ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.pointer)
-                .layoutPriority(Double(label.count))   // a long label gets the room it needs before the others share the rest
+                .layoutPriority(equalWidth ? 0 : Double(label.count))   // a long label gets the room it needs before the others share the rest
             }
         }
         .padding(3)
