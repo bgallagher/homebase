@@ -17,6 +17,17 @@ struct LicenceSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Rackoon licence").font(.system(size: 16, weight: .semibold))
+            if store.purchaseReturned && !store.isSupporter {
+                Label {
+                    Text("Payment successful. Check your email for your licence code, then paste it below.")
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ok)
+                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.ok.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
             switch store.state {
             case .supporter(let email, let env):
                 supporterCard(email: email, env: env)
@@ -28,7 +39,7 @@ struct LicenceSheet: View {
                     Button("Remove Licence…") { confirmingRemove = true }.handCursor()
                 }
                 Spacer()
-                Button("Close", action: close).keyboardShortcut(store.isSupporter ? .defaultAction : .cancelAction).handCursor()
+                Button("Close") { store.dismissPurchaseNote(); close() }.keyboardShortcut(store.isSupporter ? .defaultAction : .cancelAction).handCursor()
                 if !store.isSupporter {
                     Button("Activate", action: activate)
                         .keyboardShortcut(.defaultAction)

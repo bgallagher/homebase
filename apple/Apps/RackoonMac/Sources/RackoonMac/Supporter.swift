@@ -25,9 +25,20 @@ enum Supporter {
 
     static func serviceURL(for env: LicenceEnv) -> URL? { env == .live ? liveServiceURL : sandboxServiceURL }
 
+    /// The hosted checkout's "Redirect URL" (Paddle > Settings > Hosted checkouts) is `<scheme>://purchase-complete`: after paying,
+    /// the browser hands the buyer back to the app, which says to check the email. Dev and stable builds use different schemes.
+    static var returnScheme: String { AppBuild.isDev ? "rackoon-dev" : "rackoon" }
+    static let returnHost = "purchase-complete"
+
     static var url: URL? {
         var parts = URLComponents(string: checkout)
-        parts?.queryItems = [URLQueryItem(name: "price_id", value: priceID)]
+        // theme: the dark checkout matches the app. variant=express: one-click wallets first (Apple Pay needs domain verification
+        // to be one-click). Both are optional hosted-checkout query parameters (developer.paddle.com/paddle-js/about/hosted-checkout).
+        parts?.queryItems = [
+            URLQueryItem(name: "price_id", value: priceID),
+            URLQueryItem(name: "theme", value: "dark"),
+            URLQueryItem(name: "variant", value: "express"),
+        ]
         return parts?.url
     }
 
@@ -82,6 +93,8 @@ final class LicenceStore {
     }
 
     private(set) var state: State = .none
+    /// The buyer just came back from the checkout: the licence window says "payment successful, check your email".
+    private(set) var purchaseReturned = false
     /// Why the stored key no longer counts (for example it came from a build that accepted sandbox keys).
     private(set) var storedProblem: String?
     @ObservationIgnored private let vault: LicenceVault
@@ -126,6 +139,11 @@ final class LicenceStore {
         }
     }
 
+    /// Called when the checkout redirects back to the app. Carries no data and trusts nothing from the link: it only makes the
+    /// licence window show a thank-you message, so any other program opening the link can do no harm.
+    func purchaseCompleted() { purchaseReturned = true }
+    func dismissPurchaseNote() { purchaseReturned = false }
+
     /// Asks the licence service about the key if it has not been asked for a week. Never blocks, never throws: only an
     /// explicit "revoked" changes anything (see `LicenceRevocation`).
     private func refreshStatus(of payload: LicencePayload) {
@@ -147,6 +165,7 @@ final class LicenceStore {
     func activate(_ text: String) throws {
         _ = try checker.check(text)
         try vault.save(text)
+        purchaseReturned = false
         reload()
     }
 

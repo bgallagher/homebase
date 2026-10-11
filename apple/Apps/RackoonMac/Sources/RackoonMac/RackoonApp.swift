@@ -9,6 +9,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppIcon.installDockIcon()
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    /// `rackoon://purchase-complete` (the Paddle checkout's redirect). Only the host is looked at.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: { $0.scheme == Supporter.returnScheme && $0.host == Supporter.returnHost }) else { return }
+        MainActor.assumeIsolated {
+            LicenceStore.shared.purchaseCompleted()
+            NotificationCenter.default.post(name: .rackoonShowLicence, object: nil)
+        }
+    }
+}
+
+extension Notification.Name {
+    static let rackoonShowLicence = Notification.Name("rackoonShowLicence")
 }
 
 @main
@@ -291,6 +304,7 @@ struct ContentView: View {
     @State private var terminals = TerminalStore()
     @State private var dockerWorkspace = DockerWorkspace()
     @State private var showingAdd = false
+    @Environment(\.openWindow) private var openWindow
     private let appearance = AppearanceStore.shared
 
     var body: some View {
@@ -315,7 +329,10 @@ struct ContentView: View {
             appearance.applyWindowAppearance()
             model.start()
             if model.servers.isEmpty { showingAdd = true }
+            // The app was started by the checkout's redirect: this view did not exist yet when the link arrived.
+            if LicenceStore.shared.purchaseReturned { openWindow(id: LicenceSheetWindow.id) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .rackoonShowLicence)) { _ in openWindow(id: LicenceSheetWindow.id) }
         .focusedSceneValue(\.terminalActions, terminalActions)
         .focusedSceneValue(\.appActions, appActions)
         .sheet(isPresented: $showingAdd) {
