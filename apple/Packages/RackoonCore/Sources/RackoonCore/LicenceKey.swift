@@ -13,6 +13,8 @@ public struct LicencePayload: Sendable, Equatable, Codable {
     public let email: String
     public let txn: String
     public let issued: String
+    /// Random licence id: the only thing the app ever sends to the licence service (see `LicenceRevocation`).
+    public let id: String
 }
 
 public enum LicenceError: Error, Equatable, LocalizedError {
@@ -89,8 +91,9 @@ public enum LicenceKey {
               let envName = object["env"] as? String, let env = LicenceEnv(rawValue: envName),
               let email = object["email"] as? String, !email.isEmpty,
               let txn = object["txn"] as? String, !txn.isEmpty,
-              let issued = object["issued"] as? String, !issued.isEmpty else { throw LicenceError.invalidPayload }
-        return LicencePayload(v: 1, tier: tier, env: env, email: email, txn: txn, issued: issued)
+              let issued = object["issued"] as? String, !issued.isEmpty,
+              let id = object["id"] as? String, !id.isEmpty else { throw LicenceError.invalidPayload }
+        return LicencePayload(v: 1, tier: tier, env: env, email: email, txn: txn, issued: issued, id: id)
     }
 
     /// Base64url without padding.
@@ -119,6 +122,47 @@ public struct LicenceChecker: Sendable {
     }
 }
 
+/// What the licence service says about a key.
+public enum LicenceStatus: String, Sendable, Equatable, Codable {
+    case active, revoked
+}
+
+/// Asks the licence service about a key. nil means "no answer" (offline, timeout, server error), which never counts against
+/// the key.
+public protocol LicenceStatusChecking: Sendable {
+    func status(ofLicence id: String) async -> LicenceStatus?
+}
+
+/// The last answer the service gave, kept beside the key.
+public struct LicenceStatusRecord: Sendable, Equatable, Codable {
+    public let checkedAt: Date
+    public let revoked: Bool
+
+    public init(checkedAt: Date, revoked: Bool) {
+        self.checkedAt = checkedAt
+        self.revoked = revoked
+    }
+}
+
+/// When to ask and what to do with the answer (spec/licence-key.md, "Revocation"). Pure, so it is tested without a network.
+/// The rule that matters: a missing answer never removes a licence (the service being down, or the Mac being offline, must
+/// not lock anyone out), and only an explicit "revoked" does.
+public enum LicenceRevocation {
+    /// Ask at most this often (a refund is rare, and each check is a request to the maintainer's service).
+    public static let interval: TimeInterval = 7 * 24 * 3600
+
+    public static func needsCheck(_ record: LicenceStatusRecord?, now: Date) -> Bool {
+        guard let record else { return true }
+        // A clock set back must not stop checks forever.
+        return now.timeIntervalSince(record.checkedAt) >= interval || record.checkedAt > now
+    }
+
+    public static func apply(_ answer: LicenceStatus?, previous: LicenceStatusRecord?, now: Date) -> LicenceStatusRecord? {
+        guard let answer else { return previous }
+        return LicenceStatusRecord(checkedAt: now, revoked: answer == .revoked)
+    }
+}
+
 /// Where the licence is kept: one small JSON file (`licence.json`, mode 600) next to servers.json. Removing it and pasting a
 /// key again is how a licence is removed or replaced. Nothing here decides validity; `LicenceChecker` does, every time.
 public struct LicenceVault: Sendable {
@@ -126,20 +170,41 @@ public struct LicenceVault: Sendable {
 
     public init(url: URL) { self.url = url }
 
-    private struct Stored: Codable { let key: String }
-
-    public func load() -> String? {
-        guard let data = try? Data(contentsOf: url), let stored = try? JSONDecoder().decode(Stored.self, from: data) else { return nil }
-        return stored.key
+    private struct Stored: Codable {
+        var key: String
+        var status: LicenceStatusRecord?
     }
 
-    /// Stores the key as typed (whitespace removed), replacing any earlier one.
+    private func read() -> Stored? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Stored.self, from: data)
+    }
+
+    private func write(_ stored: Stored) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(stored).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public func load() -> String? { read()?.key }
+
+    /// The service's last answer for the stored key, if it has been asked.
+    public func loadStatus() -> LicenceStatusRecord? { read()?.status }
+
+    /// Stores the key as typed (whitespace removed), replacing any earlier key and forgetting its status.
     public func save(_ key: String) throws {
         let clean = String(key.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) })
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try JSONEncoder().encode(Stored(key: clean))
-        try data.write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        try write(Stored(key: clean, status: nil))
+    }
+
+    public func saveStatus(_ record: LicenceStatusRecord?) throws {
+        guard var stored = read() else { return }
+        stored.status = record
+        try write(stored)
     }
 
     public func clear() throws {

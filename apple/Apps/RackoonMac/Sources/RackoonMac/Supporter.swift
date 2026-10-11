@@ -18,6 +18,13 @@ enum Supporter {
     static let sandboxPublicKey = "PzIdiJri+SFK6ns1naGMn68/GxbUHlD8buERLdZXdDI="
     static let livePublicKey: String? = nil
 
+    /// Where the licence service answers `GET /status/<licence id>` (one deployment per Paddle environment). nil until the
+    /// service is deployed: then nothing is ever asked and keys are checked offline only. Set these after `wrangler deploy`.
+    static let sandboxServiceURL: URL? = URL(string: "https://rackoon-licence.gallagher-brian.workers.dev")
+    static let liveServiceURL: URL? = nil
+
+    static func serviceURL(for env: LicenceEnv) -> URL? { env == .live ? liveServiceURL : sandboxServiceURL }
+
     static var url: URL? {
         var parts = URLComponents(string: checkout)
         parts?.queryItems = [URLQueryItem(name: "price_id", value: priceID)]
@@ -45,6 +52,24 @@ struct CryptoKitVerifier: LicenceSignatureVerifier {
     func isValid(signature: Data, message: Data) -> Bool { key.isValidSignature(signature, for: message) }
 }
 
+/// Asks the licence service whether a key was refunded. Sends only the random licence id (no email, no machine details, no
+/// cookies); anything but a clear answer is "no answer", which never counts against the key.
+struct ServiceStatusChecker: LicenceStatusChecking {
+    let base: URL
+
+    func status(ofLicence id: String) async -> LicenceStatus? {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5
+        configuration.httpCookieStorage = nil
+        guard let url = URL(string: "status/\(id)", relativeTo: base)?.absoluteURL, url.scheme == "https",
+              let (data, response) = try? await URLSession(configuration: configuration).data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let word = object["status"] as? String else { return nil }
+        return LicenceStatus(rawValue: word)
+    }
+}
+
 /// The user's licence: loaded from `licence.json` and re-checked on every launch (a key that stops verifying simply stops
 /// counting). Removing it and pasting a key again is the whole lifecycle.
 @MainActor @Observable
@@ -61,6 +86,11 @@ final class LicenceStore {
     private(set) var storedProblem: String?
     @ObservationIgnored private let vault: LicenceVault
     @ObservationIgnored private let checker: LicenceChecker
+    @ObservationIgnored private var statusTask: Task<Void, Never>?
+    /// Replaced in tests of the policy; production asks the service for the key's environment.
+    @ObservationIgnored var statusChecker: (LicenceEnv) -> LicenceStatusChecking? = { env in
+        Supporter.serviceURL(for: env).map { ServiceStatusChecker(base: $0) }
+    }
 
     private init() {
         if Demo.isOn {
@@ -75,16 +105,40 @@ final class LicenceStore {
     }
 
     var isSupporter: Bool { if case .supporter = state { true } else { false } }
+    /// A key is saved (even one that no longer counts), so it can be removed.
+    var hasKey: Bool { vault.load() != nil }
 
     func reload() {
         storedProblem = nil
         guard let key = vault.load() else { state = .none; return }
         do {
             let payload = try checker.check(key)
-            state = .supporter(email: payload.email, env: payload.env)
+            if vault.loadStatus()?.revoked == true {
+                state = .none
+                storedProblem = "This key was refunded, so it no longer counts as a supporter licence."
+            } else {
+                state = .supporter(email: payload.email, env: payload.env)
+            }
+            refreshStatus(of: payload)
         } catch {
             state = .none
             storedProblem = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+    }
+
+    /// Asks the licence service about the key if it has not been asked for a week. Never blocks, never throws: only an
+    /// explicit "revoked" changes anything (see `LicenceRevocation`).
+    private func refreshStatus(of payload: LicencePayload) {
+        guard !Demo.isOn, LicenceRevocation.needsCheck(vault.loadStatus(), now: Date()),
+              let service = statusChecker(payload.env) else { return }
+        statusTask?.cancel()
+        statusTask = Task { [vault] in
+            let answer = await service.status(ofLicence: payload.id)
+            guard !Task.isCancelled, vault.load() != nil else { return }
+            let record = LicenceRevocation.apply(answer, previous: vault.loadStatus(), now: Date())
+            guard record != vault.loadStatus() else { return }
+            try? vault.saveStatus(record)
+            reload()
         }
     }
 
@@ -97,6 +151,7 @@ final class LicenceStore {
     }
 
     func remove() {
+        statusTask?.cancel()
         try? vault.clear()
         reload()
     }

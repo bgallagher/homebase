@@ -7,18 +7,12 @@ compatibility_date = "2025-01-01"
 [vars]
 PADDLE_ENV = "sandbox"
 PADDLE_PRICE_IDS = "pri_01m4k470p76n1yj2nk29rkpvpq"
-MAIL_FROM = "Rackoon <licences@example.com>"
+MAIL_FROM = "Rackoon <licences@rackoon.xrray.net>"
 
-# Burst limit for the "Resend my key" page: 5 requests per minute per IP address (Cloudflare's atomic Rate Limiting binding).
-# The per-email daily cap is a small KV counter in the code, because this binding only has 10 s and 60 s windows.
-[[unsafe.bindings]]
-name = "IP_LIMIT"
-type = "ratelimit"
-namespace_id = "1001"
-simple = { limit = 5, period = 60 }
-
-# Remembers which transactions already got a key (so a webhook retry doesn't send a second email) and rate-limit counters.
-# Create it with `wrangler kv namespace create SEEN`, then paste the id below.
-[[kv_namespaces]]
-binding = "SEEN"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+# The licence table: one row per sold licence (who bought, whether the key is still good). Create it with
+#   npx wrangler d1 create rackoon-licence      (paste the database_id below)
+#   npx wrangler d1 migrations apply rackoon-licence --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "rackoon-licence"
+database_id = "79ac9f88-ce0c-4191-bc4c-2e673e415b9f"

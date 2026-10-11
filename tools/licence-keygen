@@ -3,7 +3,7 @@
 // licence-service/ once first).
 //   licence-keygen generate --out <file>            new Ed25519 pair; private key to <file> (mode 600, outside the repo),
 //                                                  public key printed for the app
-//   licence-keygen mint --key <file> --env sandbox|live --email <e> [--txn <id>]    print a licence key
+//   licence-keygen mint --key <file> --env sandbox|live --email <e> [--txn <id>] [--id <licence id>]    print a licence key
 //   licence-keygen verify --public <b64> <key>     check a key against a public key
 //   licence-keygen fixtures                         regenerate spec/fixtures/licence/ (TEST keys only)
 import { generateKeyPairSync, createPublicKey, createPrivateKey } from "node:crypto";
@@ -48,7 +48,7 @@ if (command === "generate") {
   const keyFile = option("key"), env = option("env"), email = option("email");
   if (!keyFile || !email || (env !== "sandbox" && env !== "live")) fail("mint needs --key <file> --env sandbox|live --email <email>");
   const privateKey = readFileSync(keyFile, "utf8").trim();
-  console.log(await signLicence({ v: 1, tier: "supporter", env, email, txn: option("txn") ?? `txn_manual_${Date.now()}`, issued: new Date().toISOString() }, privateKey));
+  console.log(await signLicence({ v: 1, tier: "supporter", env, email, txn: option("txn") ?? `txn_manual_${Date.now()}`, issued: new Date().toISOString(), id: option("id") ?? crypto.randomUUID() }, privateKey));
 } else if (command === "verify") {
   const publicKey = option("public");
   const text = args.filter((a, i) => a !== "--public" && args[i - 1] !== "--public").join(" ");
@@ -84,7 +84,7 @@ async function writeFixtures() {
   }, null, 2) + "\n");
   const testKey = await importPrivate(test.privateKey);
   const otherKey = await importPrivate(other.privateKey);
-  const base = { v: 1, tier: "supporter", email: "sam@example.com", txn: "txn_01testfixture0000000000001", issued: "2026-10-10T14:42:00.000Z" };
+  const base = { v: 1, tier: "supporter", email: "sam@example.com", txn: "txn_01testfixture0000000000001", issued: "2026-10-10T14:42:00.000Z", id: "5b0d8a4e-3c1f-4d7a-9e26-7f1c2a9b6d30" };
   const enc = new TextEncoder();
   const cases = {};
   const valid = (env) => ({ ...base, env });
@@ -116,6 +116,8 @@ async function writeFixtures() {
   cases["unsupported-version"] = await signBytes(enc.encode(JSON.stringify({ ...valid("live"), v: 2 })), testKey);
   cases["invalid-payload-not-json"] = await signBytes(enc.encode("this is not json"), testKey);
   cases["invalid-payload-missing-field"] = await signBytes(enc.encode(JSON.stringify({ v: 1, tier: "supporter", env: "live", email: "sam@example.com" })), testKey);
+  const { id: _omitted, ...withoutId } = valid("live");
+  cases["invalid-payload-missing-id"] = await signBytes(enc.encode(JSON.stringify(withoutId)), testKey);
   cases["invalid-payload-unknown-tier"] = await signBytes(enc.encode(JSON.stringify({ ...valid("live"), tier: "gold" })), testKey);
   for (const [name, text] of Object.entries(cases)) {
     writeFileSync(resolve(dir, `${name}.key.txt`), text.endsWith("\n") ? text : text + "\n");

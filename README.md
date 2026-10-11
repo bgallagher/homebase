@@ -70,7 +70,7 @@
 - Destructive choices need extra care: a typed name before deleting data, and a folder delete that refuses system folders and checks real paths.
 
 **Support**
-- Help > Feed the Rackoon… is an optional €100 supporter purchase (Paddle). Nothing is locked either way: a licence key, emailed after purchase and pasted into Help > Enter Licence…, just marks you as a supporter. Keys are checked offline against a built-in public key, and can be removed and added again at any time.
+- Help > Feed the Rackoon… is an optional €100 supporter purchase (Paddle). Nothing is locked either way: a licence key, emailed after purchase and pasted into Help > Enter Licence…, just marks you as a supporter. Keys are checked offline against a built-in public key, and can be removed and added again at any time. About once a week the app asks the licence service whether the purchase was refunded, sending only a random ID (never your email), and a key keeps working if the service can't be reached.
 
 **Looks**
 - 45 themes (two of them Rackoon's own) that drive the whole app and its terminals, with Automatic following macOS light and dark.

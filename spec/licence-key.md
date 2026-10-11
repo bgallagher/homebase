@@ -41,6 +41,7 @@ A JSON object with exactly these fields:
 | `email` | string | the checkout email (shown in the app, never used to log in) |
 | `txn` | string | the Paddle transaction id (`txn_…`) |
 | `issued` | string | ISO 8601 UTC time the key was issued |
+| `id` | string | random licence id (UUID); what the app sends to the status endpoint, see Revocation |
 
 ## Verification (in this order)
 
@@ -63,4 +64,20 @@ maintainer's machine, outside the repo); the repo contains public keys and **tes
 `NAME.expected.json`: `{"valid":true,"payload":{…}}` or `{"valid":false,"error":"…"}`. Regenerate with
 `node tools/licence-keygen fixtures`. Cases: valid sandbox and live, whitespace-wrapped, tampered payload, bad signature,
 signed by another key, malformed (wrong number of parts, bad base64, header not JSON), header attacks (`alg: none`,
-`alg: HS256`, wrong `typ`, extra `crit` member), unsupported version, payload not JSON, missing field, unknown tier.
+`alg: HS256`, wrong `typ`, extra `crit` member), unsupported version, payload not JSON, missing field, missing `id`, unknown tier.
+
+## Revocation
+
+A key is proof of purchase and is checked offline, so a refund can't make it stop verifying. The licence service keeps one row per
+licence (Cloudflare D1, keyed by the payload's `id` and the Paddle `txn`) and the app asks whether it was revoked.
+
+- **Service.** A full refund Paddle has approved (`adjustment.created`/`adjustment.updated`, `action: refund`, `type: full`,
+  `status: approved`) or a chargeback revokes the licence bought in `data.transaction_id`; `chargeback_reverse` restores it.
+  Pending or rejected refunds, partial refunds, credits and chargeback warnings change nothing.
+- **Endpoint.** `GET /status/<id>` answers `200 {"status":"active"|"revoked"}`. An unknown or malformed id is `active`. The answer
+  holds no personal data. A server problem is any other status code.
+- **App.** After a key verifies it asks at most once every 7 days (and when no answer is stored; a clock set back asks again),
+  with a 5 second timeout, over HTTPS, sending only the id. **Fail open:** no answer (offline, timeout, any non-200, an
+  unreadable body) never changes anything; only an explicit `revoked` stops the key counting, and a later `active` restores it.
+  The last answer (`checkedAt`, `revoked`) is stored beside the key and is forgotten when a different key is saved.
+- No feature is gated, so a revoked key only loses the Supporter label.

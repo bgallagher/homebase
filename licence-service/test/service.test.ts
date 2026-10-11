@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.ts";
-import type { Deps, Env, KV } from "../src/index.ts";
+import type { Deps, Env } from "../src/index.ts";
+import type { LicenceRow, LicenceStore } from "../src/store.ts";
 import { verifyLicence } from "../src/licence.ts";
 import { verifyWithSdk } from "../src/paddle.ts";
 import type { PaddleApi } from "../src/paddle.ts";
@@ -18,9 +19,21 @@ async function makeKeys() {
   return { pkcs8, raw };
 }
 
-function memoryKV(): KV & { data: Map<string, string> } {
-  const data = new Map<string, string>();
-  return { data, async get(k) { return data.get(k) ?? null; }, async put(k, v) { data.set(k, v); } };
+function memoryStore(): LicenceStore & { rows: Map<string, LicenceRow> } {
+  const rows = new Map<string, LicenceRow>();   // by txn
+  return {
+    rows,
+    async byTxn(txn) { return rows.get(txn) ?? null; },
+    async byId(id) { return [...rows.values()].find((r) => r.id === id) ?? null; },
+    async insert(row) { if (rows.has(row.txn)) return false; rows.set(row.txn, { ...row }); return true; },
+    async markEmailed(txn, at) { const r = rows.get(txn); if (r) r.emailedAt = at; },
+    async setStatus(txn, status, reason, at) {
+      const r = rows.get(txn);
+      if (!r) return false;
+      r.status = status; r.revokedAt = status === "revoked" ? at : null; r.revokeReason = status === "revoked" ? reason : null;
+      return true;
+    },
+  };
 }
 
 async function hmacHex(secret: string, message: string): Promise<string> {
@@ -47,27 +60,23 @@ const event = (over: Record<string, unknown> = {}, items: unknown = [{ price_id:
 async function setup(paddleOver: Partial<PaddleApi> = {}, mailFails = false) {
   const keys = await makeKeys();
   const sent: { to: string; key: string }[] = [];
-  const kv = memoryKV();
+  const store = memoryStore();
   const env: Env = {
     PADDLE_ENV: "sandbox", PADDLE_PRICE_IDS: PRICE, PADDLE_API_KEY: "pdl_sdbx_x", PADDLE_WEBHOOK_SECRET: SECRET,
-    LICENCE_PRIVATE_KEY: keys.pkcs8, RESEND_API_KEY: "re_x", MAIL_FROM: "Rackoon <licences@example.com>", SEEN: kv,
-    IP_LIMIT: { async limit() { return { success: true }; } },
+    LICENCE_PRIVATE_KEY: keys.pkcs8, RESEND_API_KEY: "re_x", MAIL_FROM: "Rackoon <licences@example.com>",
+    DB: undefined as never,   // the store is injected through `deps`
   };
-  const ipHits = new Map<string, number>();
   const paddle: PaddleApi = {
     verifySignature: verifyWithSdk,   // the real SDK verification, so these tests prove the integration
     async customerEmail() { return "buyer@example.com"; },
-    async customersByEmail() { return []; },
-    async completedPurchase() { return null; },
     ...paddleOver,
   };
+  let failMail = mailFails;
   const deps: Deps = {
-    now, kv, paddle,
-    // stand-in for Cloudflare's Rate Limiting binding: 5 per address (the window never resets inside a test)
-    ipLimit: { async limit({ key }) { const n = (ipHits.get(key) ?? 0) + 1; ipHits.set(key, n); return { success: n <= 5 }; } },
-    mail: { async sendLicence(to, key) { if (mailFails) throw new Error("mail down"); sent.push({ to, key }); } },
+    now, store, paddle,
+    mail: { async sendLicence(to, key) { if (failMail) throw new Error("mail down"); sent.push({ to, key }); } },
   };
-  return { env, deps, sent, kv, publicKey: keys.raw };
+  return { env, deps, sent, store, publicKey: keys.raw, mailWorks() { failMail = false; } };
 }
 
 test("a valid transaction.completed webhook emails a key that verifies", async () => {
@@ -83,6 +92,7 @@ test("a valid transaction.completed webhook emails a key that verifies", async (
     assert.equal(check.payload.txn, "txn_1");
     assert.equal(check.payload.env, "sandbox");
     assert.equal(check.payload.tier, "supporter");
+    assert.match(check.payload.id, /^[0-9a-f-]{36}$/);
   }
   assert.equal(await verifyLicence(sent[0].key, {}).then((r) => r.ok), false, "needs the public key");
 });
@@ -129,12 +139,18 @@ test("a retried webhook does not send a second email", async () => {
   assert.equal(sent.length, 1);
 });
 
-test("when the mail provider fails the webhook answers 5xx (so Paddle retries) and records nothing", async () => {
-  const { env, deps, sent, kv } = await setup({}, true);
-  const response = await handleRequest(await signedWebhook(event()), env, deps);
-  assert.equal(response.status, 500);
-  assert.equal(sent.length, 0);
-  assert.equal(kv.data.size, 0);
+test("when the mail provider fails the webhook answers 5xx, and the retry sends the very same licence", async () => {
+  const s = await setup({}, true);
+  assert.equal((await handleRequest(await signedWebhook(event()), s.env, s.deps)).status, 500);
+  assert.equal(s.sent.length, 0);
+  const row = s.store.rows.get("txn_1")!;
+  assert.equal(row.emailedAt, null, "recorded, but not yet marked as emailed");
+  s.mailWorks();
+  assert.equal((await handleRequest(await signedWebhook(event()), s.env, s.deps)).status, 200);
+  assert.equal(s.sent.length, 1);
+  const check = await verifyLicence(s.sent[0].key, { sandbox: s.publicKey });
+  assert.ok(check.ok && check.payload.id === row.id, "same licence id as the stored row");
+  assert.equal(s.store.rows.size, 1);
 });
 
 test("when Paddle's API fails the webhook answers 5xx", async () => {
@@ -150,62 +166,88 @@ test("errors never leak the key or the secrets in the response body", async () =
   }
 });
 
-function resendRequest(email: string, ip = "203.0.113.5"): Request {
-  return new Request("https://licence.example/resend", {
-    method: "POST", headers: { "CF-Connecting-IP": ip, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ email }),
-  });
+function adjustment(over: Record<string, unknown> = {}, type = "adjustment.updated") {
+  return {
+    event_id: "evt_2", event_type: type, occurred_at: "2026-10-11T10:00:00Z",
+    data: { id: "adj_1", action: "refund", type: "full", status: "approved", transaction_id: "txn_1", customer_id: "ctm_abc", ...over },
+  };
 }
 
-test("resend emails the key to a real buyer and says the same thing to everyone", async () => {
-  const buyer = await setup({
-    async customersByEmail(email) { return email === "buyer@example.com" ? [{ id: "ctm_abc", email: "Buyer@Example.com" }] : []; },
-    async completedPurchase() { return { id: "txn_9" }; },
-  });
-  const known = await handleRequest(resendRequest("Buyer@example.com"), buyer.env, buyer.deps);
-  const unknown = await handleRequest(resendRequest("nobody@example.com", "203.0.113.6"), buyer.env, buyer.deps);
-  assert.equal(known.status, 200);
-  assert.equal(await known.text(), await unknown.text(), "identical pages: no way to tell who bought");
-  assert.equal(buyer.sent.length, 1);
-  assert.equal(buyer.sent[0].to, "Buyer@Example.com");
-  const check = await verifyLicence(buyer.sent[0].key, { sandbox: buyer.publicKey });
-  assert.ok(check.ok && check.payload.txn === "txn_9");
-});
+const statusOf = async (s: Awaited<ReturnType<typeof setup>>, id: string) =>
+  (await (await handleRequest(new Request(`https://licence.example/status/${id}`), s.env, s.deps)).json() as { status: string }).status;
 
-test("resend: a customer who never bought this product gets nothing", async () => {
-  const s = await setup({ async customersByEmail() { return [{ id: "ctm_x", email: "other@example.com" }]; } });
-  await handleRequest(resendRequest("other@example.com"), s.env, s.deps);
-  assert.equal(s.sent.length, 0);
-});
-
-test("resend: lookup failures look the same and send nothing", async () => {
-  const s = await setup({ async customersByEmail() { throw new Error("paddle down"); } });
-  const response = await handleRequest(resendRequest("x@example.com"), s.env, s.deps);
-  assert.equal(response.status, 200);
-  assert.equal(s.sent.length, 0);
-});
-
-test("resend is rate limited per email (daily) and per address (burst)", async () => {
-  const s = await setup({
-    async customersByEmail() { return [{ id: "ctm_abc", email: "buyer@example.com" }]; },
-    async completedPurchase() { return { id: "txn_1" }; },
-  });
-  for (let i = 0; i < 6; i++) await handleRequest(resendRequest("buyer@example.com", `198.51.100.${i}`), s.env, s.deps);
-  assert.equal(s.sent.length, 3, "three per email per day");
-  const t = await setup({
-    async customersByEmail(e) { return [{ id: "ctm_abc", email: e }]; },
-    async completedPurchase() { return { id: "txn_1" }; },
-  });
-  for (let i = 0; i < 9; i++) await handleRequest(resendRequest(`person${i}@example.com`, "192.0.2.1"), t.env, t.deps);
-  assert.equal(t.sent.length, 5, "the address burst limit (5) stops the rest");
-});
-
-test("resend rejects a malformed address and the form page renders", async () => {
+async function issued() {
   const s = await setup();
-  assert.equal((await handleRequest(resendRequest("not-an-email"), s.env, s.deps)).status, 400);
-  const page = await handleRequest(new Request("https://licence.example/resend"), s.env, s.deps);
-  assert.equal(page.status, 200);
-  assert.match(await page.text(), /Resend my Rackoon key/);
+  await handleRequest(await signedWebhook(event()), s.env, s.deps);
+  return { s, id: s.store.rows.get("txn_1")!.id };
+}
+
+test("the licence row is stored with the buyer, transaction and environment", async () => {
+  const { s, id } = await issued();
+  const row = s.store.rows.get("txn_1")!;
+  assert.equal(row.email, "buyer@example.com");
+  assert.equal(row.customerId, "ctm_abc");
+  assert.equal(row.env, "sandbox");
+  assert.equal(row.status, "active");
+  assert.ok(row.emailedAt);
+  assert.equal(await statusOf(s, id), "active");
+});
+
+test("an approved full refund revokes the licence; created and updated events both work", async () => {
+  for (const type of ["adjustment.created", "adjustment.updated"]) {
+    const { s, id } = await issued();
+    const response = await handleRequest(await signedWebhook(adjustment({}, type)), s.env, s.deps);
+    assert.equal(response.status, 200);
+    assert.equal(await statusOf(s, id), "revoked", type);
+    assert.equal(s.store.rows.get("txn_1")!.revokeReason, "refund");
+  }
+});
+
+test("a pending or rejected refund, a partial refund and a credit do not revoke", async () => {
+  const { s, id } = await issued();
+  for (const over of [{ status: "pending_approval" }, { status: "rejected" }, { type: "partial" }, { action: "credit" }, { action: "chargeback_warning" }]) {
+    assert.equal((await handleRequest(await signedWebhook(adjustment(over)), s.env, s.deps)).status, 200);
+    assert.equal(await statusOf(s, id), "active", JSON.stringify(over));
+  }
+});
+
+test("a chargeback revokes and a reversed chargeback restores", async () => {
+  const { s, id } = await issued();
+  await handleRequest(await signedWebhook(adjustment({ action: "chargeback", type: "full", status: "approved" }, "adjustment.created")), s.env, s.deps);
+  assert.equal(await statusOf(s, id), "revoked");
+  await handleRequest(await signedWebhook(adjustment({ action: "chargeback_reverse" }, "adjustment.created")), s.env, s.deps);
+  assert.equal(await statusOf(s, id), "active");
+  assert.equal(s.store.rows.get("txn_1")!.revokedAt, null);
+});
+
+test("an adjustment for a transaction we never licensed is acknowledged and changes nothing", async () => {
+  const { s, id } = await issued();
+  const response = await handleRequest(await signedWebhook(adjustment({ transaction_id: "txn_other" })), s.env, s.deps);
+  assert.equal(response.status, 200);
+  assert.equal(await statusOf(s, id), "active");
+});
+
+test("adjustment webhooks need a valid signature", async () => {
+  const { s, id } = await issued();
+  assert.equal((await handleRequest(await signedWebhook(adjustment(), { secret: "wrong" }), s.env, s.deps)).status, 401);
+  assert.equal(await statusOf(s, id), "active");
+});
+
+test("status: unknown and malformed ids are active, answers are cacheable and carry no personal data", async () => {
+  const { s, id } = await issued();
+  assert.equal(await statusOf(s, "5b0d8a4e-3c1f-4d7a-9e26-7f1c2a9b6d30"), "active");
+  assert.equal(await statusOf(s, "not-a-uuid"), "active");
+  const response = await handleRequest(new Request(`https://licence.example/status/${id}`), s.env, s.deps);
+  assert.match(response.headers.get("Cache-Control") ?? "", /max-age/);
+  assert.deepEqual(Object.keys(await response.json() as object), ["status"]);
+  assert.equal((await handleRequest(new Request(`https://licence.example/status/${id}`, { method: "POST" }), s.env, s.deps)).status, 404);
+});
+
+test("status: a database failure answers 503, never a revocation", async () => {
+  const { s, id } = await issued();
+  s.deps.store = { ...s.deps.store, async byId() { throw new Error("db down"); } };
+  const response = await handleRequest(new Request(`https://licence.example/status/${id}`), s.env, s.deps);
+  assert.equal(response.status, 503);
 });
 
 test("unknown paths are 404 and healthz is ok", async () => {

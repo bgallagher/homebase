@@ -1,17 +1,15 @@
 // Rackoon licence service (Cloudflare Worker). See docs/licence-setup.md and spec/licence-key.md.
-//   POST /paddle/webhook  Paddle transaction.completed -> verify signature -> sign a key -> email it
-//   GET/POST /resend      "Resend my key": emails the key to the address of a customer who bought (never shows it)
+//   POST /paddle/webhook   transaction.completed -> record the licence, sign a key, email it
+//                          adjustment.created/updated -> a full refund or a chargeback revokes the licence
+//   GET  /status/<id>      {"status":"active"|"revoked"} for the app's occasional check (id = the random id in the key)
 import { signLicence } from "./licence.ts";
 import type { LicenceEnv } from "./licence.ts";
 import { itemPriceIds, paddleApi } from "./paddle.ts";
 import type { PaddleApi } from "./paddle.ts";
 import { resendMailer } from "./mail.ts";
 import type { Mailer } from "./mail.ts";
-
-export interface KV {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-}
+import { d1Store } from "./store.ts";
+import type { D1, LicenceRow, LicenceStore } from "./store.ts";
 
 export interface Env {
   PADDLE_ENV: string;
@@ -21,25 +19,16 @@ export interface Env {
   LICENCE_PRIVATE_KEY: string;
   RESEND_API_KEY: string;
   MAIL_FROM: string;
-  SEEN: KV;
-  /** Cloudflare Rate Limiting binding (see wrangler.toml): per-address burst limit for /resend. */
-  IP_LIMIT: RateLimit;
-}
-
-export interface RateLimit {
-  limit(options: { key: string }): Promise<{ success: boolean }>;
+  /** Cloudflare D1 database (see wrangler.toml and migrations/). */
+  DB: D1;
 }
 
 export interface Deps {
   now: () => number;
-  kv: KV;
+  store: LicenceStore;
   paddle: PaddleApi;
   mail: Mailer;
-  ipLimit: RateLimit;
 }
-
-const NEUTRAL = "If a purchase exists for that address, we've emailed the licence key to it. Check your inbox (and spam) in a few minutes.";
-const KEEP_SECONDS = 60 * 60 * 24 * 90;
 
 function environment(env: Env): LicenceEnv {
   return env.PADDLE_ENV === "live" ? "live" : "sandbox";
@@ -49,16 +38,68 @@ function priceIds(env: Env): string[] {
   return env.PADDLE_PRICE_IDS.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 }
 
-async function issueAndSend(env: Env, deps: Deps, email: string, txn: string): Promise<void> {
+async function sendKey(env: Env, deps: Deps, row: LicenceRow): Promise<void> {
   const key = await signLicence(
-    { v: 1, tier: "supporter", env: environment(env), email, txn, issued: new Date(deps.now()).toISOString() },
+    { v: 1, tier: "supporter", env: row.env, email: row.email, txn: row.txn, issued: row.issuedAt, id: row.id },
     env.LICENCE_PRIVATE_KEY,
   );
-  await deps.mail.sendLicence(email, key);
+  await deps.mail.sendLicence(row.email, key);
+  await deps.store.markEmailed(row.txn, new Date(deps.now()).toISOString());
+}
+
+async function handleCompleted(data: any, env: Env, deps: Deps): Promise<Response> {
+  const txn = typeof data.id === "string" ? data.id : "";
+  const customerId = typeof data.customer_id === "string" ? data.customer_id : "";
+  if (!txn || !customerId) return json(200, { ignored: "no transaction or customer" });
+  if (!itemPriceIds(data.items).some((id) => priceIds(env).includes(id))) return json(200, { ignored: "other product" });
+
+  // Anything failing from here on answers 5xx, so Paddle retries (sandbox 3 times in 15 minutes, live 60 times in 3 days).
+  try {
+    let row = await deps.store.byTxn(txn);
+    if (row?.emailedAt) return json(200, { duplicate: true });
+    if (!row) {
+      const email = await deps.paddle.customerEmail(customerId);
+      if (!email) return json(200, { ignored: "customer has no email" });
+      row = {
+        id: crypto.randomUUID(), txn, customerId, email, env: environment(env), issuedAt: new Date(deps.now()).toISOString(),
+        emailedAt: null, status: "active", revokedAt: null, revokeReason: null,
+      };
+      // A concurrent delivery of the same webhook may have inserted first: use its row, so both agree on one licence id.
+      if (!(await deps.store.insert(row))) row = (await deps.store.byTxn(txn)) ?? row;
+    }
+    // The row exists before the email goes out. If mailing fails the retry finds it and sends the identical key.
+    await sendKey(env, deps, row);
+    return json(200, { issued: true });
+  } catch (error) {
+    console.error("licence issue failed:", error instanceof Error ? error.message : "unknown");
+    return json(500, { error: "try again" });
+  }
+}
+
+/** A refund counts only when it covers the whole purchase and Paddle has approved it; a chargeback always counts. */
+export function adjustmentDecision(data: any): "revoke" | "restore" | null {
+  const action = data?.action;
+  if (action === "chargeback") return data?.status === "rejected" ? null : "revoke";
+  if (action === "chargeback_reverse") return "restore";
+  if (action === "refund" && data?.type === "full" && data?.status === "approved") return "revoke";
+  return null;
+}
+
+async function handleAdjustment(data: any, deps: Deps): Promise<Response> {
+  const decision = adjustmentDecision(data);
+  const txn = typeof data?.transaction_id === "string" ? data.transaction_id : "";
+  if (!decision || !txn) return json(200, { ignored: "not a revoking adjustment" });
+  try {
+    const found = await deps.store.setStatus(txn, decision === "revoke" ? "revoked" : "active", String(data.action), new Date(deps.now()).toISOString());
+    return json(200, { [decision === "revoke" ? "revoked" : "restored"]: found });
+  } catch (error) {
+    console.error("licence status update failed:", error instanceof Error ? error.message : "unknown");
+    return json(500, { error: "try again" });
+  }
 }
 
 export async function handleWebhook(request: Request, env: Env, deps: Deps): Promise<Response> {
@@ -73,94 +114,34 @@ export async function handleWebhook(request: Request, env: Env, deps: Deps): Pro
   } catch {
     return json(400, { error: "invalid json" });
   }
-  if (event?.event_type !== "transaction.completed") return json(200, { ignored: "event type" });
-  const data = event.data ?? {};
-  const txn = typeof data.id === "string" ? data.id : "";
-  const customerId = typeof data.customer_id === "string" ? data.customer_id : "";
-  if (!txn || !customerId) return json(200, { ignored: "no transaction or customer" });
-  if (!itemPriceIds(data.items).some((id) => priceIds(env).includes(id))) return json(200, { ignored: "other product" });
-  if (await deps.kv.get(`issued:${txn}`)) return json(200, { duplicate: true });
+  const data = event?.data ?? {};
+  switch (event?.event_type) {
+    case "transaction.completed": return handleCompleted(data, env, deps);
+    case "adjustment.created":
+    case "adjustment.updated": return handleAdjustment(data, deps);
+    default: return json(200, { ignored: "event type" });
+  }
+}
 
-  // Anything failing from here on answers 5xx, so Paddle retries (sandbox 3 times in 15 minutes, live 60 times in 3 days).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** What the app asks. Unknown or malformed ids are "active": a key this service doesn't know is never punished. */
+export async function handleStatus(id: string, deps: Deps): Promise<Response> {
+  const cache = { "Cache-Control": "public, max-age=300" };
+  if (!UUID.test(id)) return json(200, { status: "active" }, cache);
   try {
-    const email = await deps.paddle.customerEmail(customerId);
-    if (!email) return json(200, { ignored: "customer has no email" });
-    await issueAndSend(env, deps, email, txn);
-    await deps.kv.put(`issued:${txn}`, "1", { expirationTtl: KEEP_SECONDS });
-    return json(200, { issued: true });
+    const row = await deps.store.byId(id);
+    return json(200, { status: row?.status === "revoked" ? "revoked" : "active" }, cache);
   } catch (error) {
-    console.error("licence issue failed:", error instanceof Error ? error.message : "unknown");
-    return json(500, { error: "try again" });
+    console.error("status lookup failed:", error instanceof Error ? error.message : "unknown");
+    return json(503, { error: "try again" });   // the app treats anything but 200 as "no answer" and keeps the licence
   }
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Per-email daily cap. Best effort (KV is eventually consistent), which is enough to blunt abuse; the burst limit per
- *  address is Cloudflare's atomic Rate Limiting binding instead. */
-async function underLimit(kv: KV, key: string, limit: number, ttl: number): Promise<boolean> {
-  const used = Number((await kv.get(key)) ?? "0");
-  if (used >= limit) return false;
-  await kv.put(key, String(used + 1), { expirationTtl: ttl });
-  return true;
-}
-
-export async function handleResend(request: Request, env: Env, deps: Deps): Promise<Response> {
-  if (request.method === "GET") return page("");
-  let email = "";
-  const type = request.headers.get("Content-Type") ?? "";
-  try {
-    if (type.includes("application/json")) email = String(((await request.json()) as { email?: unknown }).email ?? "");
-    else email = String((await request.formData()).get("email") ?? "");
-  } catch {
-    return page("Enter your email address.", 400);
-  }
-  email = email.trim().toLowerCase();
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return page("Enter a valid email address.", 400);
-
-  // From here on every outcome looks the same, so the page can't be used to find out who bought.
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const day = Math.floor(deps.now() / 86_400_000);
-  const allowed =
-    (await deps.ipLimit.limit({ key: ip })).success &&
-    (await underLimit(deps.kv, `rl:email:${await sha256Hex(email)}:${day}`, 3, 172800));
-  if (!allowed) return page(NEUTRAL);
-  try {
-    for (const customer of await deps.paddle.customersByEmail(email)) {
-      const purchase = await deps.paddle.completedPurchase(customer.id, priceIds(env));
-      if (purchase) {
-        await issueAndSend(env, deps, customer.email, purchase.id);
-        break;
-      }
-    }
-  } catch (error) {
-    console.error("resend failed:", error instanceof Error ? error.message : "unknown");
-  }
-  return page(NEUTRAL);
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
-
-function page(message: string, status = 200): Response {
-  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Resend my Rackoon key</title>
-<style>body{font:16px system-ui,sans-serif;max-width:30rem;margin:4rem auto;padding:0 1rem;color:#222}input,button{font:inherit;padding:.6rem;width:100%;box-sizing:border-box;margin-top:.6rem}button{cursor:pointer}p.note{color:#555}</style>
-<h1>Resend my Rackoon key</h1>
-<p>Enter the email address you used at checkout. If it matches a purchase, the licence key is emailed to that address.</p>
-<form method="post" action="/resend"><input type="email" name="email" placeholder="you@example.com" required autocomplete="email"><button type="submit">Email me my key</button></form>
-${message ? `<p class="note" role="status">${escapeHtml(message)}</p>` : ""}</html>`;
-  return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 export async function handleRequest(request: Request, env: Env, deps: Deps): Promise<Response> {
   const { pathname } = new URL(request.url);
   if (pathname === "/paddle/webhook" && request.method === "POST") return handleWebhook(request, env, deps);
-  if (pathname === "/resend" && (request.method === "GET" || request.method === "POST")) return handleResend(request, env, deps);
+  if (pathname.startsWith("/status/") && request.method === "GET") return handleStatus(pathname.slice("/status/".length), deps);
   if (pathname === "/healthz") return new Response("ok");
   return new Response("Not found", { status: 404 });
 }
@@ -168,10 +149,9 @@ export async function handleRequest(request: Request, env: Env, deps: Deps): Pro
 export function makeDeps(env: Env): Deps {
   return {
     now: () => Date.now(),
-    kv: env.SEEN,
+    store: d1Store(env.DB),
     paddle: paddleApi(env.PADDLE_API_KEY, environment(env)),
     mail: resendMailer(env.RESEND_API_KEY, env.MAIL_FROM, fetch),
-    ipLimit: env.IP_LIMIT,
   };
 }
 

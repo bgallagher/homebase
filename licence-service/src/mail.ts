@@ -17,7 +17,6 @@ export function licenceEmail(licenceKey: string): { subject: string; text: strin
       licenceKey,
       "",
       "Keep this email: you can paste the key again after reinstalling or on another Mac.",
-      "Lost it? Request it again from the \"Resend my key\" page and it will be sent to this address.",
     ].join("\n"),
   };
 }

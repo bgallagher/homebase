@@ -6,6 +6,7 @@
     "env": "live",
     "email": "sam@example.com",
     "txn": "txn_01testfixture0000000000001",
-    "issued": "2026-10-10T14:42:00.000Z"
+    "issued": "2026-10-10T14:42:00.000Z",
+    "id": "5b0d8a4e-3c1f-4d7a-9e26-7f1c2a9b6d30"
   }
 }

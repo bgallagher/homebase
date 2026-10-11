@@ -10,10 +10,6 @@ export interface PaddleApi {
   verifySignature(rawBody: string, header: string | null, secret: string): Promise<boolean>;
   /** The customer's email, or null if Paddle has no such customer. Throws on any other failure (so the caller retries). */
   customerEmail(customerId: string): Promise<string | null>;
-  /** Customers whose email exactly matches. */
-  customersByEmail(email: string): Promise<{ id: string; email: string }[]>;
-  /** The newest completed transaction of this customer that includes one of `priceIds`, or null. */
-  completedPurchase(customerId: string, priceIds: string[]): Promise<{ id: string } | null>;
 }
 
 /** Price ids in a transaction's `items`, from either the raw webhook shape or the SDK's. */
@@ -56,18 +52,6 @@ export function paddleApi(apiKey: string, environment: "sandbox" | "live"): Padd
         if (isNotFound(error)) return null;
         throw error;
       }
-    },
-    async customersByEmail(email) {
-      const page = await paddle.customers.list({ email: [email], status: ["active"] }).next();
-      return page.flatMap((c) => (c.id && c.email ? [{ id: c.id, email: c.email }] : []));
-    },
-    async completedPurchase(customerId, priceIds) {
-      if (!/^ctm_[a-z0-9]+$/.test(customerId)) return null;
-      const page = await paddle.transactions.list({ customerId: [customerId], status: ["completed"], orderBy: "billed_at[DESC]", perPage: 30 }).next();
-      for (const txn of page) {
-        if (itemPriceIds(txn.items).some((id) => priceIds.includes(id))) return { id: txn.id };
-      }
-      return null;
     },
   };
 }

@@ -14,6 +14,8 @@ export interface LicencePayload {
   email: string;
   txn: string;
   issued: string;
+  /** Random licence id (UUID): what the app sends to /status to learn whether the key was refunded. */
+  id: string;
 }
 
 export type LicenceError = "malformed" | "invalid-header" | "bad-signature" | "invalid-payload" | "unsupported-version";
@@ -47,8 +49,8 @@ function b64Decode(text: string): Uint8Array {
 
 /** Fields in a fixed order, so the same purchase always gives the same bytes. */
 export function payloadBytes(payload: LicencePayload): Uint8Array {
-  const { v, tier, env, email, txn, issued } = payload;
-  return encoder.encode(JSON.stringify({ v, tier, env, email, txn, issued }));
+  const { v, tier, env, email, txn, issued, id } = payload;
+  return encoder.encode(JSON.stringify({ v, tier, env, email, txn, issued, id }));
 }
 
 /** The protected header every key carries. Verification accepts exactly this and nothing else. */
@@ -130,9 +132,10 @@ export async function verifyLicence(text: string, publicKeys: Partial<Record<Lic
     (o.env !== "sandbox" && o.env !== "live") ||
     typeof o.email !== "string" || o.email === "" ||
     typeof o.txn !== "string" || o.txn === "" ||
-    typeof o.issued !== "string" || o.issued === ""
+    typeof o.issued !== "string" || o.issued === "" ||
+    typeof o.id !== "string" || o.id === ""
   ) {
     return { ok: false, error: "invalid-payload" };
   }
-  return { ok: true, payload: { v: 1, tier: "supporter", env: o.env, email: o.email, txn: o.txn, issued: o.issued } };
+  return { ok: true, payload: { v: 1, tier: "supporter", env: o.env, email: o.email, txn: o.txn, issued: o.issued, id: o.id } };
 }

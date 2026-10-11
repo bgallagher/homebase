@@ -29,7 +29,7 @@ final class LicenceKeyTests: XCTestCase {
     func testEveryFixtureMatchesTheSpec() throws {
         let verifiers = try verifiers()
         let names = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".key.txt") }.sorted()
-        XCTAssertGreaterThanOrEqual(names.count, 17)
+        XCTAssertGreaterThanOrEqual(names.count, 18)
         for file in names {
             let name = String(file.dropLast(".key.txt".count))
             let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
@@ -42,6 +42,7 @@ final class LicenceKeyTests: XCTestCase {
                 XCTAssertEqual(got.env.rawValue, want["env"] as? String, name)
                 XCTAssertEqual(got.tier, want["tier"] as? String, name)
                 XCTAssertEqual(got.issued, want["issued"] as? String, name)
+                XCTAssertEqual(got.id, want["id"] as? String, name)
             } else {
                 let error = expected["error"] as! String
                 XCTAssertThrowsError(try LicenceKey.verify(text, verifiers: verifiers), name) { thrown in
@@ -99,6 +100,38 @@ final class LicenceKeyTests: XCTestCase {
         // a damaged file reads as "no licence", not a crash
         try Data("not json".utf8).write(to: vault.url)
         XCTAssertNil(vault.load())
+    }
+
+    func testRevocationPolicyFailsOpenAndChecksWeekly() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let fresh = LicenceStatusRecord(checkedAt: now.addingTimeInterval(-3600), revoked: false)
+        let stale = LicenceStatusRecord(checkedAt: now.addingTimeInterval(-8 * 24 * 3600), revoked: false)
+        XCTAssertTrue(LicenceRevocation.needsCheck(nil, now: now), "never asked")
+        XCTAssertFalse(LicenceRevocation.needsCheck(fresh, now: now))
+        XCTAssertTrue(LicenceRevocation.needsCheck(stale, now: now))
+        XCTAssertTrue(LicenceRevocation.needsCheck(LicenceStatusRecord(checkedAt: now.addingTimeInterval(3600), revoked: false), now: now),
+                      "a clock set back must not stop checks")
+        // no answer keeps whatever was known: a revoked key stays revoked until the service says otherwise, an active one stays active
+        XCTAssertEqual(LicenceRevocation.apply(nil, previous: fresh, now: now), fresh)
+        XCTAssertNil(LicenceRevocation.apply(nil, previous: nil, now: now))
+        XCTAssertEqual(LicenceRevocation.apply(.revoked, previous: fresh, now: now), LicenceStatusRecord(checkedAt: now, revoked: true))
+        XCTAssertEqual(LicenceRevocation.apply(.active, previous: LicenceStatusRecord(checkedAt: stale.checkedAt, revoked: true), now: now),
+                       LicenceStatusRecord(checkedAt: now, revoked: false), "a reversed chargeback restores the licence")
+    }
+
+    func testVaultKeepsTheStatusWithTheKeyAndForgetsItWhenTheKeyChanges() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("licence-vault-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let vault = LicenceVault(url: dir.appendingPathComponent("licence.json"))
+        try vault.saveStatus(LicenceStatusRecord(checkedAt: Date(), revoked: true))   // nothing stored yet: ignored
+        XCTAssertNil(vault.loadStatus())
+        try vault.save("aaa.bbb.ccc")
+        let record = LicenceStatusRecord(checkedAt: Date(timeIntervalSince1970: 1_800_000_000), revoked: true)
+        try vault.saveStatus(record)
+        XCTAssertEqual(vault.load(), "aaa.bbb.ccc")
+        XCTAssertEqual(vault.loadStatus(), record)
+        try vault.save("ddd.eee.fff")
+        XCTAssertNil(vault.loadStatus(), "a new key starts unchecked")
     }
 
     func testBase64URLEdgeCases() {
