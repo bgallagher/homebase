@@ -1,7 +1,7 @@
 import Foundation
 
 /// Supporter licence keys, checked offline. The format is in spec/licence-key.md (the Worker in licence-service/ signs
-/// them with Ed25519; the app only verifies). Core stays Foundation-only, so the signature check itself is injected.
+/// them as JWS with Ed25519; the app only verifies). Core stays Foundation-only, so the signature check itself is injected.
 public enum LicenceEnv: String, Sendable, Equatable, Codable, CaseIterable {
     case sandbox, live
 }
@@ -17,6 +17,8 @@ public struct LicencePayload: Sendable, Equatable, Codable {
 
 public enum LicenceError: Error, Equatable, LocalizedError {
     case malformed
+    /// The JWS header isn't exactly `{alg: EdDSA, typ: rackoon-licence+jwt}`.
+    case invalidHeader
     case badSignature
     case invalidPayload
     case unsupportedVersion
@@ -27,7 +29,8 @@ public enum LicenceError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .malformed: "That doesn't look like a Rackoon licence key. Paste the whole key from the email, starting with RKN1-."
+        case .malformed: "That doesn't look like a Rackoon licence key. Paste the whole key from the email."
+        case .invalidHeader: "That isn't a Rackoon licence key."
         case .badSignature: "This key isn't valid: the signature doesn't match. Check that it was copied completely and exactly."
         case .invalidPayload: "This key is damaged or incomplete."
         case .unsupportedVersion: "This key is from a newer version of Rackoon. Update the app and try again."
@@ -42,29 +45,36 @@ public protocol LicenceSignatureVerifier: Sendable {
     func isValid(signature: Data, message: Data) -> Bool
 }
 
+/// A licence key is a standard compact JWS (RFC 7515) with EdDSA/Ed25519 (RFC 8037): `header.payload.signature`, each part
+/// base64url without padding. The signature covers the ASCII text `header.payload` exactly as received.
 public enum LicenceKey {
-    public static let prefix = "RKN1-"
-    static let signDomain = "rackoon-licence-v1\n"
+    /// The only protected header a key may carry. Anything else (`alg` none or HS256, `crit`, `b64`...) is refused before any
+    /// signature work, which closes the classic JWS algorithm-confusion attacks.
+    static let typ = "rackoon-licence+jwt"
+    static let alg = "EdDSA"
 
     /// Verifies `text` and returns what it says. `verifiers` holds one per environment this build can check.
     /// Policy (which environments to honour) is `LicenceChecker`'s job, not the format's.
     public static func verify(_ text: String, verifiers: [LicenceEnv: LicenceSignatureVerifier]) throws -> LicencePayload {
         let clean = String(text.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) })
-        guard clean.hasPrefix(prefix) else { throw LicenceError.malformed }
-        let parts = clean.dropFirst(prefix.count).split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 2, let bytes = base64URLDecode(String(parts[0])), let signature = base64URLDecode(String(parts[1])),
-              !bytes.isEmpty, signature.count == 64 else { throw LicenceError.malformed }
+        let parts = clean.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, let headerBytes = base64URLDecode(String(parts[0])), let bytes = base64URLDecode(String(parts[1])),
+              let signature = base64URLDecode(String(parts[2])), !bytes.isEmpty else { throw LicenceError.malformed }
 
-        // The environment is read from the unverified bytes only to pick which public key to check against.
+        guard let header = (try? JSONSerialization.jsonObject(with: headerBytes)) as? [String: Any] else { throw LicenceError.malformed }
+        guard header.count == 2, header["alg"] as? String == alg, header["typ"] as? String == typ else { throw LicenceError.invalidHeader }
+        guard signature.count == 64 else { throw LicenceError.badSignature }
+
+        // The environment is read from the unverified payload only to pick which public key to check against.
         let claimed = ((try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any])?["env"] as? String
         let candidates = claimed.flatMap(LicenceEnv.init(rawValue:)).map { [$0] } ?? LicenceEnv.allCases
-        let message = Data(signDomain.utf8) + bytes
+        let signingInput = Data("\(parts[0]).\(parts[1])".utf8)
         var checked = false
         var valid = false
         for env in candidates {
             guard let verifier = verifiers[env] else { continue }
             checked = true
-            if verifier.isValid(signature: signature, message: message) { valid = true; break }
+            if verifier.isValid(signature: signature, message: signingInput) { valid = true; break }
         }
         guard valid else {
             if !checked, let env = candidates.first, candidates.count == 1 { throw LicenceError.noPublicKey(env) }

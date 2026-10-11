@@ -10,5 +10,9 @@
   },
   "devDependencies": {
     "wrangler": "^4"
+  },
+  "dependencies": {
+    "@paddle/paddle-node-sdk": "^3.10.0",
+    "jose": "^6.2.12"
   }
 }

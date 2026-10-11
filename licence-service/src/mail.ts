@@ -11,7 +11,7 @@ export function licenceEmail(licenceKey: string): { subject: string; text: strin
     text: [
       "Thank you for feeding the Rackoon!",
       "",
-      "Your licence key is below. In Rackoon choose Help > Enter Licence…, paste the whole key and press Activate.",
+      "Your licence key is the long line of text below (it starts with eyJ). In Rackoon choose Help > Enter Licence…, paste the whole line and press Activate.",
       "Everything in the app works the same with or without it; the key just marks you as a supporter.",
       "",
       licenceKey,

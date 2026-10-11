@@ -2,21 +2,32 @@
 
 A licence key proves that a purchase happened, without the app ever contacting Paddle. The licence service (Cloudflare
 Worker, `licence-service/`) signs it; the app checks it offline against a built-in public key. Swift (`LicenceKey.swift`),
-the Worker (`licence-service/src/licence.ts`) and any future Kotlin app must agree with this file and with
+the Worker (`licence-service/src/licence.ts`, built on `jose`) and any future Kotlin app must agree with this file and with
 `spec/fixtures/licence/`.
 
-## Shape
+## Shape: a standard compact JWS
 
 ```
-RKN1-<payload>.<signature>
+<header>.<payload>.<signature>
 ```
 
-- `RKN1-` is a fixed prefix (format version 1).
-- `<payload>` is the payload JSON, UTF-8, encoded as **base64url without padding**.
-- `<signature>` is an **Ed25519** signature (64 bytes), base64url without padding, over the bytes
-  `"rackoon-licence-v1\n"` (UTF-8) followed by the exact payload bytes. The domain prefix keeps a signature for this
-  format from being valid for anything else.
+A JSON Web Signature in compact serialization (RFC 7515) with EdDSA / Ed25519 (RFC 8037). Each part is **base64url without
+padding**. The signature covers the ASCII text `<header>.<payload>` exactly as it appears in the key. Any JOSE library can
+verify a key; only the claims below are specific to Rackoon.
+
 - The text may arrive wrapped or padded by email clients: strip **all** whitespace (spaces, tabs, line breaks) before parsing.
+
+## Header
+
+Exactly this JSON object, with exactly these two members (in any order, no others):
+
+```json
+{"alg":"EdDSA","typ":"rackoon-licence+jwt"}
+```
+
+`alg` is pinned to `EdDSA`. A key with `alg: none`, `HS256` or any other value, a different `typ`, or any extra member
+(`crit`, `b64`, `kid`...) is refused as `invalid-header` **before** any signature work. This closes the classic JWS
+algorithm-confusion attacks (an attacker choosing `none` or an HMAC keyed with the public key).
 
 ## Payload
 
@@ -33,13 +44,14 @@ A JSON object with exactly these fields:
 
 ## Verification (in this order)
 
-1. Strip whitespace. The text must start with `RKN1-` and have exactly one `.` after it, else `malformed`.
-2. Decode both parts from base64url, else `malformed`.
-3. Verify the signature over the **decoded payload bytes** (not a re-serialised object) with the public key for the
-   payload's `env`. The environment is read from the bytes only to choose the key; a forged `env` fails because each
-   environment has its own key pair. Failure is `bad-signature`.
-4. Only now parse the JSON: not an object, a missing or mistyped field, or a bad `env`/`tier` is `invalid-payload`;
-   `v` other than `1` is `unsupported-version`.
+1. Strip whitespace. Split on `.`: exactly three parts, each valid base64url, payload not empty, else `malformed`. A header
+   that is not a JSON object is `malformed` too.
+2. Check the header as above, else `invalid-header`.
+3. Verify the Ed25519 signature over `<header>.<payload>` with the public key for the payload's `env`. The environment is read
+   from the unverified payload only to choose the key; a forged `env` fails because each environment has its own key pair.
+   Failure (including a signature that is not 64 bytes) is `bad-signature`.
+4. Only now check the payload: not a JSON object, a missing or mistyped field, or an unknown `env`/`tier` is
+   `invalid-payload`; `v` other than `1` is `unsupported-version`.
 5. App policy (not part of the format): release builds accept only `env == "live"`, dev builds accept both.
 
 Separate key pairs for sandbox and live. Private keys live only as Worker secrets (and one local file on the
@@ -48,6 +60,7 @@ maintainer's machine, outside the repo); the repo contains public keys and **tes
 ## Fixtures
 
 `spec/fixtures/licence/test-keypair.json` is a throwaway TEST pair (never used for real keys). Each `NAME.key.txt` has a
-`NAME.expected.json`: `{"valid":true,"payload":{…}}` or `{"valid":false,"error":"…"}`. Cases: valid sandbox, valid live,
-valid but whitespace-wrapped, tampered payload, bad signature, signed by another key, malformed (no prefix, wrong
-parts, bad base64), unsupported version, non-JSON payload.
+`NAME.expected.json`: `{"valid":true,"payload":{…}}` or `{"valid":false,"error":"…"}`. Regenerate with
+`node tools/licence-keygen fixtures`. Cases: valid sandbox and live, whitespace-wrapped, tampered payload, bad signature,
+signed by another key, malformed (wrong number of parts, bad base64, header not JSON), header attacks (`alg: none`,
+`alg: HS256`, wrong `typ`, extra `crit` member), unsupported version, payload not JSON, missing field, unknown tier.

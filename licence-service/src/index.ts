@@ -3,7 +3,7 @@
 //   GET/POST /resend      "Resend my key": emails the key to the address of a customer who bought (never shows it)
 import { signLicence } from "./licence.ts";
 import type { LicenceEnv } from "./licence.ts";
-import { itemPriceIds, paddleApi, verifyPaddleSignature } from "./paddle.ts";
+import { itemPriceIds, paddleApi } from "./paddle.ts";
 import type { PaddleApi } from "./paddle.ts";
 import { resendMailer } from "./mail.ts";
 import type { Mailer } from "./mail.ts";
@@ -22,6 +22,12 @@ export interface Env {
   RESEND_API_KEY: string;
   MAIL_FROM: string;
   SEEN: KV;
+  /** Cloudflare Rate Limiting binding (see wrangler.toml): per-address burst limit for /resend. */
+  IP_LIMIT: RateLimit;
+}
+
+export interface RateLimit {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 export interface Deps {
@@ -29,6 +35,7 @@ export interface Deps {
   kv: KV;
   paddle: PaddleApi;
   mail: Mailer;
+  ipLimit: RateLimit;
 }
 
 const NEUTRAL = "If a purchase exists for that address, we've emailed the licence key to it. Check your inbox (and spam) in a few minutes.";
@@ -57,8 +64,7 @@ async function issueAndSend(env: Env, deps: Deps, email: string, txn: string): P
 export async function handleWebhook(request: Request, env: Env, deps: Deps): Promise<Response> {
   // Read the raw text once; the signature is over exactly these bytes.
   const raw = await request.text();
-  const nowSeconds = Math.floor(deps.now() / 1000);
-  if (!(await verifyPaddleSignature(raw, request.headers.get("Paddle-Signature"), env.PADDLE_WEBHOOK_SECRET, nowSeconds))) {
+  if (!(await deps.paddle.verifySignature(raw, request.headers.get("Paddle-Signature"), env.PADDLE_WEBHOOK_SECRET))) {
     return json(401, { error: "invalid signature" });
   }
   let event: any;
@@ -93,7 +99,8 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Returns true while under the limit. Best effort (KV is eventually consistent), which is enough to blunt abuse. */
+/** Per-email daily cap. Best effort (KV is eventually consistent), which is enough to blunt abuse; the burst limit per
+ *  address is Cloudflare's atomic Rate Limiting binding instead. */
 async function underLimit(kv: KV, key: string, limit: number, ttl: number): Promise<boolean> {
   const used = Number((await kv.get(key)) ?? "0");
   if (used >= limit) return false;
@@ -116,10 +123,9 @@ export async function handleResend(request: Request, env: Env, deps: Deps): Prom
 
   // From here on every outcome looks the same, so the page can't be used to find out who bought.
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const hour = Math.floor(deps.now() / 3_600_000);
   const day = Math.floor(deps.now() / 86_400_000);
   const allowed =
-    (await underLimit(deps.kv, `rl:ip:${ip}:${hour}`, 10, 7200)) &&
+    (await deps.ipLimit.limit({ key: ip })).success &&
     (await underLimit(deps.kv, `rl:email:${await sha256Hex(email)}:${day}`, 3, 172800));
   if (!allowed) return page(NEUTRAL);
   try {
@@ -160,12 +166,12 @@ export async function handleRequest(request: Request, env: Env, deps: Deps): Pro
 }
 
 export function makeDeps(env: Env): Deps {
-  const base = environment(env) === "live" ? "https://api.paddle.com" : "https://sandbox-api.paddle.com";
   return {
     now: () => Date.now(),
     kv: env.SEEN,
-    paddle: paddleApi(base, env.PADDLE_API_KEY, fetch),
+    paddle: paddleApi(env.PADDLE_API_KEY, environment(env)),
     mail: resendMailer(env.RESEND_API_KEY, env.MAIL_FROM, fetch),
+    ipLimit: env.IP_LIMIT,
   };
 }
 

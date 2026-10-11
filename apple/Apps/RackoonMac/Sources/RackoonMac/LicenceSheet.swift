@@ -28,7 +28,7 @@ struct LicenceSheet: View {
                 Text("To use a different key, paste it below. Remove deletes the saved key from this Mac.")
                     .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
             case .none:
-                Text("Paste the key from your purchase email. It starts with RKN1-.")
+                Text("Paste the licence key from your purchase email: the whole long line of text.")
                     .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
                 if let stored = store.storedProblem {
                     Text("The saved key isn't being used: \(stored)").font(.system(size: 12)).foregroundStyle(Theme.warn)

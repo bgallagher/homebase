@@ -29,7 +29,7 @@ final class LicenceKeyTests: XCTestCase {
     func testEveryFixtureMatchesTheSpec() throws {
         let verifiers = try verifiers()
         let names = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".key.txt") }.sorted()
-        XCTAssertGreaterThanOrEqual(names.count, 12)
+        XCTAssertGreaterThanOrEqual(names.count, 17)
         for file in names {
             let name = String(file.dropLast(".key.txt".count))
             let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
@@ -46,8 +46,8 @@ final class LicenceKeyTests: XCTestCase {
                 let error = expected["error"] as! String
                 XCTAssertThrowsError(try LicenceKey.verify(text, verifiers: verifiers), name) { thrown in
                     switch (error, thrown as? LicenceError) {
-                    case ("malformed", .malformed?), ("bad-signature", .badSignature?), ("invalid-payload", .invalidPayload?),
-                         ("unsupported-version", .unsupportedVersion?): break
+                    case ("malformed", .malformed?), ("invalid-header", .invalidHeader?), ("bad-signature", .badSignature?),
+                         ("invalid-payload", .invalidPayload?), ("unsupported-version", .unsupportedVersion?): break
                     default: XCTFail("\(name): expected \(error), got \(thrown)")
                     }
                 }

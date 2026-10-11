@@ -7,14 +7,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 tools/check-spec
   licence-service:
-    # The Cloudflare Worker that issues supporter licence keys. Its tests run on plain Node (no installs): Node 24 strips
-    # TypeScript types itself and has WebCrypto Ed25519.
+    # The Cloudflare Worker that issues supporter licence keys. Its tests run on plain Node 24, which strips TypeScript types
+    # itself and has WebCrypto Ed25519; `npm ci` installs the Paddle SDK, jose and wrangler from the lockfile.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: npm ci
+        working-directory: licence-service
       - run: npm test
         working-directory: licence-service
   swift-macos:

@@ -1,8 +1,9 @@
-// Supporter licence keys: see spec/licence-key.md. Only Web APIs here (WebCrypto, TextEncoder), so the same file runs
-// in Cloudflare Workers, Node (tests, tools/licence-keygen) and browsers.
+// Supporter licence keys: a standard compact JWS (RFC 7515) signed with EdDSA/Ed25519 (RFC 8037). See spec/licence-key.md.
+// Signing and verification go through `jose`; only Web APIs otherwise, so this runs in Cloudflare Workers, Node (tests,
+// tools/licence-keygen) and browsers.
+import { CompactSign, compactVerify } from "jose";
 
-export const KEY_PREFIX = "RKN1-";
-const SIGN_DOMAIN = "rackoon-licence-v1\n";
+export const KEY_TYP = "rackoon-licence+jwt";
 
 export type LicenceEnv = "sandbox" | "live";
 
@@ -15,7 +16,7 @@ export interface LicencePayload {
   issued: string;
 }
 
-export type LicenceError = "malformed" | "bad-signature" | "invalid-payload" | "unsupported-version";
+export type LicenceError = "malformed" | "invalid-header" | "bad-signature" | "invalid-payload" | "unsupported-version";
 
 export type LicenceCheck =
   | { ok: true; payload: LicencePayload }
@@ -34,8 +35,7 @@ export function b64urlDecode(text: string): Uint8Array | null {
   if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) return null;
   const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4);
   try {
-    const binary = atob(padded);
-    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
   } catch {
     return null;
   }
@@ -45,30 +45,24 @@ function b64Decode(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }
 
-function signedMessage(payloadBytes: Uint8Array): Uint8Array {
-  const prefix = encoder.encode(SIGN_DOMAIN);
-  const message = new Uint8Array(prefix.length + payloadBytes.length);
-  message.set(prefix, 0);
-  message.set(payloadBytes, prefix.length);
-  return message;
-}
-
 /** Fields in a fixed order, so the same purchase always gives the same bytes. */
 export function payloadBytes(payload: LicencePayload): Uint8Array {
   const { v, tier, env, email, txn, issued } = payload;
   return encoder.encode(JSON.stringify({ v, tier, env, email, txn, issued }));
 }
 
+/** The protected header every key carries. Verification accepts exactly this and nothing else. */
+export const KEY_HEADER = { alg: "EdDSA", typ: KEY_TYP } as const;
+
 /** `privateKeyB64` is the PKCS#8 DER of an Ed25519 private key, base64 (what tools/licence-keygen writes). */
 export async function signLicence(payload: LicencePayload, privateKeyB64: string): Promise<string> {
   const key = await crypto.subtle.importKey("pkcs8", b64Decode(privateKeyB64), { name: "Ed25519" }, false, ["sign"]);
-  return signWithKey(payloadBytes(payload), key);
+  return signBytes(payloadBytes(payload), key);
 }
 
 /** Signs raw payload bytes: tests and tools use it to build deliberately odd keys. */
-export async function signWithKey(bytes: Uint8Array, key: CryptoKey): Promise<string> {
-  const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", key, signedMessage(bytes)));
-  return `${KEY_PREFIX}${b64urlEncode(bytes)}.${b64urlEncode(signature)}`;
+export async function signBytes(bytes: Uint8Array, key: CryptoKey): Promise<string> {
+  return new CompactSign(bytes).setProtectedHeader({ ...KEY_HEADER }).sign(key);
 }
 
 export function stripWhitespace(text: string): string {
@@ -78,14 +72,27 @@ export function stripWhitespace(text: string): string {
 /** `publicKeys` holds the raw 32-byte Ed25519 public key (base64) of each environment. */
 export async function verifyLicence(text: string, publicKeys: Partial<Record<LicenceEnv, string>>): Promise<LicenceCheck> {
   const clean = stripWhitespace(text);
-  if (!clean.startsWith(KEY_PREFIX)) return { ok: false, error: "malformed" };
-  const parts = clean.slice(KEY_PREFIX.length).split(".");
-  if (parts.length !== 2) return { ok: false, error: "malformed" };
-  const bytes = b64urlDecode(parts[0]);
-  const signature = b64urlDecode(parts[1]);
-  if (!bytes || !signature || bytes.length === 0 || signature.length !== 64) return { ok: false, error: "malformed" };
+  const parts = clean.split(".");
+  if (parts.length !== 3) return { ok: false, error: "malformed" };
+  const [headerPart, payloadPart, signaturePart] = parts;
+  const headerBytes = b64urlDecode(headerPart);
+  const bytes = b64urlDecode(payloadPart);
+  const signature = b64urlDecode(signaturePart);
+  if (!headerBytes || !bytes || !signature || bytes.length === 0) return { ok: false, error: "malformed" };
 
-  // The environment is read from the unverified bytes only to pick which public key to check against.
+  // Header first, before any signature work: exactly {alg: EdDSA, typ: rackoon-licence+jwt}. This rejects `none`, HS256 (the
+  // classic algorithm-confusion attack), `crit`, `b64` and anything else a JWS header could carry.
+  let header: unknown;
+  try {
+    header = JSON.parse(decoder.decode(headerBytes));
+  } catch {
+    return { ok: false, error: "malformed" };
+  }
+  if (typeof header !== "object" || header === null || Array.isArray(header)) return { ok: false, error: "malformed" };
+  const h = header as Record<string, unknown>;
+  if (Object.keys(h).length !== 2 || h.alg !== KEY_HEADER.alg || h.typ !== KEY_HEADER.typ) return { ok: false, error: "invalid-header" };
+
+  // The environment is read from the unverified payload only to pick which public key to check against.
   let claimed: unknown;
   try {
     claimed = (JSON.parse(decoder.decode(bytes)) as { env?: unknown }).env;
@@ -98,9 +105,12 @@ export async function verifyLicence(text: string, publicKeys: Partial<Record<Lic
     const raw = publicKeys[env];
     if (!raw) continue;
     const key = await crypto.subtle.importKey("raw", b64Decode(raw), { name: "Ed25519" }, false, ["verify"]);
-    if (await crypto.subtle.verify("Ed25519", key, signature, signedMessage(bytes))) {
+    try {
+      await compactVerify(clean, key, { algorithms: ["EdDSA"] });
       valid = true;
       break;
+    } catch {
+      // not this environment's key
     }
   }
   if (!valid) return { ok: false, error: "bad-signature" };

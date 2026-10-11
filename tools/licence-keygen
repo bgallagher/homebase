@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Licence key tool (Node 22.18+; imports the same licence.ts the Worker uses).
+// Licence key tool (Node 22.18+; imports the same licence.ts, built on `jose`, that the Worker uses; run `npm install` in
+// licence-service/ once first).
 //   licence-keygen generate --out <file>            new Ed25519 pair; private key to <file> (mode 600, outside the repo),
 //                                                  public key printed for the app
 //   licence-keygen mint --key <file> --env sandbox|live --email <e> [--txn <id>]    print a licence key
@@ -9,7 +10,7 @@ import { generateKeyPairSync, createPublicKey, createPrivateKey } from "node:cry
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { signLicence, signWithKey, verifyLicence, payloadBytes, b64urlEncode, b64urlDecode, KEY_PREFIX } from "../licence-service/src/licence.ts";
+import { signLicence, signBytes, verifyLicence, payloadBytes, b64urlEncode, b64urlDecode, KEY_HEADER } from "../licence-service/src/licence.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -84,26 +85,38 @@ async function writeFixtures() {
   const testKey = await importPrivate(test.privateKey);
   const otherKey = await importPrivate(other.privateKey);
   const base = { v: 1, tier: "supporter", email: "sam@example.com", txn: "txn_01testfixture0000000000001", issued: "2026-10-10T14:42:00.000Z" };
+  const enc = new TextEncoder();
   const cases = {};
   const valid = (env) => ({ ...base, env });
-  cases["valid-sandbox"] = await signWithKey(payloadBytes(valid("sandbox")), testKey);
-  cases["valid-live"] = await signWithKey(payloadBytes(valid("live")), testKey);
+  // A JWS built by hand: any header, any payload bytes, signed over the real signing input (or unsigned for alg none).
+  const jws = async (header, payload, key) => {
+    const input = `${b64urlEncode(enc.encode(JSON.stringify(header)))}.${b64urlEncode(payload)}`;
+    const signature = key ? new Uint8Array(await crypto.subtle.sign("Ed25519", key, enc.encode(input))) : new Uint8Array();
+    return `${input}.${b64urlEncode(signature)}`;
+  };
+  cases["valid-sandbox"] = await signBytes(payloadBytes(valid("sandbox")), testKey);
+  cases["valid-live"] = await signBytes(payloadBytes(valid("live")), testKey);
   const wrapped = cases["valid-live"];
   cases["valid-wrapped"] = wrapped.slice(0, 40) + "\n  " + wrapped.slice(40, 100) + " \r\n" + wrapped.slice(100) + "\n";
+  const [h, p, s] = cases["valid-live"].split(".");
   // payload edited after signing (email changed), signature kept
-  const [p, s] = cases["valid-live"].slice(KEY_PREFIX.length).split(".");
   const edited = JSON.stringify({ ...valid("live"), email: "evil@example.com" });
-  cases["tampered-payload"] = `${KEY_PREFIX}${b64urlEncode(new TextEncoder().encode(edited))}.${s}`;
+  cases["tampered-payload"] = `${h}.${b64urlEncode(enc.encode(edited))}.${s}`;
   const sig = Buffer.from(b64urlDecode(s)); sig[0] ^= 0xff;
-  cases["bad-signature"] = `${KEY_PREFIX}${p}.${b64urlEncode(new Uint8Array(sig))}`;
-  cases["wrong-key"] = await signWithKey(payloadBytes(valid("live")), otherKey);
-  cases["malformed-no-prefix"] = cases["valid-live"].slice(KEY_PREFIX.length);
-  cases["malformed-parts"] = `${KEY_PREFIX}${p}`;
-  cases["malformed-base64"] = `${KEY_PREFIX}!!!not-base64!!!.${s}`;
-  cases["unsupported-version"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ ...valid("live"), v: 2 })), testKey);
-  cases["invalid-payload-not-json"] = await signWithKey(new TextEncoder().encode("this is not json"), testKey);
-  cases["invalid-payload-missing-field"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ v: 1, tier: "supporter", env: "live", email: "sam@example.com" })), testKey);
-  cases["invalid-payload-unknown-tier"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ ...valid("live"), tier: "gold" })), testKey);
+  cases["bad-signature"] = `${h}.${p}.${b64urlEncode(new Uint8Array(sig))}`;
+  cases["wrong-key"] = await signBytes(payloadBytes(valid("live")), otherKey);
+  cases["malformed-two-parts"] = `${h}.${p}`;
+  cases["malformed-four-parts"] = `${h}.${p}.${s}.${s}`;
+  cases["malformed-base64"] = `${h}.!!!not-base64!!!.${s}`;
+  cases["malformed-header-not-json"] = `${b64urlEncode(enc.encode("not json"))}.${p}.${s}`;
+  cases["header-alg-none"] = await jws({ alg: "none", typ: KEY_HEADER.typ }, payloadBytes(valid("live")), null);
+  cases["header-alg-hs256"] = await jws({ alg: "HS256", typ: KEY_HEADER.typ }, payloadBytes(valid("live")), testKey);
+  cases["header-wrong-typ"] = await jws({ alg: "EdDSA", typ: "JWT" }, payloadBytes(valid("live")), testKey);
+  cases["header-extra-field"] = await jws({ alg: "EdDSA", typ: KEY_HEADER.typ, crit: ["exp"] }, payloadBytes(valid("live")), testKey);
+  cases["unsupported-version"] = await signBytes(enc.encode(JSON.stringify({ ...valid("live"), v: 2 })), testKey);
+  cases["invalid-payload-not-json"] = await signBytes(enc.encode("this is not json"), testKey);
+  cases["invalid-payload-missing-field"] = await signBytes(enc.encode(JSON.stringify({ v: 1, tier: "supporter", env: "live", email: "sam@example.com" })), testKey);
+  cases["invalid-payload-unknown-tier"] = await signBytes(enc.encode(JSON.stringify({ ...valid("live"), tier: "gold" })), testKey);
   for (const [name, text] of Object.entries(cases)) {
     writeFileSync(resolve(dir, `${name}.key.txt`), text.endsWith("\n") ? text : text + "\n");
     const result = await verifyLicence(text, { sandbox: test.publicKey, live: test.publicKey });

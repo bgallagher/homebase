@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.ts";
 import type { Deps, Env, KV } from "../src/index.ts";
 import { verifyLicence } from "../src/licence.ts";
+import { verifyWithSdk } from "../src/paddle.ts";
 import type { PaddleApi } from "../src/paddle.ts";
 
 const PRICE = "pri_01m4k470p76n1yj2nk29rkpvpq";
 const SECRET = "pdl_ntfset_test_secret";
-const NOW = 1_791_628_000_000;
+// The SDK checks the signature timestamp against the real clock (5 s tolerance), so tests sign with real time.
+const now = () => Date.now();
 
 async function makeKeys() {
   const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -28,7 +30,7 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 
 async function signedWebhook(body: unknown, opts: { secret?: string; ts?: number; tamper?: boolean } = {}): Promise<Request> {
   const raw = JSON.stringify(body);
-  const ts = opts.ts ?? Math.floor(NOW / 1000);
+  const ts = opts.ts ?? Math.floor(now() / 1000);
   const h1 = await hmacHex(opts.secret ?? SECRET, `${ts}:${raw}`);
   return new Request("https://licence.example/paddle/webhook", {
     method: "POST",
@@ -49,15 +51,20 @@ async function setup(paddleOver: Partial<PaddleApi> = {}, mailFails = false) {
   const env: Env = {
     PADDLE_ENV: "sandbox", PADDLE_PRICE_IDS: PRICE, PADDLE_API_KEY: "pdl_sdbx_x", PADDLE_WEBHOOK_SECRET: SECRET,
     LICENCE_PRIVATE_KEY: keys.pkcs8, RESEND_API_KEY: "re_x", MAIL_FROM: "Rackoon <licences@example.com>", SEEN: kv,
+    IP_LIMIT: { async limit() { return { success: true }; } },
   };
+  const ipHits = new Map<string, number>();
   const paddle: PaddleApi = {
+    verifySignature: verifyWithSdk,   // the real SDK verification, so these tests prove the integration
     async customerEmail() { return "buyer@example.com"; },
     async customersByEmail() { return []; },
     async completedPurchase() { return null; },
     ...paddleOver,
   };
   const deps: Deps = {
-    now: () => NOW, kv, paddle,
+    now, kv, paddle,
+    // stand-in for Cloudflare's Rate Limiting binding: 5 per address (the window never resets inside a test)
+    ipLimit: { async limit({ key }) { const n = (ipHits.get(key) ?? 0) + 1; ipHits.set(key, n); return { success: n <= 5 }; } },
     mail: { async sendLicence(to, key) { if (mailFails) throw new Error("mail down"); sent.push({ to, key }); } },
   };
   return { env, deps, sent, kv, publicKey: keys.raw };
@@ -91,8 +98,8 @@ test("bad signature, wrong secret, old timestamp and a tampered body are all ref
   const { env, deps, sent } = await setup();
   for (const request of [
     await signedWebhook(event(), { secret: "wrong" }),
-    await signedWebhook(event(), { ts: Math.floor(NOW / 1000) - 3600 }),
-    await signedWebhook(event(), { ts: Math.floor(NOW / 1000) + 3600 }),
+    await signedWebhook(event(), { ts: Math.floor(now() / 1000) - 3600 }),
+    await signedWebhook(event(), { ts: Math.floor(now() / 1000) - 60 }),
     await signedWebhook(event(), { tamper: true }),
     new Request("https://licence.example/paddle/webhook", { method: "POST", body: JSON.stringify(event()) }),
   ]) {
@@ -178,7 +185,7 @@ test("resend: lookup failures look the same and send nothing", async () => {
   assert.equal(s.sent.length, 0);
 });
 
-test("resend is rate limited per email and per address", async () => {
+test("resend is rate limited per email (daily) and per address (burst)", async () => {
   const s = await setup({
     async customersByEmail() { return [{ id: "ctm_abc", email: "buyer@example.com" }]; },
     async completedPurchase() { return { id: "txn_1" }; },
@@ -189,8 +196,8 @@ test("resend is rate limited per email and per address", async () => {
     async customersByEmail(e) { return [{ id: "ctm_abc", email: e }]; },
     async completedPurchase() { return { id: "txn_1" }; },
   });
-  for (let i = 0; i < 15; i++) await handleRequest(resendRequest(`person${i}@example.com`, "192.0.2.1"), t.env, t.deps);
-  assert.equal(t.sent.length, 10, "ten per address per hour");
+  for (let i = 0; i < 9; i++) await handleRequest(resendRequest(`person${i}@example.com`, "192.0.2.1"), t.env, t.deps);
+  assert.equal(t.sent.length, 5, "the address burst limit (5) stops the rest");
 });
 
 test("resend rejects a malformed address and the form page renders", async () => {
