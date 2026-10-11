@@ -9,6 +9,7 @@ struct BookmarksScreen: View {
     let workspace: DockerWorkspace
     /// Shows a stack's page on the Docker screen (after an apply, where its live output is).
     let openStack: (String) -> Void
+    @State private var search = ""
     @State private var editing: BookmarkModel?
     @State private var removing: BookmarkModel?
     /// Why a remove couldn't even start (the stack is busy, read-only...). Failures after that are on `removing.notice`.
@@ -17,21 +18,33 @@ struct BookmarksScreen: View {
     private var model: DockerModel { workspace.model(for: server) }
 
     var body: some View {
-        let items = model.bookmarkItems
+        let all = model.bookmarkItems
+        let needle = search.trimmingCharacters(in: .whitespaces)
+        let items = needle.isEmpty ? all : all.filter {
+            [$0.title, $0.bookmark.href, $0.stack.name, $0.service, $0.bookmark.group ?? ""]
+                .contains { $0.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                header(count: items.count)
+                header(count: all.count)
                 if let error = model.state.error { ErrorBanner(message: error) }
                 if let error = model.state.actionError { ErrorBanner(message: error) }
                 if let error = message ?? removing?.notice { ErrorBanner(message: error) }
                 if model.state.snapshot == nil, model.state.error == nil {
                     HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading containers…") }.foregroundStyle(Theme.textMuted)
-                } else if items.isEmpty {
+                } else if all.isEmpty {
                     emptyState
+                } else if items.isEmpty {
+                    Text("No bookmarks match “\(needle)”.").foregroundStyle(Theme.textMuted)
                 } else {
-                    ForEach(sections(items), id: \.title) { section in
+                    ForEach(sections(items), id: \.scope.title) { section in
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(section.title.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+                            HStack(spacing: 8) {
+                                Circle().fill(section.scope.color).frame(width: 7, height: 7)
+                                Text(section.scope.title.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textSecondary)
+                                Text(section.scope.hint)
+                                    .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                            }
                             VStack(spacing: 0) {
                                 ForEach(section.items) { item in
                                     row(item)
@@ -73,6 +86,15 @@ struct BookmarksScreen: View {
                     .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
             }
             Spacer()
+            if count > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                    TextField("Search", text: $search).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 9).frame(width: 190, height: 30)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.border))
+            }
             Button(action: model.refresh) {
                 if model.refreshing { Label { Text("Refreshing…") } icon: { ProgressView().controlSize(.small) } }
                 else { Label("Refresh", systemImage: "arrow.clockwise") }
@@ -101,16 +123,14 @@ struct BookmarksScreen: View {
 
     // MARK: rows
 
-    private struct Section { let title: String; let items: [BookmarkItem] }
+    private struct Section { let scope: LinkScope; let items: [BookmarkItem] }
 
-    /// Named groups alphabetically, then everything without a group.
+    /// Local links first, then Tailscale, then public; each sorted by name.
     private func sections(_ items: [BookmarkItem]) -> [Section] {
-        let grouped = Dictionary(grouping: items) { $0.bookmark.group ?? "" }
-        let named = grouped.keys.filter { !$0.isEmpty }.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        let order = named + (grouped[""] == nil ? [] : [""])
-        return order.map { key in
-            Section(title: key.isEmpty ? (named.isEmpty ? "Services" : "Other") : key,
-                    items: grouped[key]!.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending })
+        LinkScope.allCases.compactMap { scope in
+            let mine = items.filter { LinkScope(href: $0.bookmark.href) == scope }
+            guard !mine.isEmpty else { return nil }
+            return Section(scope: scope, items: mine.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending })
         }
     }
 
@@ -120,7 +140,7 @@ struct BookmarksScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(item.title).fontWeight(.semibold).lineLimit(1)
-                    Text("\(item.stack.name) · \(item.service)").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
+                    Text("\(item.stack.name) · \(item.service)" + (item.bookmark.group.map { " · \($0)" } ?? "")).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
                 }
                 Text(item.bookmark.href).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textSecondary)
                     .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
@@ -133,9 +153,18 @@ struct BookmarksScreen: View {
                 Label("Open", systemImage: "arrow.up.forward.square").font(.system(size: 12))
             }
             .buttonStyle(.bordered).controlSize(.small).handCursor().help("Open in your browser")
-            CopyButton(text: item.bookmark.href, what: "address")
-            IconButton(symbol: "pencil", help: "Edit bookmark", mutates: true) { edit(item) }
-            IconButton(symbol: "trash", help: "Remove bookmark", mutates: true) { remove(item) }
+            Menu {
+                Button("Copy Address") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(item.bookmark.href, forType: .string)
+                }
+                Divider()
+                Button("Edit…") { edit(item) }.disabled(SafetyStore.shared.readOnly)
+                Button("Remove…", role: .destructive) { remove(item) }.disabled(SafetyStore.shared.readOnly)
+            } label: {
+                Image(systemName: "ellipsis").frame(width: 24, height: 24)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().handCursor().help("More actions")
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
     }

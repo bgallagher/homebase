@@ -72,12 +72,12 @@ struct StackPanel: View {
     }
 
     @ViewBuilder private var logs: some View {
-        if let target = model.logTarget, stack.containers.contains(where: { $0.id == target.id }) {
-            LogPanel(model: model, container: target, theme: theme, busy: busy.contains(target.id)).id(target.id)   // scroll state per container
+        if !stack.containers.isEmpty {
+            LogPanel(model: model, stack: stack, theme: theme, busy: busy)
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "text.alignleft").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
-                Text("Choose Logs on a container to follow its output.").foregroundStyle(Theme.textMuted)
+                Text("This stack has no containers yet.").foregroundStyle(Theme.textMuted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: theme.backgroundRGB.nsColor))

@@ -3,23 +3,45 @@ import RackoonCore
 import RackoonSSHSystem
 import Observation
 
+/// One log line and the container (its service name) it came from.
+struct LogEntry: Identifiable, Equatable {
+    let id: Int
+    let source: String
+    let line: String
+}
+
+extension DockerContainer {
+    /// What log lines are tagged with: the compose service name, else the container name.
+    var source: String { service ?? name }
+}
+
 /// Bridges DockerSession and the log stream to SwiftUI. Lives only while the Docker screen is open,
 /// so `docker stats` is not polled in the background.
 @MainActor @Observable
 final class DockerModel {
     private(set) var state = DockerState()
-    /// Lines shown in the panel. Updated at most ~10 times a second so a chatty container cannot
-    /// make the UI re-render (and re-colour 2000 lines) on every chunk.
-    private(set) var logLines: [String] = []
-    /// Lines received since the logs were opened (not capped like `logLines`), for "N new lines" while scrolled away.
+    /// Lines shown in the panel, merged across the stack's containers in arrival order. Updated at most ~10 times a
+    /// second so a chatty container cannot make the UI re-render (and re-colour 2000 lines) on every chunk.
+    private(set) var logEntries: [LogEntry] = []
+    /// Lines received since the logs were opened (not capped like `logEntries`), for "N new lines" while scrolled away.
     private(set) var logReceived = 0
-    @ObservationIgnored private var logBuffer = LogBuffer()
+    @ObservationIgnored private var pendingEntries: [LogEntry] = []
+    @ObservationIgnored private var nextEntryID = 0
     @ObservationIgnored private var flushScheduled = false
-    /// Everything received so far, for the Copy button.
-    var logText: String { logBuffer.text }
-    private(set) var logTarget: DockerContainer?
+    private static let maxLogEntries = 2000
+    /// The containers being followed (every container of the open stack).
+    private(set) var logContainers: [DockerContainer] = []
+    /// When set, only this container's lines are shown (its `LogEntry.source`); nil shows all of them.
+    var logFocus: String?
     private(set) var logsLive = false
     private(set) var logError: String?
+
+    /// The lines on screen as plain text (what Copy copies), honouring the container filter.
+    var logText: String {
+        logEntries.filter { logFocus == nil || $0.source == logFocus }
+            .map { logContainers.count > 1 && logFocus == nil ? "\($0.source) | \($0.line)" : $0.line }
+            .joined(separator: "\n")
+    }
 
     /// A stop or restart waiting for the user's yes (shown as a sheet by the Docker screen).
     var pending: PendingAction?
@@ -270,36 +292,52 @@ final class DockerModel {
             completion: { [weak self] in self?.composeWorking = nil })
     }
 
-    /// Clicking the container that is already open closes its logs.
-    func toggleLogs(for container: DockerContainer) {
-        if logTarget?.id == container.id { closeLogs() } else { showLogs(for: container) }
-    }
-
-    func showLogs(for container: DockerContainer) {
-        guard logTarget?.id != container.id else { return }
+    /// Follows every container of a stack, merged. Does nothing if exactly these containers are already followed.
+    func showLogs(for containers: [DockerContainer]) {
+        let ids = containers.map(\.id)
+        guard !containers.isEmpty, ids != logContainers.map(\.id) else { return }
+        let keepFocus = logFocus.flatMap { f in containers.contains { $0.source == f } ? f : nil }
         closeLogs()
-        guard let command = DockerSession.logsCommand(id: container.id) else { return }
-        logTarget = container
-        logBuffer = LogBuffer()
-        logLines = []
-        logReceived = 0
+        logFocus = keepFocus
+        logContainers = containers
         logError = nil
         logsLive = true
         let generation = logGeneration
         let transport = transport
+        let open = containers.compactMap { c in DockerSession.logsCommand(id: c.id).map { (c, $0) } }
         logTask = Task { [weak self] in
-            do {
-                for try await chunk in transport.stream(command) {
-                    guard let self, self.logGeneration == generation else { return }
-                    self.logBuffer.append(chunk)
-                    self.scheduleFlush(generation)
-                }
-            } catch {
-                guard let self, self.logGeneration == generation else { return }
-                self.logError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            // One child task per container; cancelling logTask cancels them all (each sends Ctrl-C to its `docker logs -f`).
+            let followers = open.map { container, command in
+                Task { [weak self] in await self?.follow(container, command: command, transport: transport, generation: generation) }
+            }
+            await withTaskCancellationHandler {
+                for f in followers { await f.value }
+            } onCancel: {
+                for f in followers { f.cancel() }
             }
             guard let self, self.logGeneration == generation else { return }
             self.logsLive = false
+        }
+    }
+
+    private func follow(_ container: DockerContainer, command: String, transport: SSHTransport, generation: Int) async {
+        var buffer = LogBuffer()
+        var seen = 0
+        do {
+            for try await chunk in transport.stream(command) {
+                guard logGeneration == generation else { return }
+                buffer.append(chunk)
+                let fresh = buffer.totalAppended - seen
+                seen = buffer.totalAppended
+                for line in buffer.lines.suffix(fresh) {
+                    pendingEntries.append(LogEntry(id: nextEntryID, source: container.source, line: line))
+                    nextEntryID += 1
+                }
+                scheduleFlush(generation)
+            }
+        } catch {
+            guard logGeneration == generation else { return }
+            logError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
     }
 
@@ -311,8 +349,10 @@ final class DockerModel {
             guard let self else { return }
             self.flushScheduled = false
             if self.logGeneration == generation {
-                self.logLines = self.logBuffer.lines
-                self.logReceived = self.logBuffer.totalAppended
+                self.logReceived += self.pendingEntries.count
+                self.logEntries.append(contentsOf: self.pendingEntries)
+                self.pendingEntries = []
+                if self.logEntries.count > Self.maxLogEntries { self.logEntries.removeFirst(self.logEntries.count - Self.maxLogEntries) }
             }
         }
     }
@@ -320,8 +360,10 @@ final class DockerModel {
     func closeLogs() {
         logGeneration += 1
         logTask?.cancel(); logTask = nil   // cancelling sends Ctrl-C to the remote `docker logs -f`
-        logTarget = nil
-        logLines = []
+        logContainers = []
+        logFocus = nil
+        logEntries = []
+        pendingEntries = []
         logReceived = 0
         logsLive = false
     }

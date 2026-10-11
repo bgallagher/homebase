@@ -131,18 +131,18 @@ private struct SafetySection: View {
             HStack(spacing: 10) {
                 Image(systemName: safety.readOnly ? "lock.fill" : "lock.open")
                     .frame(width: 18)
-                    .foregroundStyle(safety.readOnly ? Theme.warn : Theme.textSecondary)
+                    .foregroundStyle(safety.readOnly ? Theme.accent : Theme.textSecondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Read-only").fontWeight(.medium)
-                    Text(safety.readOnly ? "Changes are blocked" : "Changes ask first")
+                    Text(safety.readOnly ? "On: changes are blocked" : "Off: changes ask first")
                         .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                 }
                 Spacer(minLength: 0)
                 Toggle("Read-only mode", isOn: Binding(get: { safety.readOnly }, set: { safety.setReadOnly($0) }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
             }
             .padding(8)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(safety.readOnly ? Theme.warn.opacity(0.6) : Theme.border))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(safety.readOnly ? Theme.accent.opacity(0.6) : Theme.border))
             .padding(.bottom, 10)
         }
     }

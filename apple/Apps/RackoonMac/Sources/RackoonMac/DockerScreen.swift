@@ -240,14 +240,16 @@ private func shortAddress(_ href: String) -> String {
 private struct StackLink: View {
     let links: [Bookmark]
     var font: CGFloat = 12
+    var showScope = true
 
     var body: some View {
         if let first = links.first, Bookmark.isValidURL(first.href), let url = URL(string: first.href) {
             Button { NSWorkspace.shared.open(url) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.up.forward.square").font(.system(size: font - 1))
-                    Text(shortAddress(first.href)).font(.system(size: font)).lineLimit(1).truncationMode(.middle)
+                    Text(shortAddress(first.href)).font(.system(size: font)).lineLimit(1).truncationMode(.middle).layoutPriority(-1)
                     if links.count > 1 { Text("+\(links.count - 1)").font(.system(size: font - 1)).foregroundStyle(Theme.textMuted) }
+                    if showScope { ScopeTag(href: first.href) }
                 }
                 .foregroundStyle(Theme.accent)
                 .contentShape(Rectangle())
@@ -281,20 +283,21 @@ private struct StackTile: View {
             // Siblings of the card's button, not inside it, so a click on an icon never also opens the stack.
             .overlay(alignment: .topLeading) {
                 if let faviconHref {
-                    FaviconView(href: faviconHref, size: 20, hideWhenMissing: true).padding(.top, 16).padding(.leading, 18)
+                    FaviconView(href: faviconHref, size: 26).padding(.top, 16).padding(.leading, 18)
+                } else {
+                    LetterTile(name: stack.name, size: 26).padding(.top, 16).padding(.leading, 18)
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                // Above the memory bar: its 16 pt bottom padding + the bar block (~26 pt) + the 14 pt gap.
                 StackLink(links: stack.bookmarkLinks, font: 12)
-                    .padding(.leading, 20).padding(.trailing, 20).padding(.bottom, 56)
+                    .padding(.leading, 18).padding(.trailing, 18).padding(.bottom, 16)
             }
             .overlay(alignment: .topTrailing) {
                 if let bookmark {
                     Button(action: bookmark) {
                         Image(systemName: stack.hasBookmark ? "bookmark.fill" : "bookmark")
                             .font(.system(size: 13))
-                            .foregroundStyle(stack.hasBookmark ? Theme.accent : Theme.textMuted)
+                            .foregroundStyle(stack.hasBookmark ? Theme.accent : (hovering ? Theme.textSecondary : Theme.textMuted.opacity(0.6)))
                             .frame(width: 26, height: 26).contentShape(Rectangle())
                     }
                     .buttonStyle(.pointer)
@@ -320,7 +323,7 @@ private struct StackTile: View {
                     }
                 }
                 .padding(.trailing, bookmark == nil ? 0 : 26)   // room for the bookmark button
-                .padding(.leading, faviconHref == nil ? 0 : 28)   // and for the site's icon
+                .padding(.leading, 36)   // and for the icon slot (site icon or letter tile)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(stack.containers) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -334,21 +337,7 @@ private struct StackTile: View {
                 }
                 Spacer(minLength: 0)
                 // Room for the site link, which is drawn over it as a sibling of this button (see `body`).
-                if !stack.bookmarkLinks.isEmpty { Color.clear.frame(height: 16) }
-                VStack(spacing: 0) {
-                    Divider().overlay(Theme.border).padding(.bottom, 12)
-                    HStack(spacing: 10) {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Theme.border)
-                                Capsule().fill(unhealthy ? Theme.danger : Theme.ok.opacity(0.8))
-                                    .frame(width: max(0, min(1, memoryFraction)) * geo.size.width)
-                            }
-                        }
-                        .frame(height: 3)
-                        Text(memoryText).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
-                    }
-                }
+                if !stack.bookmarkLinks.isEmpty { Color.clear.frame(height: 18) }
             }
             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 16)
             // Natural height, measured before the uniform height is applied (so cards can shrink again too).
@@ -382,14 +371,70 @@ private struct StackTile: View {
         if stack.stoppedCount > 0 { return ("\(stack.stoppedCount) stopped", Theme.warn, Theme.warn) }
         return ("", Theme.ok, Theme.ok)
     }
+}
 
-    private var memoryUsed: Int64 { stack.containers.compactMap(\.memoryUsedBytes).reduce(0, +) }
-    /// Docker reports the host's memory as the limit for containers without one, so the largest limit is the host total.
-    private var memoryFraction: Double {
-        guard let limit = stack.containers.compactMap(\.memoryLimitBytes).max(), limit > 0 else { return 0 }
-        return Double(memoryUsed) / Double(limit)
+/// A tinted letter standing in for a site icon, so every card's title starts at the same place.
+struct LetterTile: View {
+    let name: String
+    var size: CGFloat = 26
+
+    var body: some View {
+        let hue = Double(name.unicodeScalars.reduce(5381) { ($0 &* 33) &+ Int($1.value) } % 360) / 360
+        Text(String(name.first.map { Character($0.uppercased()) } ?? "?"))
+            .font(.system(size: size * 0.5, weight: .semibold))
+            .foregroundStyle(Color(hue: hue, saturation: 0.35, brightness: 0.9))
+            .frame(width: size, height: size)
+            .background(Color(hue: hue, saturation: 0.45, brightness: 0.28), in: RoundedRectangle(cornerRadius: size * 0.27))
+            .accessibilityHidden(true)
     }
-    private var memoryText: String { stack.runningCount == 0 ? "—" : Format.bytes(memoryUsed) }
+}
+
+/// Where a link works: `local` = no real domain (a bare name like "dockge", `.local`/`.lan`, a private IP), which only
+/// resolves from inside your network or tailnet; `tailscale` = a *.ts.net name or 100.64.0.0/10 address; `publicWeb` = a normal domain.
+enum LinkScope: CaseIterable {
+    case local, tailscale, publicWeb
+
+    init(href: String) {
+        guard let host = URL(string: href)?.host?.lowercased() else { self = .publicWeb; return }
+        if host.hasSuffix(".ts.net") { self = .tailscale; return }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4 {
+            if parts[0] == 100, (64...127).contains(parts[1]) { self = .tailscale; return }
+            let privateRange = parts[0] == 10 || parts[0] == 127 || (parts[0] == 192 && parts[1] == 168)
+                || (parts[0] == 172 && (16...31).contains(parts[1]))
+            self = privateRange ? .local : .publicWeb
+            return
+        }
+        let localSuffixes = [".local", ".lan", ".home", ".internal", ".home.arpa", ".localdomain"]
+        self = !host.contains(".") || localSuffixes.contains(where: host.hasSuffix) ? .local : .publicWeb
+    }
+
+    var title: String { switch self { case .local: "Local"; case .tailscale: "Tailscale"; case .publicWeb: "Public" } }
+    var hint: String {
+        switch self {
+        case .local: "Names and addresses that only work from inside your network"
+        case .tailscale: "Only reachable on your tailnet"
+        case .publicWeb: "Reachable from anywhere"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .local: Color(red: 0.553, green: 0.706, blue: 0.941)
+        case .tailscale: Color(red: 0.435, green: 0.827, blue: 0.659)
+        case .publicWeb: Color(red: 0.941, green: 0.635, blue: 0.478)
+        }
+    }
+}
+
+struct ScopeTag: View {
+    let href: String
+    var body: some View {
+        let scope = LinkScope(href: href)
+        Text(scope.title).font(.system(size: 10, weight: .medium)).foregroundStyle(scope.color)
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(scope.color.opacity(0.14), in: Capsule())
+    }
 }
 
 /// Four small corner ticks, the card's signature detail from the design.
@@ -440,20 +485,24 @@ private struct StackDetail: View {
                     // Starting Pull, Update, Restart... on this stack shows its live output.
                     if id != nil, model.output?.scope == stack.name { tab = .output }
                 }
-            HStack(alignment: .top, spacing: 20) {
-                containers.frame(width: 320)
+            if stack.containers.count == 1, let only = stack.containers.first {
+                ContainerStrip(container: only, stack: stack, busy: busy.contains(only.id), model: model, openShell: openShell)
                 panel.frame(maxWidth: .infinity)
+            } else {
+                HStack(alignment: .top, spacing: 20) {
+                    containers.frame(width: 320)
+                    panel.frame(maxWidth: .infinity)
+                }
             }
         }
-        // A stack with one container has nothing to choose: show its logs straight away, and follow the container when an
-        // update or rebuild replaces it (its id changes) or when it first appears after a deploy.
-        .onAppear(perform: openSoleContainerLogs)
-        .onChange(of: stack.containers.map(\.id)) { _, _ in openSoleContainerLogs() }
+        // The logs follow every container of the stack, merged; follow the new ones when an update or rebuild replaces a
+        // container (its id changes) or when the first appears after a deploy.
+        .onAppear(perform: openStackLogs)
+        .onChange(of: stack.containers.map(\.id)) { _, _ in openStackLogs() }
     }
 
-    private func openSoleContainerLogs() {
-        guard stack.containers.count == 1, let container = stack.containers.first, model.logTarget?.id != container.id else { return }
-        model.showLogs(for: container)
+    private func openStackLogs() {
+        model.showLogs(for: stack.containers)
     }
 
     // MARK: header
@@ -549,7 +598,7 @@ private struct ContainerCard: View {
     let openShell: (DockerContainer) -> Void
 
     var body: some View {
-        let showingLogs = model.logTarget?.id == container.id
+        let showingLogs = model.logFocus == container.source
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 7, height: 7)
@@ -559,27 +608,15 @@ private struct ContainerCard: View {
             }
             Text(container.image).font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                 .lineLimit(1).truncationMode(.middle).padding(.top, 4).padding(.leading, 15)
-            HStack(spacing: 14) {
-                LinkAction(title: "Logs", tint: showingLogs ? Theme.accent : Theme.textSecondary) { model.toggleLogs(for: container) }
-                LinkAction(title: "Shell", enabled: container.isRunning) { openShell(container) }
-                if busy {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    LinkAction(title: "Restart", mutates: true) { model.request(.restart, on: container) }
-                    if model.canRebuild(container, in: stack) {
-                        LinkAction(title: "Rebuild", mutates: true) { model.requestRebuild(of: container, in: stack) }
-                    }
-                    if container.isRunning {
-                        LinkAction(title: "Stop", mutates: true) { model.request(.stop, on: container) }
-                    } else {
-                        LinkAction(title: "Start", mutates: true) { model.request(.start, on: container) }
-                    }
-                }
-            }
-            .padding(.top, 10).padding(.leading, 15)
+            ContainerActions(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
+                .padding(.top, 10).padding(.leading, 15)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(showingLogs ? Theme.accent.opacity(0.08) : .clear)
+        .contentShape(Rectangle())
+        // Click a container to follow only its logs; click it again for all of them.
+        .onTapGesture { model.logFocus = showingLogs ? nil : container.source }
+        .help(showingLogs ? "Showing only \(container.source). Click to show all containers." : "Click to show only \(container.source)'s logs")
     }
 
     private var dot: Color {
@@ -589,6 +626,70 @@ private struct ContainerCard: View {
         case "restarting", "paused": return Theme.warn
         default: return Theme.idle
         }
+    }
+
+    private var usage: String {
+        guard container.isRunning else { return container.state }
+        guard let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
+        return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
+    }
+}
+
+/// Shell, Restart and Rebuild as text links, with Stop/Start tucked into a "···" menu (Stop weighs the same as
+/// Restart otherwise).
+private struct ContainerActions: View {
+    let container: DockerContainer
+    let stack: DockerStack
+    let busy: Bool
+    let model: DockerModel
+    let openShell: (DockerContainer) -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            LinkAction(title: "Shell", enabled: container.isRunning) { openShell(container) }
+            if busy {
+                ProgressView().controlSize(.mini)
+            } else {
+                LinkAction(title: "Restart", mutates: true) { model.request(.restart, on: container) }
+                if model.canRebuild(container, in: stack) {
+                    LinkAction(title: "Rebuild", mutates: true) { model.requestRebuild(of: container, in: stack) }
+                }
+                Menu {
+                    if container.isRunning {
+                        Button("Stop…", role: .destructive) { model.request(.stop, on: container) }
+                    } else {
+                        Button("Start") { model.request(.start, on: container) }
+                    }
+                } label: { Image(systemName: "ellipsis").font(.system(size: 12)).frame(width: 22, height: 20) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().handCursor()
+                    .disabled(SafetyStore.shared.readOnly)
+                    .help(SafetyStore.shared.readOnly ? "Read-only mode is on" : "More actions")
+            }
+        }
+    }
+}
+
+/// A single-container stack has nothing to choose, so its container is one strip above the panel instead of a column.
+private struct ContainerStrip: View {
+    let container: DockerContainer
+    let stack: DockerStack
+    let busy: Bool
+    let model: DockerModel
+    let openShell: (DockerContainer) -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Circle().fill(container.isUnhealthy ? Theme.danger : (container.isRunning ? Theme.ok : Theme.idle)).frame(width: 7, height: 7)
+            Text(container.image).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
+            if !container.ports.isEmpty {
+                Text(container.ports.map { "\($0.hostPort)→\($0.containerPort)" }.joined(separator: " ")).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(usage).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
+            ContainerActions(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .card()
     }
 
     private var usage: String {
@@ -671,17 +772,32 @@ struct Badge: View {
 
 struct LogPanel: View {
     let model: DockerModel
-    let container: DockerContainer
+    let stack: DockerStack
     let theme: TerminalTheme
-    let busy: Bool
+    let busy: Set<String>
     @State private var copied = false
+    @State private var levelFilter: LogLevel?
+    @State private var search = ""
+
+    private static let levelWord = try! NSRegularExpression(
+        pattern: #"(?i)\b(error|err|fatal|panic|critical|warn|warning|info|debug|trace)\b"#)
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Circle().fill(model.logsLive ? Theme.ok : Theme.idle).frame(width: 7, height: 7)
-                Text(container.name).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
+                Text(focused?.source ?? (stack.containers.count > 1 ? "All containers" : (stack.containers.first?.source ?? "Logs")))
+                    .fontWeight(.semibold).lineLimit(1).layoutPriority(1)
                 Text(model.logsLive ? "Live" : "Ended").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                if focused != nil {
+                    Button { model.logFocus = nil } label: {
+                        HStack(spacing: 4) { Text("Showing one"); Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                            .font(.system(size: 11)).foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 8).frame(height: 20)
+                            .background(Theme.accent.opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.pointer).help("Show all containers")
+                }
                 Spacer(minLength: 4)
                 IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy logs",
                            tint: copied ? Theme.ok : Theme.textSecondary) {
@@ -690,58 +806,138 @@ struct LogPanel: View {
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 }
-                if busy {
-                    ProgressView().controlSize(.small).frame(width: 28, height: 28)
-                } else {
-                    IconButton(symbol: "arrow.clockwise", help: "Restart \(container.name)", mutates: true) {
-                        model.request(.restart, on: container)
+                if let focused {
+                    if busy.contains(focused.id) {
+                        ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                    } else {
+                        IconButton(symbol: "arrow.clockwise", help: "Restart \(focused.source)", mutates: true) {
+                            model.request(.restart, on: focused)
+                        }
                     }
                 }
-                IconButton(symbol: "xmark", help: "Close logs", action: model.closeLogs)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Theme.sidebar)
             .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
 
+            filterBar
             if let error = model.logError { ErrorBanner(message: error).padding(12) }
             LogScroll(text: styled, received: model.logReceived)
                 .background(Color(nsColor: theme.backgroundRGB.nsColor))
         }
     }
 
-    /// Lines coloured from the active terminal theme: errors red, warnings yellow, debug dimmed,
-    /// timestamps muted, everything else in the theme's foreground.
+    private var focused: DockerContainer? {
+        model.logFocus.flatMap { f in stack.containers.first { $0.source == f } }
+    }
+
+    private struct Parsed { let source: String; let line: String; let level: LogLevel? }
+
+    /// The container name colours, in the order the containers appear.
+    private static let sourceColors: [Color] = [
+        Color(red: 0.553, green: 0.706, blue: 0.941), Color(red: 0.435, green: 0.827, blue: 0.659),
+        Color(red: 0.941, green: 0.635, blue: 0.478), Color(red: 0.78, green: 0.65, blue: 0.94),
+        Color(red: 0.95, green: 0.78, blue: 0.4), Color(red: 0.5, green: 0.82, blue: 0.85),
+    ]
+
+    private var parsed: [Parsed] {
+        model.logEntries
+            .filter { model.logFocus == nil || $0.source == model.logFocus }
+            .map { Parsed(source: $0.source, line: $0.line, level: LogLineParser.level(of: $0.line)) }
+    }
+
+    /// Level chips with counts, and a search box.
+    private var filterBar: some View {
+        let counts = Dictionary(grouping: parsed, by: \.level).mapValues(\.count)
+        return HStack(spacing: 6) {
+            chip("All", level: nil, count: parsed.count, color: Theme.textPrimary)
+            chip("Error", level: .error, count: counts[.error] ?? 0, color: Theme.danger)
+            chip("Warn", level: .warn, count: counts[.warn] ?? 0, color: Theme.warn)
+            chip("Info", level: .info, count: counts[.info] ?? 0, color: Theme.accent)
+            Spacer(minLength: 8)
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                TextField("Search logs", text: $search).textFieldStyle(.plain).font(.system(size: 12))
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textMuted) }
+                        .buttonStyle(.pointer).accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 8).frame(width: 190, height: 24)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Theme.sidebar)
+        .overlay(alignment: .bottom) { Theme.border.frame(height: 1) }
+    }
+
+    private func chip(_ title: String, level: LogLevel?, count: Int, color: Color) -> some View {
+        let on = levelFilter == level
+        return Button { levelFilter = level } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                Text("\(count)").monospacedDigit().foregroundStyle(on ? color : Theme.textMuted)
+            }
+            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? color : Theme.textSecondary)
+            .padding(.horizontal, 9).frame(height: 24)
+            .background(on ? color.opacity(0.14) : .clear, in: Capsule())
+            .overlay(Capsule().stroke(on ? color.opacity(0.4) : Theme.border))
+        }
+        .buttonStyle(.pointer)
+    }
+
+    /// Only the level word is coloured (error red, warning amber, info blue); timestamps are dimmed and the message
+    /// stays neutral, so a real error stands out instead of the whole log being red.
     private var styled: AttributedString {
-        let lines = model.logLines
-        guard !lines.isEmpty else {
+        let all = parsed
+        guard !all.isEmpty else {
             var waiting = AttributedString("Waiting for output…")
             waiting.foregroundColor = Color(nsColor: theme.foregroundRGB.nsColor).opacity(0.5)
             return waiting
         }
-        let ansi = theme.ansiRGB
+        let needle = search.trimmingCharacters(in: .whitespaces)
+        let shown = all.filter { entry in
+            (levelFilter == nil || entry.level == levelFilter)
+                && (needle.isEmpty || entry.line.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil)
+        }
+        guard !shown.isEmpty else {
+            var none = AttributedString("No lines match.")
+            none.foregroundColor = Color(nsColor: theme.foregroundRGB.nsColor).opacity(0.5)
+            return none
+        }
         let fg = Color(nsColor: theme.foregroundRGB.nsColor)
         let muted = fg.opacity(0.45)
         var out = AttributedString()
-        for (i, line) in lines.enumerated() {
-            let level = LogLineParser.level(of: line)
-            let base: Color = switch level {
-            case .error: Color(nsColor: ansi[9].nsColor)    // bright red
-            case .warn: Color(nsColor: ansi[11].nsColor)    // bright yellow
-            case .debug: muted
-            case .info, nil: fg
+        let names = stack.containers.map(\.source)
+        let showNames = names.count > 1 && model.logFocus == nil
+        let nameWidth = min(18, names.map(\.count).max() ?? 0)
+        for (i, entry) in shown.enumerated() {
+            let line = entry.line
+            var prefix = AttributedString()
+            var text = AttributedString(line)
+            if showNames {
+                var tag = AttributedString(entry.source.padding(toLength: nameWidth, withPad: " ", startingAt: 0) + "  ")
+                tag.foregroundColor = Self.sourceColors[(names.firstIndex(of: entry.source) ?? 0) % Self.sourceColors.count]
+                tag.font = .system(size: 12, weight: .semibold, design: .monospaced)
+                prefix = tag
             }
+            text.foregroundColor = entry.level == .debug ? muted : fg.opacity(0.9)
             let split = LogLineParser.timestampLength(in: line)
-            let cut = line.index(line.startIndex, offsetBy: split)
             if split > 0 {
-                var ts = AttributedString(String(line[..<cut]))
-                ts.foregroundColor = level == .error || level == .warn ? base.opacity(0.7) : muted
-                out += ts
+                text[text.startIndex..<text.index(text.startIndex, offsetByCharacters: split)].foregroundColor = muted
             }
-            var rest = AttributedString(String(line[cut...]))
-            rest.foregroundColor = base
-            if level == .error { rest.font = .system(size: 12, weight: .medium, design: .monospaced) }
-            out += rest
-            if i < lines.count - 1 { out += AttributedString("\n") }
+            if let level = entry.level, level != .debug,
+               let m = Self.levelWord.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+               let r = Range(m.range, in: text) {
+                text[r].foregroundColor = level == .error ? Color(nsColor: theme.ansiRGB[9].nsColor)
+                    : level == .warn ? Color(nsColor: theme.ansiRGB[11].nsColor) : Color(nsColor: theme.ansiRGB[12].nsColor)
+                text[r].font = .system(size: 12, weight: .semibold, design: .monospaced)
+            }
+            out += prefix
+            out += text
+            if i < shown.count - 1 { out += AttributedString("\n") }
         }
         return out
     }
