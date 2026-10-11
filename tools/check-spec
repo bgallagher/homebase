@@ -43,9 +43,32 @@ for c in commands:
             except Exception as e:
                 errors.append(f"{expected.relative_to(spec)}: {e}")
 
+# Fixtures that are not command output (licence keys, see spec/licence-key.md) are checked separately below.
+NON_COMMAND_FIXTURES = {"licence"}
 for d in (spec / "fixtures").iterdir():
-    if d.is_dir() and d.name not in ids:
+    if d.is_dir() and d.name not in ids and d.name not in NON_COMMAND_FIXTURES:
         errors.append(f"fixtures/{d.name}: no matching command in commands.json")
+
+# Licence key fixtures: every key has an expected answer, every answer parses, the TEST key pair says so.
+licence_dir = spec / "fixtures" / "licence"
+if licence_dir.is_dir():
+    for key in sorted(licence_dir.glob("*.key.txt")):
+        expected = key.with_name(key.name.replace(".key.txt", ".expected.json"))
+        if not expected.exists():
+            errors.append(f"fixtures/licence/{expected.name}: missing")
+        else:
+            try:
+                e = json.loads(expected.read_text())
+                if "valid" not in e or (e["valid"] and "payload" not in e) or (not e["valid"] and "error" not in e):
+                    errors.append(f"fixtures/licence/{expected.name}: needs valid plus payload or error")
+            except Exception as ex:
+                errors.append(f"fixtures/licence/{expected.name}: {ex}")
+    pair = licence_dir / "test-keypair.json"
+    try:
+        if "TEST" not in json.loads(pair.read_text()).get("note", ""):
+            errors.append("fixtures/licence/test-keypair.json: must say it is a TEST key pair")
+    except Exception as ex:
+        errors.append(f"fixtures/licence/test-keypair.json: {ex}")
 
 # Command library (the Commands tab): shape, unique ids, known groups, every mutating entry has a dry-run preview.
 library = load("command-library.json")

@@ -1,0 +1,14 @@
+{
+  "name": "rackoon-licence-service",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker: Paddle transaction.completed webhook -> signed Rackoon supporter licence key -> email.",
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

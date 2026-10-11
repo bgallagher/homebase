@@ -69,6 +69,9 @@
 - Every change shows the exact command (or a readable diff) and asks first. The check is enforced in the service layer, not just the buttons.
 - Destructive choices need extra care: a typed name before deleting data, and a folder delete that refuses system folders and checks real paths.
 
+**Support**
+- Help > Feed the Rackoon… is an optional €100 supporter purchase (Paddle). Nothing is locked either way: a licence key, emailed after purchase and pasted into Help > Enter Licence…, just marks you as a supporter. Keys are checked offline against a built-in public key, and can be removed and added again at any time.
+
 **Looks**
 - 45 themes (two of them Rackoon's own) that drive the whole app and its terminals, with Automatic following macOS light and dark.
 

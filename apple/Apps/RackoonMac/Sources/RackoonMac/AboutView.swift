@@ -26,6 +26,9 @@ struct AboutView: View {
                 Text("Rackoon").font(.system(size: 24, weight: .bold)).foregroundStyle(Theme.textPrimary)
                 Text("Version \(Self.version)" + (AppBuild.isDev ? " · dev build" : "")).font(.callout).foregroundStyle(Theme.textSecondary)
             }
+            if case .supporter(let email, _) = LicenceStore.shared.state {
+                Label("Supporter · \(email)", systemImage: "heart.fill").font(.callout).foregroundStyle(Theme.accent)
+            }
             Text("Manage your servers over plain SSH. Nothing to install on them.")
                 .font(.callout).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 250)

@@ -1,0 +1,16 @@
+name = "rackoon-licence"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Which Paddle environment this deployment serves, and which price(s) earn a licence.
+# Secrets are NOT stored here: set them with `wrangler secret put` (see docs/licence-setup.md).
+[vars]
+PADDLE_ENV = "sandbox"
+PADDLE_PRICE_IDS = "pri_01m4k470p76n1yj2nk29rkpvpq"
+MAIL_FROM = "Rackoon <licences@example.com>"
+
+# Remembers which transactions already got a key (so a webhook retry doesn't send a second email) and rate-limit counters.
+# Create it with `wrangler kv namespace create SEEN`, then paste the id below.
+[[kv_namespaces]]
+binding = "SEEN"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

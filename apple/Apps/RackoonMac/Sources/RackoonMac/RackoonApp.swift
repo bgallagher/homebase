@@ -48,6 +48,12 @@ struct RackoonApp: App {
             ServerCommands()
         }
 
+        Window("Rackoon Licence", id: LicenceSheetWindow.id) {
+            LicenceWindowContent()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+
         Window("About Rackoon", id: AboutView.windowID) {
             AboutView()
         }
@@ -101,6 +107,7 @@ private func copyToPasteboard(_ text: String) {
 
 struct ViewCommands: Commands {
     private let appearance = AppearanceStore.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
@@ -116,8 +123,30 @@ struct ViewCommands: Commands {
             Toggle("Highlight Terminal Output", isOn: Binding(get: { appearance.highlightOutput }, set: { appearance.setHighlight($0) }))
         }
         CommandGroup(replacing: .help) {
+            if LicenceStore.shared.isSupporter {
+                Text("Thanks for supporting Rackoon")
+            } else if let url = Supporter.url {
+                Link("Feed the Rackoon…", destination: url)
+            }
+            Button("Enter Licence…") { openWindow(id: LicenceSheetWindow.id) }
+            Divider()
             Link("Rackoon on GitHub", destination: URL(string: "https://github.com/bgallagher/rackoon")!)
         }
+    }
+}
+
+enum LicenceSheetWindow { static let id = "licence" }
+
+/// The licence form in its own small window (Help > Enter Licence…), so it works from any screen.
+struct LicenceWindowContent: View {
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        LicenceSheet { dismissWindow(id: LicenceSheetWindow.id) }
+            .background(Theme.background)
+            .foregroundStyle(Theme.textPrimary)
+            .tint(Theme.accent)
+            .preferredColorScheme(AppearanceStore.shared.fixedColorScheme)
     }
 }
 

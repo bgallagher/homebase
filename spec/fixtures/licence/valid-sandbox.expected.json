@@ -1,0 +1,11 @@
+{
+  "valid": true,
+  "payload": {
+    "v": 1,
+    "tier": "supporter",
+    "env": "sandbox",
+    "email": "sam@example.com",
+    "txn": "txn_01testfixture0000000000001",
+    "issued": "2026-10-10T14:42:00.000Z"
+  }
+}

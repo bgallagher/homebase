@@ -1,0 +1,6 @@
+{
+  "note": "TEST key pair for fixtures only. Never used to sign a real licence; the private half is public on purpose.",
+  "publicKey": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+  "privateKey": "MC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH",
+  "otherPublicKey": "/RckOFqgx1tk+3jNYC+h2ZH96/drE8WO1wLqyDXp9hg="
+}

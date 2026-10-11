@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+// Licence key tool (Node 22.18+; imports the same licence.ts the Worker uses).
+//   licence-keygen generate --out <file>            new Ed25519 pair; private key to <file> (mode 600, outside the repo),
+//                                                  public key printed for the app
+//   licence-keygen mint --key <file> --env sandbox|live --email <e> [--txn <id>]    print a licence key
+//   licence-keygen verify --public <b64> <key>     check a key against a public key
+//   licence-keygen fixtures                         regenerate spec/fixtures/licence/ (TEST keys only)
+import { generateKeyPairSync, createPublicKey, createPrivateKey } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { dirname, resolve, relative, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
+import { signLicence, signWithKey, verifyLicence, payloadBytes, b64urlEncode, b64urlDecode, KEY_PREFIX } from "../licence-service/src/licence.ts";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+const command = args.shift();
+
+function option(name) {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+function newPair() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const pkcs8 = privateKey.export({ type: "pkcs8", format: "der" }).toString("base64");
+  const raw = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64");
+  return { privateKey: pkcs8, publicKey: raw };
+}
+
+function insideRepo(path) {
+  const rel = relative(root, resolve(path));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+if (command === "generate") {
+  const out = option("out");
+  if (!out) fail("generate needs --out <file> for the private key");
+  if (insideRepo(out)) fail("refusing to write a private key inside the repository");
+  if (existsSync(out)) fail(`${out} already exists; not overwriting`);
+  const pair = newPair();
+  mkdirSync(dirname(resolve(out)), { recursive: true });
+  writeFileSync(out, pair.privateKey + "\n", { mode: 0o600 });
+  chmodSync(out, 0o600);
+  console.log(`private key written to ${out} (mode 600). Keep it secret; it goes into the Worker as a secret.`);
+  console.log(`public key (for Supporter.swift): ${pair.publicKey}`);
+} else if (command === "mint") {
+  const keyFile = option("key"), env = option("env"), email = option("email");
+  if (!keyFile || !email || (env !== "sandbox" && env !== "live")) fail("mint needs --key <file> --env sandbox|live --email <email>");
+  const privateKey = readFileSync(keyFile, "utf8").trim();
+  console.log(await signLicence({ v: 1, tier: "supporter", env, email, txn: option("txn") ?? `txn_manual_${Date.now()}`, issued: new Date().toISOString() }, privateKey));
+} else if (command === "verify") {
+  const publicKey = option("public");
+  const text = args.filter((a, i) => a !== "--public" && args[i - 1] !== "--public").join(" ");
+  if (!publicKey || !text) fail("verify needs --public <b64> <key>");
+  const result = await verifyLicence(text, { sandbox: publicKey, live: publicKey });
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(result.ok ? 0 : 1);
+} else if (command === "fixtures") {
+  await writeFixtures();
+} else {
+  fail("usage: licence-keygen generate|mint|verify|fixtures (see the comment at the top of this file)");
+}
+
+function fail(message) {
+  console.error(message);
+  process.exit(2);
+}
+
+async function importPrivate(b64) {
+  return crypto.subtle.importKey("pkcs8", Uint8Array.from(Buffer.from(b64, "base64")), { name: "Ed25519" }, false, ["sign"]);
+}
+
+async function writeFixtures() {
+  const dir = resolve(root, "spec/fixtures/licence");
+  mkdirSync(dir, { recursive: true });
+  // Fixed seeds, so the fixtures are reproducible. These are TEST keys: the private halves are published on purpose.
+  const test = pairFromSeed(Buffer.alloc(32, 7));
+  const other = pairFromSeed(Buffer.alloc(32, 9));
+  writeFileSync(resolve(dir, "test-keypair.json"), JSON.stringify({
+    note: "TEST key pair for fixtures only. Never used to sign a real licence; the private half is public on purpose.",
+    publicKey: test.publicKey, privateKey: test.privateKey,
+    otherPublicKey: other.publicKey,
+  }, null, 2) + "\n");
+  const testKey = await importPrivate(test.privateKey);
+  const otherKey = await importPrivate(other.privateKey);
+  const base = { v: 1, tier: "supporter", email: "sam@example.com", txn: "txn_01testfixture0000000000001", issued: "2026-10-10T14:42:00.000Z" };
+  const cases = {};
+  const valid = (env) => ({ ...base, env });
+  cases["valid-sandbox"] = await signWithKey(payloadBytes(valid("sandbox")), testKey);
+  cases["valid-live"] = await signWithKey(payloadBytes(valid("live")), testKey);
+  const wrapped = cases["valid-live"];
+  cases["valid-wrapped"] = wrapped.slice(0, 40) + "\n  " + wrapped.slice(40, 100) + " \r\n" + wrapped.slice(100) + "\n";
+  // payload edited after signing (email changed), signature kept
+  const [p, s] = cases["valid-live"].slice(KEY_PREFIX.length).split(".");
+  const edited = JSON.stringify({ ...valid("live"), email: "evil@example.com" });
+  cases["tampered-payload"] = `${KEY_PREFIX}${b64urlEncode(new TextEncoder().encode(edited))}.${s}`;
+  const sig = Buffer.from(b64urlDecode(s)); sig[0] ^= 0xff;
+  cases["bad-signature"] = `${KEY_PREFIX}${p}.${b64urlEncode(new Uint8Array(sig))}`;
+  cases["wrong-key"] = await signWithKey(payloadBytes(valid("live")), otherKey);
+  cases["malformed-no-prefix"] = cases["valid-live"].slice(KEY_PREFIX.length);
+  cases["malformed-parts"] = `${KEY_PREFIX}${p}`;
+  cases["malformed-base64"] = `${KEY_PREFIX}!!!not-base64!!!.${s}`;
+  cases["unsupported-version"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ ...valid("live"), v: 2 })), testKey);
+  cases["invalid-payload-not-json"] = await signWithKey(new TextEncoder().encode("this is not json"), testKey);
+  cases["invalid-payload-missing-field"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ v: 1, tier: "supporter", env: "live", email: "sam@example.com" })), testKey);
+  cases["invalid-payload-unknown-tier"] = await signWithKey(new TextEncoder().encode(JSON.stringify({ ...valid("live"), tier: "gold" })), testKey);
+  for (const [name, text] of Object.entries(cases)) {
+    writeFileSync(resolve(dir, `${name}.key.txt`), text.endsWith("\n") ? text : text + "\n");
+    const result = await verifyLicence(text, { sandbox: test.publicKey, live: test.publicKey });
+    writeFileSync(resolve(dir, `${name}.expected.json`), JSON.stringify(result.ok ? { valid: true, payload: result.payload } : { valid: false, error: result.error }, null, 2) + "\n");
+  }
+  console.log(`wrote ${Object.keys(cases).length} cases to ${relative(root, dir)}`);
+}
+
+function pairFromSeed(seed) {
+  // PKCS#8 wrapper for a 32-byte Ed25519 seed
+  const der = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]);
+  const priv = createPrivateKey({ key: der, format: "der", type: "pkcs8" });
+  const pub = createPublicKey(priv);
+  return { privateKey: der.toString("base64"), publicKey: pub.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") };
+}
+
