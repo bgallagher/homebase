@@ -223,6 +223,42 @@ struct DockerScreen: View {
 
 // MARK: - Overview card
 
+extension DockerStack {
+    /// The stack's bookmarks (Homepage labels), first container first.
+    var bookmarkLinks: [Bookmark] { containers.compactMap(\.bookmark) }
+}
+
+/// A bookmark's address as a short label: the host, plus a path when there is one ("app.example.com/tv").
+private func shortAddress(_ href: String) -> String {
+    guard let url = URL(string: href), let host = url.host else { return href }
+    let path = url.path == "/" ? "" : url.path
+    return host + (url.port.map { ":\($0)" } ?? "") + path
+}
+
+/// The stack's site as a small link that opens in the default browser: on the card (below the containers) and on the
+/// stack page. With more than one bookmark it shows the first and says how many more there are.
+private struct StackLink: View {
+    let links: [Bookmark]
+    var font: CGFloat = 12
+
+    var body: some View {
+        if let first = links.first, Bookmark.isValidURL(first.href), let url = URL(string: first.href) {
+            Button { NSWorkspace.shared.open(url) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.up.forward.square").font(.system(size: font - 1))
+                    Text(shortAddress(first.href)).font(.system(size: font)).lineLimit(1).truncationMode(.middle)
+                    if links.count > 1 { Text("+\(links.count - 1)").font(.system(size: font - 1)).foregroundStyle(Theme.textMuted) }
+                }
+                .foregroundStyle(Theme.accent)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pointer)
+            .help(links.count > 1 ? links.map(\.href).joined(separator: "\n") : "Open \(first.href)")
+            .accessibilityLabel("Open \(shortAddress(first.href))")
+        }
+    }
+}
+
 /// One stack as a card: containers with their CPU and memory, and a memory bar along the bottom.
 private struct StackTile: View {
     let stack: DockerStack
@@ -247,6 +283,11 @@ private struct StackTile: View {
                 if let faviconHref {
                     FaviconView(href: faviconHref, size: 20, hideWhenMissing: true).padding(.top, 16).padding(.leading, 18)
                 }
+            }
+            .overlay(alignment: .bottomLeading) {
+                // Above the memory bar: its 16 pt bottom padding + the bar block (~26 pt) + the 14 pt gap.
+                StackLink(links: stack.bookmarkLinks, font: 12)
+                    .padding(.leading, 20).padding(.trailing, 20).padding(.bottom, 56)
             }
             .overlay(alignment: .topTrailing) {
                 if let bookmark {
@@ -292,6 +333,8 @@ private struct StackTile: View {
                     }
                 }
                 Spacer(minLength: 0)
+                // Room for the site link, which is drawn over it as a sibling of this button (see `body`).
+                if !stack.bookmarkLinks.isEmpty { Color.clear.frame(height: 16) }
                 VStack(spacing: 0) {
                     Divider().overlay(Theme.border).padding(.bottom, 12)
                     HStack(spacing: 10) {
@@ -431,10 +474,14 @@ private struct StackDetail: View {
             }
             .font(.system(size: 13))
             HStack(alignment: .center, spacing: 10) {
+                if let icon = stack.bookmarkLinks.map(\.href).first(where: { FaviconStore.shared.image(for: $0) != nil }) {
+                    FaviconView(href: icon, size: 30, hideWhenMissing: true)
+                }
                 Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
                 // A pill, centred on the lowercase body of the title (its x-height), which is what the eye reads.
                 // Centring on the full text box puts it about 2 pt too high, because ascenders pull that centre up.
                 Badge(text: summary.text, color: summary.color).offset(y: 2)
+                StackLink(links: stack.bookmarkLinks, font: 13).padding(.leading, 6).offset(y: 2)
                 Spacer()
                 if !stack.isStandalone { actions }
             }
