@@ -111,6 +111,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         c.terminals.open(server.id, server.name, endpointOf(server), theme, _highlight.value)
     }
 
+    private val _fontSize = MutableStateFlow(c.prefs.terminalFontSize)
+    val terminalFontSize: StateFlow<Int> = _fontSize.asStateFlow()
+
+    fun changeFontSize(delta: Int) {
+        c.prefs.terminalFontSize = (_fontSize.value + delta).coerceIn(7, 20)
+        _fontSize.value = c.prefs.terminalFontSize
+    }
+
     fun setHighlight(on: Boolean) {
         _highlight.value = on; c.prefs.highlightOutput = on; c.terminals.setHighlight(on)
     }

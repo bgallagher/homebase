@@ -68,6 +68,7 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
     val theme = remember(systemDark) { ThemeCatalog.resolve(ThemeCatalog.AUTOMATIC_ID, systemDark, ThemeCatalog.bundled())!! }
     val all by vm.terminals.tabs.collectAsStateWithLifecycle()
     val selectedIds by vm.terminals.selected.collectAsStateWithLifecycle()
+    val fontSize by vm.terminalFontSize.collectAsStateWithLifecycle()
     val tabs = all[server.id].orEmpty()
     val current = tabs.firstOrNull { it.id == selectedIds[server.id] } ?: tabs.lastOrNull()
 
@@ -85,14 +86,15 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
     LaunchedEffect(theme) { vm.terminals.applyTheme(theme) }
 
     Column(Modifier.fillMaxSize()) {
-        TabStrip(tabs, current, onSelect = { vm.terminals.select(server.id, it) }, onClose = { vm.terminals.close(server.id, it) }, onNew = { vm.openTerminal(server, theme) })
+        TabStrip(tabs, current, onSelect = { vm.terminals.select(server.id, it) }, onClose = { vm.terminals.close(server.id, it) }, onNew = { vm.openTerminal(server, theme) }, onFont = vm::changeFontSize)
         if (current == null) {
             Box(Modifier.weight(1f))
-        } else key(current.id) {
+        } else key(current.id, fontSize) {
             val state by current.state.collectAsStateWithLifecycle()
             Box(Modifier.weight(1f).fillMaxWidth().background(Color(theme.backgroundRGB.r, theme.backgroundRGB.g, theme.backgroundRGB.b))) {
                 Terminal(
                     current.emulator, Modifier.fillMaxSize(), keyboardEnabled = state is TabState.Live,
+                    initialFontSize = fontSize.sp,
                     backgroundColor = Color(theme.backgroundRGB.r, theme.backgroundRGB.g, theme.backgroundRGB.b),
                     foregroundColor = Color(theme.foregroundRGB.r, theme.foregroundRGB.g, theme.foregroundRGB.b),
                 )
@@ -104,10 +106,11 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
 }
 
 @Composable
-private fun TabStrip(tabs: List<TerminalTab>, current: TerminalTab?, onSelect: (TerminalTab) -> Unit, onClose: (TerminalTab) -> Unit, onNew: () -> Unit) {
+private fun TabStrip(tabs: List<TerminalTab>, current: TerminalTab?, onSelect: (TerminalTab) -> Unit, onClose: (TerminalTab) -> Unit, onNew: () -> Unit, onFont: (Int) -> Unit) {
     val c = Rackoon.colors
+    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
     Row(
-        Modifier.fillMaxWidth().height(44.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         tabs.forEach { tab ->
@@ -130,6 +133,11 @@ private fun TabStrip(tabs: List<TerminalTab>, current: TerminalTab?, onSelect: (
             Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, c.border, RoundedCornerShape(10.dp)).clickable(onClick = onNew),
             contentAlignment = Alignment.Center,
         ) { Text("+", fontSize = 18.sp, color = c.textSecondary) }
+    }
+    Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { onFont(-1) }, contentAlignment = Alignment.Center) { Text("A−", fontSize = 12.sp, color = c.textSecondary) }
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { onFont(1) }, contentAlignment = Alignment.Center) { Text("A+", fontSize = 15.sp, color = c.textSecondary) }
+    }
     }
 }
 

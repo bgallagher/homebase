@@ -43,6 +43,11 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("highlight_output", true)
         set(value) = prefs.edit().putBoolean("highlight_output", value).apply()
 
+    /** Terminal font size in sp. A phone is about 64 columns wide in portrait at 11 sp, so the default is smaller (9 sp gives about 88). */
+    var terminalFontSize: Int
+        get() = prefs.getInt("terminal_font_size", 9)
+        set(value) = prefs.edit().putInt("terminal_font_size", value.coerceIn(7, 20)).apply()
+
     var firstRunDone: Boolean
         get() = prefs.getBoolean("first_run_done", false)
         set(value) = prefs.edit().putBoolean("first_run_done", value).apply()
