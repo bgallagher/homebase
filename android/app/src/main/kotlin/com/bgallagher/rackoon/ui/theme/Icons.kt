@@ -29,6 +29,7 @@ object RackoonIcons {
     val BookmarkFilled: ImageVector = ImageVector.Builder("bookmarkFilled", 24.dp, 24.dp, 16f, 16f).apply {
         addPath(PathParser().parsePathString("M4 2h8v12l-4-3-4 3z").toNodes(), fill = SolidColor(Color.Black), stroke = SolidColor(Color.Black), strokeLineWidth = 1.4f, strokeLineJoin = StrokeJoin.Round)
     }.build()
+    val Play = stroke("play", 1.4f, "M5 3l8 5-8 5z")
     val Search = stroke("search", 1.6f, "M7,2.5 a4.5,4.5 0 1,0 0,9 a4.5,4.5 0 1,0 0,-9 z", "M10.5,10.5 L14,14")
     val External = stroke("external", 1.6f, "M9 3h4v4M13 3L7 9M12 10v3H3V4h3")
     val Terminal = stroke("terminal", 1.4f, rr(2f, 3f, 12f, 10f, 2f), "M5 7l2 1.5L5 10M8.5 10.5H11")

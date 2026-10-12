@@ -34,10 +34,10 @@ class TerminalManager(private val context: Context, private val connect: (SshEnd
     /** How many sessions are open across all servers (the notification text). */
     val openCount: StateFlow<Int> = _tabs.map { m -> m.values.sumOf { it.size } }.stateIn(scope, SharingStarted.Eagerly, 0)
 
-    fun open(serverId: String, serverName: String, endpoint: SshEndpoint, theme: TerminalTheme, highlight: Boolean): TerminalTab {
+    fun open(serverId: String, serverName: String, endpoint: SshEndpoint, theme: TerminalTheme, highlight: Boolean, command: String? = null, title: String? = null): TerminalTab {
         val transport = synchronized(transports) { transports.getOrPut(serverId) { connect(endpoint) } }
         val number = (_tabs.value[serverId]?.size ?: 0) + 1
-        val tab = TerminalTab(nextId++, if (number == 1) serverName else "$serverName $number", transport, scope, theme, highlight)
+        val tab = TerminalTab(nextId++, title ?: if (number == 1) serverName else "$serverName $number", transport, scope, theme, highlight, command)
         val wasEmpty = _tabs.value.values.all { it.isEmpty() }
         _tabs.update { it + (serverId to (it[serverId].orEmpty() + tab)) }
         _selected.update { it + (serverId to tab.id) }

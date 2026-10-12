@@ -23,5 +23,8 @@ class RackoonApp : Application() {
         // The platform's cut-down BouncyCastle must be replaced before the first SSH connection.
         SshProviders.install()
         container = AppContainer(this)
+        // Debug builds: a file named demo.flag in the app's files folder starts every launch in demo mode (see README). It is
+        // deterministic where the intent extra is not, because the process may already have been restarted before the extra arrives.
+        if (java.io.File(filesDir, "demo.flag").exists()) enterDemo()
     }
 }

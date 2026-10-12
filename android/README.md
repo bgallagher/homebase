@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) and the container and stack actions (start, stop, restart, rebuild, recreate, pull, update, Shell, with a confirmation and live Output) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
 
 ```
 android/
@@ -30,6 +30,8 @@ android/
 cd android
 ./gradlew :core:test :ssh:test            # 186 + 14 tests; needs JDK 21
 ./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
+./gradlew :probe:run --args="hetzner compose-test"    # REAL pull/update/rebuild/recreate on a throwaway stack it makes and removes under /tmp
+./gradlew :probe:run --args="hetzner exec-shell-check"   # a command and an interactive program on a pty (what Shell-in-container uses)
 ./gradlew :probe:run --args="hetzner bookmark-test"   # REAL writes, but only on a throwaway stack it makes and removes under /tmp
 ```
 
@@ -49,5 +51,5 @@ CI runs the same (`android-core` job). Android Studio opens `android/` directly 
 
 ## Demo mode and the sandbox (for trying things without touching a real server)
 
-- **Demo mode (debug builds only):** `adb shell am force-stop com.bgallagher.rackoon && adb shell am start -n com.bgallagher.rackoon/.MainActivity --ez demo true`. The app runs against three made-up servers (homelab with 9 stacks and an unhealthy container, garage-nuc, and old-nas which is always unreachable), with its own empty storage; nothing is read from or written to your real servers, keys or settings. Fake connections answer the same commands the app really sends, and actions change the fake world (a restart, an update that picks up edited labels, a save through the compose editor). A release build has no demo code at all. An emulator works well for this: `emulator -avd Medium_Phone_API_37.0 -no-window`.
+- **Demo mode (debug builds only):** `adb shell run-as com.bgallagher.rackoon touch files/demo.flag`, then restart the app (`am force-stop`, then start it); `rm files/demo.flag` goes back to normal. (A cold start with `am start -S -n com.bgallagher.rackoon/.MainActivity --ez demo true` works too, when no other instance is running.) The app runs against three made-up servers (homelab with 9 stacks and an unhealthy container, garage-nuc, and old-nas which is always unreachable), with its own empty storage; nothing is read from or written to your real servers, keys or settings. Fake connections answer the same commands the app really sends, and actions change the fake world (a restart, an update that picks up edited labels, a save through the compose editor). A release build has no demo code at all. An emulator works well for this: `emulator -avd Medium_Phone_API_37.0 -no-window`.
 - **Sandbox stack on a real server:** `./gradlew :probe:run --args="hetzner sandbox-up"` creates ONE harmless stack (`/tmp/rackoon-sandbox`, project `rackoonsandbox`: a hello page on 127.0.0.1:18080 and redis) so the phone's Docker actions can be tried on it; `sandbox-down` removes exactly that stack and folder. Your own stacks are never touched.

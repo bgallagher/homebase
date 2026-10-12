@@ -49,6 +49,8 @@ class TerminalTab(
     private val scope: CoroutineScope,
     theme: TerminalTheme,
     highlight: Boolean,
+    /** Run this on the pty instead of a login shell (for example `docker exec -it <id> sh`). */
+    private val command: String? = null,
 ) {
     private val outbound = Channel<ByteArray>(Channel.UNLIMITED)
     private val sized = CompletableDeferred<Unit>()
@@ -143,7 +145,7 @@ class TerminalTab(
             var connectedAt = 0L
             val end: SessionEnd = try {
                 val dim = emulator.dimensions
-                val s = transport.openShell(dim.columns, dim.rows)
+                val s = transport.openShell(dim.columns, dim.rows, command)
                 shell = s
                 connectedAt = System.currentTimeMillis()
                 _state.value = TabState.Live

@@ -1,7 +1,11 @@
 package com.bgallagher.rackoon.probe
 
 import com.bgallagher.rackoon.core.ActionStreamEvent
+import com.bgallagher.rackoon.core.ActionPolicy
 import com.bgallagher.rackoon.core.Bookmark
+import com.bgallagher.rackoon.core.ComposeAction
+import com.bgallagher.rackoon.core.DockerSession
+import com.bgallagher.rackoon.core.PolicyError
 import com.bgallagher.rackoon.core.BookmarkEditor
 import com.bgallagher.rackoon.core.BookmarkPlan
 import com.bgallagher.rackoon.core.DockerContainer
@@ -37,6 +41,9 @@ import kotlin.system.exitProcess
  *   shell-check    a shell opens at the requested size, follows a resize and ends with the shell's own status
  *   bookmark-test  REAL label edits and saves (server-side compose check, .rackoon.bak, the changed-on-server guard, removal) on a
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
+ *   compose-test   REAL pull/update/rebuild/recreate/streamed runs/read-only checks on a throwaway stack under /tmp that it creates and
+ *                  removes (project rackoon-probe-test). Never touches your own stacks.
+ *   exec-shell-check  a command on a pty and an interactive shell both work through the real SSH library (what Shell-in-container uses)
  *   sandbox-up     REAL: creates ONE harmless stack, /tmp/rackoon-sandbox (project rackoonsandbox: a hello-world web page on
  *                  127.0.0.1:18080 and redis), and starts it, so the phone's Docker actions can be tried on it
  *   sandbox-down   REAL: stops and removes exactly that stack and its folder. Neither touches anything else.
@@ -44,7 +51,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|bookmark-test|sandbox-up|sandbox-down> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -216,6 +223,129 @@ fun main(args: Array<String>) {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
                     }
+                }
+
+                "exec-shell-check" -> {
+                    // A command on a pty (like `docker exec -it`): it sees the requested size, and its own exit status comes back.
+                    val one = transport.openShell(90, 20, "stty size; echo DONE\$((3+4))")
+                    val seenOne = StringBuilder()
+                    val readerOne = async { one.output.collect { seenOne.append(String(it, Charsets.UTF_8)) } }
+                    val endOne = withTimeout(10_000) { one.awaitEnd() }
+                    readerOne.await()
+                    expect("the command's output shows the pty size 20 x 90 (saw ${seenOne.toString().trim().replace("\r", "").replace("\n", " | ")})", seenOne.contains("20 90"))
+                    expect("the command ran (DONE7)", seenOne.contains("DONE7"))
+                    expect("ends with the command's own status 0 (got $endOne)", endOne == SessionEnd.RemoteExit(0))
+
+                    // An interactive program on a pty: input reaches it, output comes back, and its exit status is reported.
+                    val two = transport.openShell(80, 24, "sh")
+                    val seenTwo = StringBuilder()
+                    val readerTwo = async { two.output.collect { seenTwo.append(String(it, Charsets.UTF_8)) } }
+                    delay(800)
+                    two.write("echo HI\$((2+3)); exit 3\n".toByteArray())
+                    val endTwo = withTimeout(10_000) { two.awaitEnd() }
+                    readerTwo.await()
+                    expect("typed input reaches the program (HI5)", seenTwo.contains("HI5"))
+                    expect("its exit status 3 comes back (got $endTwo)", endTwo == SessionEnd.RemoteExit(3))
+                }
+
+                "compose-test" -> {
+                    val project = "rackoon-probe-test"
+                    val dir = "/tmp/rackoon-probe-stack"
+                    val file = "$dir/compose.yaml"
+                    suspend fun sh(script: String, timeout: Long = 300_000) = try { transport.run(script, timeout) } catch (e: Exception) { com.bgallagher.rackoon.core.CommandResult("", e.message ?: "ssh failed", 255) }
+                    suspend fun teardown() { sh("cd $dir 2>/dev/null && docker compose -p $project -f $file down -v --remove-orphans --rmi local 2>&1; cd /; rm -rf $dir") }
+                    teardown()
+                    val setup = sh(
+                        "mkdir -p $dir/b && cd $dir && printf 'FROM busybox:1.36\\nRUN echo built > /built.txt\\nCMD sleep 3600\\n' > b/Dockerfile && " +
+                            "printf 'services:\\n  web:\\n    image: busybox:1.36\\n    command: sleep 3600\\n  built:\\n    build: ./b\\n' > compose.yaml && " +
+                            "docker compose -p $project -f $file up -d --build 2>&1", 600_000,
+                    )
+                    expect("setup stack up (exit ${setup.exitCode}) ${if (setup.exitCode == 0) "" else setup.stdout.takeLast(300)}", setup.exitCode == 0)
+                    if (setup.exitCode != 0) { teardown(); return@runBlocking }
+
+                    val policy = ActionPolicy()
+                    val session = DockerSession(transport, policy = policy)
+                    suspend fun theStack(): com.bgallagher.rackoon.core.DockerStack? { session.refresh(); return session.state.value.snapshot?.stacks?.firstOrNull { it.name == project } }
+                    fun ids(st: com.bgallagher.rackoon.core.DockerStack?) = st?.containers?.map { it.id }?.toSet() ?: emptySet()
+
+                    var stack = theStack()
+                    expect("probe stack is listed with 2 containers", stack?.containers?.size == 2)
+                    expect("config file label parsed: ${stack?.configFiles}", stack?.configFiles == listOf(file))
+                    var current = stack ?: run { teardown(); return@runBlocking }
+                    val original = ids(current)
+
+                    suspend fun run(action: ComposeAction): String? {
+                        val t0 = System.nanoTime()
+                        session.perform(action, current, runCatching { session.confirm(action, current) }.getOrNull())
+                        val st = session.state.value
+                        println("   ${action.raw} took ${"%.1f".format((System.nanoTime() - t0) / 1e9)}s")
+                        expect("${action.raw}: busy cleared afterwards", st.busyStacks.isEmpty() && st.busy.isEmpty())
+                        return st.actionError
+                    }
+
+                    // Live output: a real compose run over a pty, with the exit code coming back in-band.
+                    class Sink { val text = StringBuilder(); var code: Int? = null; var finished = false
+                        fun add(e: ActionStreamEvent) { when (e) { is ActionStreamEvent.Output -> text.append(e.text); is ActionStreamEvent.Finished -> { finished = true; code = e.exitCode } } } }
+                    for (action in listOf(ComposeAction.RESTART, ComposeAction.UP)) {
+                        val sink = Sink()
+                        val t0 = System.nanoTime()
+                        session.performStreaming(action, current, null, runCatching { session.confirm(action, current) }.getOrNull(), 100, 24) { sink.add(it) }
+                        val out = sink.text.toString()
+                        println("   streamed ${action.raw} in ${"%.1f".format((System.nanoTime() - t0) / 1e9)}s, ${out.length} chars")
+                        expect("streamed ${action.raw} finishes with exit 0: ${sink.code}", sink.finished && sink.code == 0)
+                        expect("streamed ${action.raw} shows compose's own progress text", out.contains("Container") || out.contains("web"))
+                        expect("the exit marker is never shown", !out.contains("##rackoon-exit"))
+                        expect("output arrives with its terminal escapes, not stripped", out.contains("\u001B["))
+                        expect("no multi-byte character was cut in two (no U+FFFD)", !out.contains("\uFFFD"))
+                        val after = session.state.value
+                        expect("${action.raw}: busy cleared, no error", after.busyStacks.isEmpty() && after.actionError == null)
+                        theStack()?.let { current = it }
+                    }
+                    // One container's own restart streams too.
+                    current.containers.firstOrNull()?.let { container ->
+                        val sink = Sink()
+                        session.performStreaming(com.bgallagher.rackoon.core.DockerAction.RESTART, container.id, runCatching { session.confirm(com.bgallagher.rackoon.core.DockerAction.RESTART, container.id) }.getOrNull(), 100, 24) { sink.add(it) }
+                        expect("streamed container restart finishes with exit 0: ${sink.code}", sink.finished && sink.code == 0)
+                        expect("its output names the container", sink.text.contains(container.id.take(12)) || sink.text.contains(container.name))
+                        expect("no marker leaks into a container run either", !sink.text.contains("##rackoon-exit"))
+                        theStack()?.let { current = it }
+                    }
+                    // A failing command reports its real exit code.
+                    run {
+                        val sink = Sink()
+                        val broken = current.copy(configFile = "$dir/does-not-exist.yaml", configFiles = listOf("$dir/does-not-exist.yaml"))
+                        session.performStreaming(ComposeAction.UP, broken, null, runCatching { session.confirm(ComposeAction.UP, broken) }.getOrNull(), 100, 24) { sink.add(it) }
+                        expect("a failing run reports a non-zero exit code: ${sink.code}", (sink.code ?: 0) != 0)
+                        expect("and an error that points at the output", (session.state.value.actionError ?: "").contains("failed (exit"))
+                    }
+
+                    expect("pull succeeds", run(ComposeAction.PULL) == null)
+                    stack = theStack(); current = stack ?: current
+                    expect("pull leaves containers untouched", ids(stack) == original)
+
+                    expect("update (up -d) succeeds", run(ComposeAction.UP) == null)
+                    stack = theStack(); current = stack ?: current
+                    expect("update with nothing changed keeps the same containers", ids(stack) == original)
+
+                    expect("rebuild succeeds", run(ComposeAction.REBUILD) == null)
+                    stack = theStack(); current = stack ?: current
+                    expect("rebuild leaves 2 running containers", stack?.containers?.size == 2 && stack.containers.all { it.isRunning })
+
+                    val beforeRecreate = ids(stack)
+                    expect("recreate succeeds", run(ComposeAction.RECREATE) == null)
+                    stack = theStack(); current = stack ?: current
+                    expect("recreate gives every container a new id", ids(stack).intersect(beforeRecreate).isEmpty() && ids(stack).size == 2)
+                    expect("recreated containers are running", stack?.containers?.all { it.isRunning } == true)
+
+                    policy.isReadOnly = true
+                    val blocked = run(ComposeAction.RECREATE)
+                    expect("read-only mode refuses a real stack action: $blocked", blocked == PolicyError.ReadOnly.message)
+                    policy.isReadOnly = false
+                    expect("nothing changed while read-only", ids(theStack()) == ids(stack))
+
+                    teardown()
+                    val leftover = sh("docker ps -a --filter label=com.docker.compose.project=$project -q | wc -l; ls $dir 2>&1 | head -1")
+                    expect("teardown removed the containers and directory (${leftover.stdout.replace("\n", " | ")})", leftover.stdout.startsWith("0"))
                 }
 
                 "sandbox-up", "sandbox-down" -> {

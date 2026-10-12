@@ -79,7 +79,7 @@ private fun Block(label: String, text: AnnotatedString) {
         SectionLabel(label)
         Text(
             text, fontFamily = MonoFamily, fontSize = 13.sp, lineHeight = 20.sp, color = c.textPrimary,
-            modifier = Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF101216))
+            modifier = Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.background)
                 .border(1.dp, c.border, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }

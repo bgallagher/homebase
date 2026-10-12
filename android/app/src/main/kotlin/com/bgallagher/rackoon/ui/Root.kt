@@ -127,7 +127,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                     Tab.Docker -> {
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
                         LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollDockerWhileVisible() } }
-                        DockerScreen(vm, server, wide)
+                        DockerScreen(vm, server, wide, readOnly)
                     }
                     Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
                     Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name, onBookmarks = { vm.showBookmarks(true) })
