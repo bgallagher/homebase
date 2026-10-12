@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -89,9 +93,12 @@ private fun Welcome(onAdd: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: Tab, readOnly: Boolean) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    // The keyboard lifts the whole screen once; the bottom bar steps aside while it is open on the terminal (it would only waste space).
+    val keyboardOpen = WindowInsets.isImeVisible
+    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
         Box(Modifier.weight(1f)) {
             when (tab) {
@@ -105,7 +112,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                 Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight)
             }
         }
-        BottomBar(tab, vm::showTab)
+        if (!(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
     }
 }
 

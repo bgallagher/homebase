@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -85,7 +84,7 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
     }
     LaunchedEffect(theme) { vm.terminals.applyTheme(theme) }
 
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize()) {
         TabStrip(tabs, current, onSelect = { vm.terminals.select(server.id, it) }, onClose = { vm.terminals.close(server.id, it) }, onNew = { vm.openTerminal(server, theme) })
         if (current == null) {
             Box(Modifier.weight(1f))
