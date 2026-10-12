@@ -413,6 +413,34 @@ fun main(args: Array<String>) {
                     }
                 }
 
+                "updates-check" -> {
+                    // Read-only: reads apt's cache, then streams a SIMULATION (`apt-get -s upgrade`) through the real wrapper.
+                    // Install, `apt-get update` and reboot are never run against a real server.
+                    val session = com.bgallagher.rackoon.core.UpdatesSession(transport)
+                    val st = session.refresh()
+                    expect("the update list was read (error: ${st.error})", st.snapshot != null && st.error == null)
+                    st.snapshot?.let { snap ->
+                        println("   ${com.bgallagher.rackoon.core.UpdatesPresentation.subtitle(snap)}; held ${snap.held.size}; reboot required ${snap.rebootRequired}")
+                        val overview = transport.run(com.bgallagher.rackoon.core.SpecCommands.script("overview"), 30_000).stdout
+                        val counted = Regex("##updates\\n(\\d+)").find(overview)?.groupValues?.get(1)?.toInt()
+                        expect("the Overview's update count (${counted}) matches the list (${snap.packages.size})", counted == snap.packages.size)
+                        expect("the security count matches the Overview's", Regex("##security\\n(\\d+)").find(overview)?.groupValues?.get(1)?.toInt() == snap.securityCount)
+                    }
+                    val sim = StreamRunner.run(transport, "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -s upgrade", 100, 24) {}
+                    expect("the simulation ran and its exit marker came back (exit ${sim.exitCode})", sim.exitCode == 0)
+                    expect("apt printed its usual summary", sim.text.contains("upgraded,"))
+                    // Cancelling a streamed apt-like run leaves nothing behind on the server.
+                    val job = launch { StreamRunner.run(transport, "sleep 61", 80, 24) {} }
+                    delay(3_000)
+                    val during = transport.run("pgrep -fx 'sleep 61' | wc -l", 10_000).stdout.trim()
+                    job.cancel(); job.join()
+                    delay(2_000)
+                    val left = transport.run("pgrep -fx 'sleep 61' | wc -l", 10_000).stdout.trim()
+                    expect("the streamed command was running (found $during)", during != "0")
+                    expect("no process left on the server after cancel (found $left)", left == "0")
+                    if (left != "0") transport.run("pkill -fx 'sleep 61'", 10_000)
+                }
+
                 "logs-check" -> {
                     val snapshot = DockerParser.parse(transport.run(com.bgallagher.rackoon.core.DockerSession.command, 30_000).stdout)
                     val chosen = snapshot.containers.filter { it.isRunning }.take(2)

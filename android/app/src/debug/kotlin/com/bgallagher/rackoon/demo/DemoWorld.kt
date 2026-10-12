@@ -54,12 +54,58 @@ class DemoWorld(
     val diskUsed: Long,
     val ip: String,
     val tailscaleIp: String,
-    val updates: Int,
-    val security: Int,
-    val rebootRequired: Boolean,
+    seedUpdates: Int,
+    seedSecurity: Int,
+    seedReboot: Boolean,
     val containers: MutableList<DemoContainer>,
 ) {
     @Volatile var unreachable = false
+
+    // MARK: apt (Updates screen)
+
+    class Pkg(val name: String, val suite: String, val newVersion: String, val oldVersion: String, val security: Boolean)
+
+    val pending: MutableList<Pkg> = run {
+        val sec = listOf(
+            Pkg("openssl", "noble-updates,noble-security", "3.0.13-0ubuntu3.5", "3.0.13-0ubuntu3.4", true),
+            Pkg("libssl3t64", "noble-updates,noble-security", "3.0.13-0ubuntu3.5", "3.0.13-0ubuntu3.4", true),
+            Pkg("ubuntu-pro-client", "noble-infra-security", "33.3~24.04", "33.2~24.04", true),
+        )
+        val other = listOf(
+            Pkg("libc6", "noble-updates", "2.39-0ubuntu8.4", "2.39-0ubuntu8.3", false),
+            Pkg("linux-image-generic", "noble-updates", "6.8.0-52.53", "6.8.0-51.52", false),
+            Pkg("curl", "noble-updates", "8.5.0-2ubuntu10.6", "8.5.0-2ubuntu10.5", false),
+            Pkg("tzdata", "noble-updates", "2025b-0ubuntu0.24.04", "2024b-0ubuntu0.24.04", false),
+        )
+        (sec.take(seedSecurity) + other.take(maxOf(seedUpdates - seedSecurity, 0))).toMutableList()
+    }
+    val updates: Int get() = pending.size
+    val security: Int get() = pending.count { it.security }
+    val held: List<String> = if (seedUpdates > 0) listOf("docker-ce") else emptyList()
+    @Volatile var refreshedAt: Long = System.currentTimeMillis() / 1000 - 3 * 3600
+    @Volatile var rebootRequired: Boolean = seedReboot
+    @Volatile var bootId: String = "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
+
+    fun updatesOutput(): String = buildString {
+        append("##apt\nok\n##upgradable\nListing...\n")
+        pending.forEach { append("${it.name}/${it.suite} ${it.newVersion} amd64 [upgradable from: ${it.oldVersion}]\n") }
+        append("##held\n${held.joinToString("\n")}${if (held.isEmpty()) "" else "\n"}##refreshed\n$refreshedAt\n##reboot\n${if (rebootRequired) "yes" else "no"}\n")
+    }
+
+    /** What an install does: the chosen packages (or all) leave the list; a new kernel asks for a reboot. */
+    fun applyUpgrade(names: List<String>?) {
+        val done = pending.filter { names == null || it.name in names }
+        if (done.any { it.name.startsWith("linux-image") }) rebootRequired = true
+        pending.removeAll(done.toSet())
+    }
+
+    /** A reboot: the server stops answering for about 15 seconds, then comes back with a new boot id. */
+    fun reboot() {
+        Thread {
+            Thread.sleep(2000); unreachable = true
+            Thread.sleep(13000); bootId = java.util.UUID.randomUUID().toString(); rebootRequired = false; unreachable = false
+        }.also { it.isDaemon = true }.start()
+    }
     private val born = System.currentTimeMillis()
     private val stackRoot = "/opt/stacks"
     val files = LinkedHashMap<String, String>()
@@ -96,7 +142,7 @@ class DemoWorld(
             append("##df\nFilesystem        1-blocks        Used   Available Capacity Mounted on\n")
             append("/dev/sda1      $diskTotal $diskUsed ${diskTotal - diskUsed}      ${diskUsed * 100 / diskTotal}% /\n")
             append("##system\nvendor=Demo\nproduct=Rackoon demo\nmachine_id=0123456789abcdef0123456789abcdef\nkernel=6.8.0-146-generic\n")
-            append("boot_id=1b4e28ba-2fa1-11d2-883f-0016d3cca427\ntime=${System.currentTimeMillis() / 1000} +0000 UTC\nip=$ip\ntailscale_ip=$tailscaleIp\n")
+            append("boot_id=$bootId\ntime=${System.currentTimeMillis() / 1000} +0000 UTC\nip=$ip\ntailscale_ip=$tailscaleIp\n")
             append("##reboot\n${if (rebootRequired) "yes" else "no"}\n##updates\n$updates\n##security\n$security\n##unhealthy\n$unhealthy\n")
         }
     }
@@ -234,7 +280,7 @@ object DemoData {
     fun homelab() = DemoWorld(
         hostname = "homelab", prettyOs = "Ubuntu 24.04.5 LTS", osId = "ubuntu", cores = 4, memTotalKb = 16_300_000,
         diskTotal = 500_000_000_000, diskUsed = 230_000_000_000, ip = "203.0.113.10", tailscaleIp = "100.64.12.7",
-        updates = 5, security = 2, rebootRequired = true,
+        seedUpdates = 5, seedSecurity = 2, seedReboot = true,
         containers = mutableListOf(
             c(1, "dockge", "dockge", "louislam/dockge:1", "0.0.0.0:5001->5001/tcp", 0.1, 154.0, labels = hp("http://dockge.local:5001", "Dockge", "Tools")),
             c(2, "immich", "server", "ghcr.io/immich-app/immich-server:release", "0.0.0.0:2283->2283/tcp", 2.0, 612.0, "healthy", labels = hp("https://immich.tailnet-name.ts.net", "Immich", "Media")),
@@ -262,7 +308,7 @@ object DemoData {
     fun garage() = DemoWorld(
         hostname = "garage-nuc", prettyOs = "Debian GNU/Linux 12 (bookworm)", osId = "debian", cores = 2, memTotalKb = 7_900_000,
         diskTotal = 120_000_000_000, diskUsed = 41_000_000_000, ip = "192.168.1.40", tailscaleIp = "",
-        updates = 0, security = 0, rebootRequired = false,
+        seedUpdates = 0, seedSecurity = 0, seedReboot = false,
         containers = mutableListOf(
             c(31, "pihole", "pihole", "pihole/pihole:latest", "0.0.0.0:8053->80/tcp", 0.5, 95.0, "healthy", labels = hp("http://192.168.1.40:8053/admin", "Pi-hole", "Network")),
             c(32, "jellyfin", "jellyfin", "jellyfin/jellyfin:latest", "0.0.0.0:8096->8096/tcp", 1.5, 410.0, labels = hp("http://garage-nuc:8096", "Jellyfin", "Media")),

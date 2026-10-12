@@ -38,6 +38,9 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
         return when {
             command == SpecCommands.script("overview") -> CommandResult(world.overviewOutput())
             command == SpecCommands.script("docker") -> CommandResult(world.dockerOutput())
+            command == SpecCommands.script("updates") -> CommandResult(world.updatesOutput())
+            command == SpecCommands.script("boot_id") -> CommandResult(world.bootId + "\n")
+            command == SpecCommands.script("reboot") -> { world.reboot(); CommandResult("##rebooting\n") }
             command.startsWith("timeout 20 docker manifest inspect") -> CommandResult(if (command.contains("nope") || command.contains("missing")) "notfound\n" else "found\n")
             command == "ss -H -tln 2>/dev/null" -> CommandResult("LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*\nLISTEN 0 4096 0.0.0.0:5001 0.0.0.0:*\nLISTEN 0 4096 0.0.0.0:3000 0.0.0.0:*\n")
             command.startsWith("T=\$(mktemp -d)") -> checkNew(command)
@@ -100,6 +103,21 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
     private fun tick(text: String) = "\u001B[32m✔\u001B[0m $text"
 
     private fun plan(inner: String): Plan? {
+        if (inner.contains("apt-get update")) {
+            return Plan(listOf("Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease", "Get:2 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]",
+                "Get:3 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]", "Fetched 252 kB in 1s (310 kB/s)", "Reading package lists... Done")) {
+                world.refreshedAt = System.currentTimeMillis() / 1000
+            }
+        }
+        Regex("""apt-get (upgrade -y|install --only-upgrade -y) -o Dpkg::Options::=--force-confold ?(.*)$""").find(inner)?.let { m ->
+            val names = if (m.groupValues[1].startsWith("install")) m.groupValues[2].trim().split(' ').filter { it.isNotEmpty() } else null
+            val chosen = world.pending.filter { names == null || it.name in names }
+            return Plan(
+                listOf("Reading package lists... Done", "Building dependency tree... Done", "The following packages will be upgraded:", "  ${chosen.joinToString(" ") { it.name }}",
+                    "${chosen.size} upgraded, 0 newly installed, 0 to remove.") +
+                    chosen.flatMap { listOf("Preparing to unpack .../${it.name}_${it.newVersion}_amd64.deb ...", tick("Setting up ${it.name} (${it.newVersion})")) },
+            ) { world.applyUpgrade(names) }
+        }
         Regex("""docker (start|stop|restart) ([0-9a-f]{12,64})""").find(inner)?.let { m ->
             val verb = m.groupValues[1]
             val c = world.containers.firstOrNull { it.id.startsWith(m.groupValues[2]) }
