@@ -2,7 +2,14 @@ package com.bgallagher.rackoon.probe
 
 import com.bgallagher.rackoon.core.ActionStreamEvent
 import com.bgallagher.rackoon.core.ActionPolicy
+import com.bgallagher.rackoon.core.ContainerChecker
+import com.bgallagher.rackoon.core.ContainerChecks
+import com.bgallagher.rackoon.core.ContainerSpec
 import com.bgallagher.rackoon.core.EditorChecks
+import com.bgallagher.rackoon.core.NewStackOutcome
+import com.bgallagher.rackoon.core.NewStackPlan
+import com.bgallagher.rackoon.core.NewStackSession
+import com.bgallagher.rackoon.core.PortRow
 import com.bgallagher.rackoon.core.StackRemoval
 import com.bgallagher.rackoon.core.EnvSyntax
 import com.bgallagher.rackoon.core.RemoteFileState
@@ -49,6 +56,9 @@ import kotlin.system.exitProcess
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
  *   compose-test   REAL pull/update/rebuild/recreate/streamed runs/read-only checks on a throwaway stack under /tmp that it creates and
  *                  removes (project rackoon-probe-test). Never touches your own stacks.
+ *   newstack-test  REAL new-stack check and create scripts on one throwaway folder under /tmp (project rackoon-probe-newstack): the checks change
+ *                  nothing, create writes files (.env mode 600), refuses an existing folder, a rejected file leaves nothing behind
+ *   checks-test    read-only: the Add container lookups on the real server (image exists on the registry, listening ports)
  *   delete-test    REAL stack delete (compose down + folder removal) on throwaway stacks under /tmp/rackoon-probe-delete, with data written BY the
  *                  container (root-owned): the other stack, your own stacks and the rest of /tmp are never touched
  *   env-test       REAL .env editing on a throwaway stack under /tmp (project rackoon-probe-env): a missing .env, create it, check it with
@@ -63,7 +73,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|env-test|delete-test|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|env-test|delete-test|newstack-test|checks-test|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -234,6 +244,64 @@ fun main(args: Array<String>) {
                     } finally {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
+                }
+
+                "checks-test" -> {
+                    val checker = ContainerChecker(transport)
+                    expect("a real image is found on Docker Hub", checker.imageStatus("nginx:alpine") == com.bgallagher.rackoon.core.ImageStatus.FOUND)
+                    val missing = checker.imageStatus("rackoon-no-such-image-xyz:never")
+                    expect("a missing image is not found (got $missing)", missing == com.bgallagher.rackoon.core.ImageStatus.NOT_FOUND)
+                    val ports = checker.listeningPorts()
+                    println("   listening ports: ${ports?.sorted()}")
+                    expect("listening ports include SSH (22)", ports != null && 22 in ports)
+                    val spec = ContainerSpec(name = "x", image = "nginx:alpine", ports = listOf(PortRow("22", "22"), PortRow("18999", "80")))
+                    val rows = ContainerChecks.portRows(spec, ports, emptyList(), "hetzner")
+                    expect("port 22 is reported in use, 18999 free (${rows.map { it.state }})", rows.map { it.state } == listOf(com.bgallagher.rackoon.core.EditorCheckRow.State.FAIL, com.bgallagher.rackoon.core.EditorCheckRow.State.PASS))
+                }
+
+                "newstack-test" -> {
+                    val project = "rackoon-probe-newstack"
+                    val parent = "/tmp/rackoon-probe-newstack"
+                    suspend fun sh(script: String, timeout: Long = 300_000) = try { transport.run(script, timeout) } catch (e: Exception) { com.bgallagher.rackoon.core.CommandResult("", e.message ?: "ssh failed", 255) }
+                    suspend fun teardown() { sh("cd $parent/$project 2>/dev/null && docker compose -p $project down -v --remove-orphans 2>&1; cd /; rm -rf $parent") }
+                    teardown()
+                    try {
+                        val policy = ActionPolicy()
+                        val session = NewStackSession(transport, policy)
+                        val good = NewStackPlan(name = project, parentDirectory = parent, compose = "services:\n  web:\n    image: busybox:${'$'}{TAG:?TAG is required}\n    command: sleep 3600\n", env = "TAG=1.36\n")
+                        val dir = good.directory!!
+                        // check: changes nothing in the real folder
+                        expect("valid files pass the server check", session.check(good).isValid)
+                        val missingVar = session.check(good.copy(env = ""))
+                        expect("a required variable with no .env fails the check (${missingVar.errors.firstOrNull()?.message?.take(60)})", !missingVar.isValid)
+                        val bad = session.check(good.copy(compose = "services:\n  web:\n    image: busybox\n   command: x\n"))
+                        expect("broken YAML fails with a readable message (${bad.errors.firstOrNull()?.message?.take(70)})", !bad.isValid && bad.errors.first().message.contains("/tmp/").not())
+                        expect("checking created nothing under the target folder", sh("ls $parent 2>&1").stdout.contains("No such file"))
+                        // create: files, modes, refusal without confirmation
+                        expect("create without confirmation is refused", runCatching { session.create(good, null) }.exceptionOrNull() is PolicyError.NotConfirmed)
+                        policy.isReadOnly = true
+                        expect("read-only refuses to confirm a create", runCatching { session.confirm(good) }.isFailure)
+                        policy.isReadOnly = false
+                        val made = session.create(good, session.confirm(good))
+                        expect("created (got $made)", made == NewStackOutcome.Created)
+                        val files = sh("cat $dir/compose.yaml; echo ---; cat $dir/.env; echo ---; stat -c '%a' $dir/.env")
+                        expect(".env and compose.yaml written, .env mode 600", files.stdout.contains("busybox:${'$'}{TAG") && files.stdout.contains("TAG=1.36") && files.stdout.endsWith("600\n"))
+                        expect("the same name again is refused (got ${session.create(good, session.confirm(good))})", session.create(good, session.confirm(good)) == NewStackOutcome.Exists)
+                        // create with files the server rejects leaves nothing behind
+                        val rejected = good.copy(name = "rackoon-probe-newstack-bad", compose = "services:\n  web:\n    image: busybox\n   command: x\n")
+                        val invalid = session.create(rejected, session.confirm(rejected))
+                        expect("rejected files report issues", invalid is NewStackOutcome.Invalid && invalid.issues.isNotEmpty())
+                        expect("the rejected stack left no folder behind", sh("ls $parent").stdout.trim() == project)
+                        // it starts with the normal stack action
+                        val docker = DockerSession(transport, policy = policy)
+                        val stack = good.stack!!
+                        docker.perform(ComposeAction.UP, stack, docker.confirm(ComposeAction.UP, stack))
+                        expect("up -d on the new stack started its container", sh("docker ps --filter label=com.docker.compose.project=$project --filter status=running -q | wc -l").stdout.trim() == "1")
+                    } finally {
+                        teardown()
+                        val leftover = sh("ls $parent 2>&1 | head -1; docker ps -a --filter label=com.docker.compose.project=$project -q | wc -l")
+                        expect("teardown removed everything", leftover.stdout.contains("No such file") && leftover.stdout.endsWith("0\n"))
                     }
                 }
 

@@ -19,6 +19,10 @@ import com.bgallagher.rackoon.core.StackFiles
 import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.serviceNames
 import com.bgallagher.rackoon.ui.PendingAction
+import com.bgallagher.rackoon.core.AddContainerDraft
+import com.bgallagher.rackoon.core.AddState
+import com.bgallagher.rackoon.core.DeployRequest
+import com.bgallagher.rackoon.core.NewStackDefaults
 import com.bgallagher.rackoon.core.DockerAction
 import com.bgallagher.rackoon.core.EditableFile
 import com.bgallagher.rackoon.core.EditorState
@@ -456,6 +460,73 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    // MARK: add container (a new stack, or a service added to an existing one; the rules live in core's AddContainerDraft)
+
+    private var addDraft: AddContainerDraft? = null
+    private var addJob: Job? = null
+    private val _addOpen = MutableStateFlow(false)
+    val addOpen: StateFlow<Boolean> = _addOpen.asStateFlow()
+    private val _addState = MutableStateFlow(AddState())
+    val addState: StateFlow<AddState> = _addState.asStateFlow()
+    private val _addConfirmLeave = MutableStateFlow(false)
+    val addConfirmLeave: StateFlow<Boolean> = _addConfirmLeave.asStateFlow()
+
+    fun draft(): AddContainerDraft? = addDraft
+
+    fun openAddContainer() {
+        val l = live ?: return
+        if (_readOnly.value) return
+        val ready = _docker.value as? DockerUi.Ready ?: return
+        val user = l.server.user?.takeIf { it.isNotEmpty() } ?: "root"
+        val folder = NewStackDefaults.parentDirectory(ready.stacks, user)
+        val d = AddContainerDraft(
+            l.transport, policy, l.server.name, viewModelScope, folder,
+            stacks = { (_docker.value as? DockerUi.Ready)?.stacks.orEmpty() },
+            containers = { (_docker.value as? DockerUi.Ready)?.snapshot?.containers.orEmpty() },
+            stackBlockedReason = { stackBlockedReason(it) },
+        )
+        addDraft = d
+        addJob?.cancel()
+        addJob = viewModelScope.launch { d.state.collect { _addState.value = it } }
+        _addState.value = d.state.value
+        _addOpen.value = true
+        d.start()
+    }
+
+    /** Back from the page: asks first when something was typed. */
+    fun closeAddContainer() {
+        if (addDraft?.isDirty == true) _addConfirmLeave.value = true else closeAddNow()
+    }
+
+    fun keepAdding() { _addConfirmLeave.value = false }
+
+    fun closeAddNow() {
+        _addConfirmLeave.value = false
+        addDraft?.close(); addJob?.cancel(); addDraft = null; _addOpen.value = false; _addState.value = AddState()
+    }
+
+    /** Create / Save asks first (the files, or the diff, and the start command), then writes; "start" then runs `up -d` into Output. */
+    fun requestAddDeploy(start: Boolean) {
+        val l = live ?: return
+        val d = addDraft ?: return
+        val request = d.request(start) ?: return
+        _pending.value = PendingAction(
+            title = request.title, message = request.message, user = l.endpointUser(),
+            command = if (start) com.bgallagher.rackoon.core.ComposeAction.UP.command(request.stack).orEmpty() else "", preview = request.preview,
+            run = { if (live === l) d.perform(request) { done -> onAddDone(l, done.stack, done.isNew, done.start) } },
+        )
+    }
+
+    private fun onAddDone(l: Live, stack: DockerStack, isNew: Boolean, start: Boolean) {
+        if (live !== l) return
+        // A new stack with no containers is invisible to `docker ps`, so it is remembered here until its containers show up.
+        if (isNew) { leftoverStacks[stack.name] = stack; publishDocker() }
+        closeAddNow()
+        _openStack.value = stack.name
+        _stackTab.value = StackTab.Containers
+        if (start) runStackAction(l, stack, com.bgallagher.rackoon.core.ComposeAction.UP, null) else refreshDockerNow()
+    }
+
     // MARK: delete stack (docker compose down, optionally volumes and the folder; the folder rules live in core's StackRemoval)
 
     private var lastDockerState: DockerState? = null
@@ -531,7 +602,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _working = MutableStateFlow<String?>(null)
     val working: StateFlow<String?> = _working.asStateFlow()
 
-    private fun clearDockerActions() { removingStacks.clear(); leftoverStacks.clear(); lastDockerState = null; _deleting.value = null; closeEditorNow(); _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
+    private fun clearDockerActions() { closeAddNow(); removingStacks.clear(); leftoverStacks.clear(); lastDockerState = null; _deleting.value = null; closeEditorNow(); _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
 
     /** Why a stack's actions are unavailable (null when they can run). */
     fun stackBlockedReason(stack: DockerStack): String? = ActionPrompts.blockedReason(stack, _readOnly.value, _working.value != null)

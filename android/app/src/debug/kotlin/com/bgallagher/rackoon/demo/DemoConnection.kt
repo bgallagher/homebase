@@ -38,6 +38,10 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
         return when {
             command == SpecCommands.script("overview") -> CommandResult(world.overviewOutput())
             command == SpecCommands.script("docker") -> CommandResult(world.dockerOutput())
+            command.startsWith("timeout 20 docker manifest inspect") -> CommandResult(if (command.contains("nope") || command.contains("missing")) "notfound\n" else "found\n")
+            command == "ss -H -tln 2>/dev/null" -> CommandResult("LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*\nLISTEN 0 4096 0.0.0.0:5001 0.0.0.0:*\nLISTEN 0 4096 0.0.0.0:3000 0.0.0.0:*\n")
+            command.startsWith("T=\$(mktemp -d)") -> checkNew(command)
+            command.startsWith("D=") && command.contains("##created") -> createStack(command)
             command.startsWith("F='") && command.contains("echo '##meta'") -> CommandResult(world.readFile(path(command)))
             command.contains(".rackoon-check.") -> validate(command)
             command.contains("echo '##saved'") -> save(command)
@@ -52,6 +56,26 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
     private fun content(command: String): String {
         val b64 = Regex("""echo '([A-Za-z0-9+/=]*)' \| base64 -d""").find(command)?.groupValues?.get(1).orEmpty()
         return if (b64.isEmpty()) "" else String(Base64.getDecoder().decode(b64))
+    }
+
+    private fun b64After(command: String, target: String): String? =
+        Regex("echo '([A-Za-z0-9+/=]*)' \\| base64 -d > " + Regex.escape("\"\$$target\"")).find(command)?.groupValues?.get(1)?.let { if (it.isEmpty()) "" else String(Base64.getDecoder().decode(it)) }
+
+    private fun checkNew(command: String): CommandResult {
+        val compose = b64After(command, "T/compose.yaml").orEmpty()
+        return if (compose.contains("imagee")) CommandResult("failed to parse compose.yaml: did not find expected key\n", exitCode = 1) else CommandResult("")
+    }
+
+    /** `stack_create`: makes the folder and writes the files (the stack has no containers until `up -d`). */
+    private fun createStack(command: String): CommandResult {
+        val dir = Regex("""^D='([^']*)'""").find(command)?.groupValues?.get(1) ?: return CommandResult("", exitCode = 7)
+        if (world.files.keys.any { it.startsWith("$dir/") }) return CommandResult("##exists\n", exitCode = 3)
+        val compose = b64After(command, "D/compose.yaml").orEmpty()
+        if (compose.contains("imagee")) return CommandResult("##invalid\nfailed to parse compose.yaml: did not find expected key\n", exitCode = 4)
+        world.files["$dir/compose.yaml"] = compose
+        b64After(command, "D/.env")?.let { world.files["$dir/.env"] = it }
+        world.stackDirs[dir.substringAfterLast('/')] = dir
+        return CommandResult("##created\n")
     }
 
     private fun validate(command: String): CommandResult =

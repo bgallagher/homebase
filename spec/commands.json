@@ -262,6 +262,28 @@
       ]
     },
     {
+      "id": "stack_new_check_env",
+      "kind": "template",
+      "description": "The text {env} is replaced with in stack_new_check when the new stack has a .env: writes the base64 content {envb64} to the scratch folder's .env before compose checks it.",
+      "script": "echo {envb64} | base64 -d > \"$T/.env\"; ",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "stack_create_env",
+      "kind": "template",
+      "description": "The text {env} is replaced with in stack_create when the new stack has a .env: writes the base64 content {envb64} to the new folder's .env and makes it readable only by its owner (chmod 600); exit 7 if that fails.",
+      "script": "echo {envb64} | base64 -d > \"$D/.env\" && chmod 600 \"$D/.env\" || exit 7; ",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "image_exists",
       "kind": "query",
       "description": "Does the image exist in its registry, as seen from the server (so private registries it is logged in to work)? Prints found, timeout (20 s) or notfound; notfound also covers a registry that needs a login. {image} is a validated image name (letters, digits and . _ / : @ -), single-quoted.",

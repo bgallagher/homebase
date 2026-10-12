@@ -13,6 +13,8 @@ final class NewStackTests: XCTestCase {
         func script(_ id: String) -> String? { commands.first { $0["id"] as? String == id }?["script"] as? String }
         XCTAssertEqual(NewStackCommands.checkTemplate, script("stack_new_check"))
         XCTAssertEqual(NewStackCommands.createTemplate, script("stack_create"))
+        XCTAssertEqual(NewStackCommands.checkEnvStep, script("stack_new_check_env"))
+        XCTAssertEqual(NewStackCommands.createEnvStep, script("stack_create_env"))
     }
 
     func testPlanPathsAndValidation() {

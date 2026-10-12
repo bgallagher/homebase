@@ -81,7 +81,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
             else if (state.snapshot.containers.isEmpty()) Message(
                 "No containers found", "Docker is running on ${server.name}, but there are no containers yet. Stacks appear here once their containers exist.", "Scan again", vm::refreshDockerNow,
             )
-            else StackList(state, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onRefresh = vm::refreshDockerNow)
+            else StackList(state, readOnly, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onAdd = vm::openAddContainer, onRefresh = vm::refreshDockerNow)
         }
     }
 }
@@ -89,7 +89,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
 // MARK: list
 
 @Composable
-private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onRefresh: () -> Unit) {
+private fun StackList(ui: DockerUi.Ready, readOnly: Boolean, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onAdd: () -> Unit, onRefresh: () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
     val stacks = ui.stacks
@@ -104,7 +104,15 @@ private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookm
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(bottom = 4.dp)) {
-                    Text("Docker", fontSize = 28.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Docker", fontSize = 28.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary, modifier = Modifier.weight(1f))
+                        // The design's "Add container" pill. Disabled with a reason in Read-only mode (it changes the server).
+                        Text(
+                            "Add container", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            color = if (readOnly) Rackoon.colors.textMuted else Rackoon.colors.textPrimary,
+                            modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Rackoon.colors.selection).clickable(enabled = !readOnly, onClick = onAdd).padding(horizontal = 16.dp, vertical = 11.dp),
+                        )
+                    }
                     Text(ui.snapshot.summary(), fontSize = 13.sp, color = Rackoon.colors.textSecondary, modifier = Modifier.padding(top = 2.dp))
                     if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = Rackoon.colors.warn, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }

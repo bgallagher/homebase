@@ -100,7 +100,7 @@ private fun hostOf(target: String) = target.substringAfter('@').substringBefore(
 @Composable
 fun Field(label: String, value: String, placeholder: String, mono: Boolean = false, enabled: Boolean = true, keyboard: KeyboardType = KeyboardType.Text, secret: Boolean = false, onChange: (String) -> Unit) {
     Column {
-        Text(label, color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
+        if (label.isNotEmpty()) Text(label, color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
         OutlinedTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder, color = Rackoon.colors.textMuted) },

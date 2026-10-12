@@ -68,7 +68,9 @@ class DemoWorld(
     init { for (p in projects()) { files["$stackRoot/$p/compose.yaml"] = composeText(p) } }
 
     fun projects(): List<String> = containers.mapNotNull { it.project }.distinct().sorted()
-    fun dir(project: String) = "$stackRoot/$project"
+    /** Folders of stacks created from the app (everything else lives under /opt/stacks/<project>). */
+    val stackDirs = HashMap<String, String>()
+    fun dir(project: String) = stackDirs[project] ?: "$stackRoot/$project"
     fun freshId(): String { nextId += 0x1f3a7; return "%012x".format(nextId) }
 
     // MARK: what the commands print
@@ -180,9 +182,24 @@ class DemoWorld(
         return "##saved\n${sha(content)}\n" to 0
     }
 
-    /** After an `up -d` the containers reflect their compose file: the Homepage labels are re-read from its text. */
+    /** After an `up -d` the containers reflect their compose file: services that have no container yet are created, and Homepage labels are re-read from its text. */
     fun applyCompose(project: String) {
         val text = files["${dir(project)}/compose.yaml"] ?: return
+        run {
+            var current: String? = null
+            val images = LinkedHashMap<String, String>()
+            val ports = HashMap<String, String>()
+            for (line in text.lines()) {
+                Regex("""^  ([A-Za-z0-9_.-]+):\s*$""").find(line)?.let { current = it.groupValues[1] }
+                Regex("""^\s+image:\s*"?([^"\s]+)"?""").find(line)?.let { m -> current?.let { images[it] = m.groupValues[1] } }
+                Regex("""^\s*-\s*"?(?:[^":]+:)?(\d+):(\d+)"?\s*$""").find(line)?.let { m -> current?.let { ports[it] = "0.0.0.0:${m.groupValues[1]}->${m.groupValues[2]}/tcp" } }
+            }
+            for ((service, image) in images) {
+                if (containers.none { it.project == project && it.service == service }) {
+                    containers += DemoContainer(freshId(), "${project}-$service-1", image, project, service, ports = ports[service].orEmpty(), cpu = 0.2, memMb = 40.0, startedAt = System.currentTimeMillis())
+                }
+            }
+        }
         var service: String? = null
         val found = HashMap<String, MutableMap<String, String>>()
         for (line in text.lines()) {

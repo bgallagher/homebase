@@ -335,7 +335,7 @@ private fun ReadOnlyBannerInline(onTurnOff: () -> Unit) {
 
 /** A labelled dropdown: tap to choose one of [options]. */
 @Composable
-private fun Picker(label: String, value: String, options: List<String>, enabled: Boolean, onPick: (String) -> Unit) {
+internal fun Picker(label: String, value: String, options: List<String>, enabled: Boolean, onPick: (String) -> Unit) {
     val c = Rackoon.colors
     var open by remember { mutableStateOf(false) }
     Column {
