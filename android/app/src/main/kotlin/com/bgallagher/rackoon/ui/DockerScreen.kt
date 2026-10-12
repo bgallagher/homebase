@@ -53,7 +53,7 @@ import com.bgallagher.rackoon.core.DockerStack
 import com.bgallagher.rackoon.core.LetterTile
 import com.bgallagher.rackoon.core.LinkScope
 import com.bgallagher.rackoon.core.Server
-import com.bgallagher.rackoon.core.StackFiles
+import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.StackSeverity
 import com.bgallagher.rackoon.core.bookmarkLinks
 import com.bgallagher.rackoon.core.shortAddress
@@ -93,6 +93,8 @@ private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookm
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
     val stacks = ui.snapshot.stacks
+    // Which stacks can take a bookmark is worked out once per snapshot, not for every card on every recomposition.
+    val bookmarkable = remember(ui.snapshot) { ui.snapshot.bookmarkableStacks.map { it.name }.toSet() }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { refreshing = true; onRefresh() }, modifier = Modifier.fillMaxSize()) {
         // One column on a phone; more on a tablet or foldable.
         LazyVerticalGrid(
@@ -108,7 +110,7 @@ private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookm
                 }
             }
             items(stacks, key = { it.name }) { stack ->
-                StackCard(stack, onClick = { onOpen(stack) }, onBookmark = if (!stack.isStandalone && StackFiles.editable(stack) != null) ({ onBookmark(stack) }) else null)
+                StackCard(stack, onClick = { onOpen(stack) }, onBookmark = if (stack.name in bookmarkable) ({ onBookmark(stack) }) else null)
             }
         }
     }

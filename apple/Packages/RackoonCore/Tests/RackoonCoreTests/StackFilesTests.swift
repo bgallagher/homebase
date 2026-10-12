@@ -130,6 +130,8 @@ final class StackFileCommandTests: XCTestCase {
         XCTAssertEqual(StackFileCommands.readTemplate, script("file_read"))
         XCTAssertEqual(StackFileCommands.validateTemplate, script("file_validate"))
         XCTAssertEqual(StackFileCommands.writeTemplate, script("file_write"))
+        XCTAssertEqual(StackFileCommands.expectExisting, script("file_write_expect_existing"))
+        XCTAssertEqual(StackFileCommands.expectNone, script("file_write_expect_none"))
     }
 
     func testEditableFilesAreComposeFilesThenEnv() {

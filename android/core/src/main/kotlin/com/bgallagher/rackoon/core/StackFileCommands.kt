@@ -12,9 +12,6 @@ import java.util.Base64
  * owner and permissions are carried over.
  */
 object StackFileCommands {
-    private const val EXPECT_EXISTING = """[ "${'$'}(sha256sum "${'$'}F" | cut -d' ' -f1)" = {sha} ] || { echo '##changed'; exit 3; }"""
-    private const val EXPECT_NONE = """[ ! -e "${'$'}F" ] || { echo '##changed'; exit 3; }"""
-
     /** Reads one file. Null if the file is not one the stack offers. */
     fun read(file: EditableFile, stack: DockerStack): String? {
         if (StackFiles.editable(stack)?.contains(file) != true) return null
@@ -34,9 +31,9 @@ object StackFileCommands {
         val path = ShellQuote.quotePath(file.path) ?: return null
         val expect = if (expectedSHA != null) {
             if (expectedSHA.length != 64 || !expectedSHA.all { it in '0'..'9' || it in 'a'..'f' }) return null
-            Template.fill(EXPECT_EXISTING, mapOf("sha" to "'$expectedSHA'"))
+            Template.fill(SpecCommands.script("file_write_expect_existing"), mapOf("sha" to "'$expectedSHA'"))
         } else {
-            EXPECT_NONE
+            SpecCommands.script("file_write_expect_none")
         }
         return Template.fill(
             SpecCommands.script("file_write"),

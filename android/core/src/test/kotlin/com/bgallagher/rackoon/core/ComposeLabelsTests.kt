@@ -109,6 +109,30 @@ class ComposeLabelsTests {
         )
     }
 
+    @Test fun `files with CRLF line endings are edited and keep their endings`() {
+        val crlf = "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - traefik.enable=true\r\n    restart: always\r\n"
+        assertEquals(
+            "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - traefik.enable=true\r\n      - homepage.href=http://x\r\n    restart: always\r\n",
+            set(Bookmark(href = "http://x"), crlf),
+        )
+        assertEquals("services:\r\n  web:\r\n    image: nginx\r\n", set(null, "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - homepage.href=http://x\r\n"))
+        assertTrue(ComposeLabels.definesService("web", crlf))
+        // Mixed endings would leave the file inconsistent: refused.
+        assertEquals(ComposeLabelsError.MixedLineEndings, assertFailsWith<ComposeLabelsError> { set(Bookmark(href = "http://x"), "services:\r\n  web:\n    image: x\r\n") })
+    }
+
+    @Test fun `values YAML would read as non-strings are quoted`() {
+        for (v in listOf("0x1F", "1_000", ".inf", "-.INF", ".nan", "0o7", "0b101", "2001-12-14", "2001-12-14t21:59:43", "1:30", "1e3", "12", "1.5", ".5", "1.", "true", "Yes", "n", "~", "null")) {
+            assertEquals("\"$v\"", ComposeLabels.scalar(v), v)
+        }
+        for (v in listOf("3 Body", "v1.2", "1.2.3", "nan", "Infinity", "AdGuard", "https://x.com/", "app-1")) {
+            assertEquals(v, ComposeLabels.scalar(v), v)
+        }
+        // Map-style labels use the bare value, so a numeric-looking name must come out quoted.
+        val file = "services:\n  web:\n    image: x\n    labels:\n      homepage.href: http://old\n"
+        assertTrue(ComposeLabels.setting(listOf(LabelChange("homepage.name", "0x1F")), "web", file).contains("homepage.name: \"0x1F\""))
+    }
+
     @Test fun `defines service`() {
         val t = "services:\n  web:\n    image: x\n"
         assertTrue(ComposeLabels.definesService("web", t))

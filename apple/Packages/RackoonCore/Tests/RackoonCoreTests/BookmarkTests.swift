@@ -164,6 +164,25 @@ final class ComposeLabelsTests: XCTestCase {
                        "services:\n  web:\n    image: nginx\n    labels:\n      - a=b\n      - homepage.href=http://y\n# note\n")
     }
 
+    func testFilesWithCRLFLineEndingsAreEditedAndKeepTheirEndings() throws {
+        let crlf = "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - traefik.enable=true\r\n    restart: always\r\n"
+        XCTAssertEqual(try set(Bookmark(href: "http://x"), crlf),
+                       "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - traefik.enable=true\r\n      - homepage.href=http://x\r\n    restart: always\r\n")
+        XCTAssertEqual(try set(nil, "services:\r\n  web:\r\n    image: nginx\r\n    labels:\r\n      - homepage.href=http://x\r\n"), "services:\r\n  web:\r\n    image: nginx\r\n")
+        XCTAssertThrowsError(try set(Bookmark(href: "http://x"), "services:\r\n  web:\n    image: x\r\n")) {
+            XCTAssertEqual($0 as? ComposeLabelsError, .mixedLineEndings)
+        }
+    }
+
+    func testValuesYAMLWouldReadAsNonStringsAreQuoted() {
+        for v in ["0x1F", "1_000", ".inf", "-.INF", ".nan", "0o7", "0b101", "2001-12-14", "2001-12-14t21:59:43", "1:30", "1e3", "12", "1.5", ".5", "1.", "true", "Yes", "n", "~", "null"] {
+            XCTAssertEqual(ComposeLabels.scalar(v), "\"\(v)\"", v)
+        }
+        for v in ["3 Body", "v1.2", "1.2.3", "nan", "Infinity", "AdGuard", "https://x.com/", "app-1"] {
+            XCTAssertEqual(ComposeLabels.scalar(v), v, v)
+        }
+    }
+
     func testDefinesService() {
         let t = "services:\n  web:\n    image: x\n"
         XCTAssertTrue(ComposeLabels.definesService("web", in: t))

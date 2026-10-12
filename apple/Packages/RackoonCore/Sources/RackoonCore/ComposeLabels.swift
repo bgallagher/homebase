@@ -3,6 +3,8 @@ import Foundation
 public enum ComposeLabelsError: Error, Equatable, LocalizedError {
     case serviceNotFound(String)
     case inlineServices
+    /// Some lines end in CRLF and some in LF, so a line edit would leave the file inconsistent.
+    case mixedLineEndings
     /// `labels:` is written as `{...}` or `[...]`.
     case flowLabels(String)
     /// The service uses a YAML merge key, so its labels may come from an anchor elsewhere.
@@ -11,6 +13,7 @@ public enum ComposeLabelsError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .serviceNotFound(let n): "This compose file has no service called \(n)."
+        case .mixedLineEndings: "This file mixes Windows and Unix line endings, so labels can't be edited automatically. Edit the file by hand."
         case .inlineServices: "This file writes services on one line, so labels can't be edited automatically. Edit the file by hand."
         case .flowLabels(let n): "The labels of \(n) are written inline ({...} or [...]), so they can't be edited automatically. Edit the file by hand."
         case .mergeKey(let n): "\(n) uses a YAML merge key (<<:), so its labels may come from somewhere else. Edit the file by hand."
@@ -24,6 +27,14 @@ public enum ComposeLabels {
     public static func definesService(_ name: String, in text: String) -> Bool { ComposeInsert.services(in: text).contains(name) }
 
     public static func setting(_ changes: [(key: String, value: String?)], onService name: String, in text: String) throws -> String {
+        // A file written with Windows line endings is edited as LF and written back as CRLF, so every line keeps its ending.
+        let crlf = text.contains("\r\n")
+        if crlf && text.replacingOccurrences(of: "\r\n", with: "").contains("\n") { throw ComposeLabelsError.mixedLineEndings }
+        let result = try settingLF(changes, onService: name, in: crlf ? text.replacingOccurrences(of: "\r\n", with: "\n") : text)
+        return crlf ? result.replacingOccurrences(of: "\n", with: "\r\n") : result
+    }
+
+    private static func settingLF(_ changes: [(key: String, value: String?)], onService name: String, in text: String) throws -> String {
         var lines = text.components(separatedBy: "\n")
         guard let services = ComposeInsert.servicesBlock(lines) else { throw ComposeLabelsError.serviceNotFound(name) }
         if services.inline { throw ComposeLabelsError.inlineServices }
@@ -97,12 +108,24 @@ public enum ComposeLabels {
         return list ? pad + "- " + scalar("\(key)=\(v)") : pad + key + ": " + scalar(v)
     }
 
+    /// Values a YAML parser reads as something other than a string: numbers in all their spellings (`1_000`, `.5`, `1e3`, `0x1F`,
+    /// `0o7`, `.inf`), timestamps and base-60 numbers like `1:30`. Quoting more than needed is harmless; quoting too little would
+    /// change the value.
+    private static let nonStringPatterns = [
+        #"^[-+]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)([eE][-+]?\d+)?$"#,
+        #"^[-+]?\.(?i:inf|nan)$"#,
+        #"^[-+]?0(?i:[xob])[0-9a-fA-F_]+$"#,
+        #"^\d{4}-\d{1,2}-\d{1,2}([Tt ].*)?$"#,
+        #"^[-+]?\d[\d_]*(:[0-5]?\d)+(\.\d*)?$"#,
+    ]
+
     /// A YAML scalar: plain when that is safe, double-quoted otherwise.
     static func scalar(_ s: String) -> String {
         let special = "-?:,[]{}#&*!|>'\"%@`"
         let needsQuotes = s.isEmpty || s != s.trimmingCharacters(in: .whitespaces) || s.contains(": ") || s.contains(" #") || s.hasSuffix(":")
             || s.contains(where: { $0 == "\"" || $0 == "\\" || $0.isNewline }) || (special.contains(s.first!) && !s.hasPrefix("homepage."))
-            || ["true", "false", "yes", "no", "on", "off", "null", "~"].contains(s.lowercased()) || Double(s) != nil
+            || ["true", "false", "yes", "no", "y", "n", "on", "off", "null", "~"].contains(s.lowercased())
+            || nonStringPatterns.contains(where: { s.range(of: $0, options: .regularExpression) != nil })
         return needsQuotes ? "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" : s
     }
 

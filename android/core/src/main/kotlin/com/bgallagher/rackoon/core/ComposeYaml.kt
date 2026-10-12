@@ -44,7 +44,7 @@ internal object ComposeYaml {
     }
 
     fun services(text: String): List<String> {
-        val lines = text.split("\n")
+        val lines = text.replace("\r\n", "\n").split("\n")
         val block = servicesBlock(lines) ?: return emptyList()
         val step = childIndent(lines, block) ?: return emptyList()
         return serviceNames(lines, block, step)

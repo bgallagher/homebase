@@ -10,6 +10,9 @@ sealed class ComposeLabelsError(message: String) : Exception(message) {
         override fun hashCode() = name.hashCode()
     }
 
+    /** Some lines end in CRLF and some in LF, so a line edit would leave the file inconsistent. */
+    object MixedLineEndings : ComposeLabelsError("This file mixes Windows and Unix line endings, so labels can't be edited automatically. Edit the file by hand.")
+
     object InlineServices : ComposeLabelsError("This file writes services on one line, so labels can't be edited automatically. Edit the file by hand.")
 
     /** `labels:` is written as `{...}` or `[...]`. */
@@ -37,6 +40,14 @@ object ComposeLabels {
     fun definesService(name: String, text: String): Boolean = name in ComposeYaml.services(text)
 
     fun setting(changes: List<LabelChange>, name: String, text: String): String {
+        // A file written with Windows line endings is edited as LF and written back as CRLF, so every line keeps its ending.
+        val crlf = text.contains("\r\n")
+        if (crlf && text.replace("\r\n", "").contains('\n')) throw ComposeLabelsError.MixedLineEndings
+        val result = settingLF(changes, name, if (crlf) text.replace("\r\n", "\n") else text)
+        return if (crlf) result.replace("\n", "\r\n") else result
+    }
+
+    private fun settingLF(changes: List<LabelChange>, name: String, text: String): String {
         val lines = text.split("\n").toMutableList()
         val services = ComposeYaml.servicesBlock(lines) ?: throw ComposeLabelsError.ServiceNotFound(name)
         if (services.inline) throw ComposeLabelsError.InlineServices
@@ -110,13 +121,26 @@ object ComposeLabels {
         return if (list) pad + "- " + scalar("$key=$v") else pad + key + ": " + scalar(v)
     }
 
+    /**
+     * Values a YAML parser reads as something other than a string: numbers in all their spellings (`1_000`, `.5`, `1e3`, `0x1F`,
+     * `0o7`, `.inf`), timestamps and base-60 numbers like `1:30`. Quoting more than needed is harmless; quoting too little would
+     * change the value.
+     */
+    private val nonStringPatterns = listOf(
+        Regex("""^[-+]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)([eE][-+]?\d+)?$"""),
+        Regex("""^[-+]?\.(inf|nan)$""", RegexOption.IGNORE_CASE),
+        Regex("""^[-+]?0[xob][0-9a-fA-F_]+$""", RegexOption.IGNORE_CASE),
+        Regex("""^\d{4}-\d{1,2}-\d{1,2}([Tt ].*)?$"""),
+        Regex("""^[-+]?\d[\d_]*(:[0-5]?\d)+(\.\d*)?$"""),
+    )
+
     /** A YAML scalar: plain when that is safe, double-quoted otherwise. */
     internal fun scalar(s: String): String {
         val special = "-?:,[]{}#&*!|>'\"%@`"
-        fun isNewline(c: Char) = c == '\n' || c == '\r' || c == '\u0085' || c == ' ' || c == ' '
+        fun isNewline(c: Char) = c == '\n' || c == '\r' || c == '\u0085' || c == '\u2028' || c == '\u2029'
         val needsQuotes = s.isEmpty() || s != trimmed(s) || s.contains(": ") || s.contains(" #") || s.endsWith(":") ||
             s.any { it == '"' || it == '\\' || isNewline(it) } || (special.contains(s.first()) && !s.startsWith("homepage.")) ||
-            s.lowercase() in listOf("true", "false", "yes", "no", "on", "off", "null", "~") || s.toDoubleOrNull() != null
+            s.lowercase() in listOf("true", "false", "yes", "no", "y", "n", "on", "off", "null", "~") || nonStringPatterns.any { it.containsMatchIn(s) }
         return if (needsQuotes) "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" else s
     }
 

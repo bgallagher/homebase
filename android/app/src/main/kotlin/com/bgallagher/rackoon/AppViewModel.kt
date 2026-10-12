@@ -269,7 +269,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _servers.update { list -> list.filterNot { it.id == server.id } }
         c.servers.save(_servers.value)
         if (_selectedId.value == server.id) {
-            live?.transport?.close(); live = null; pollJob?.cancel()
+            live?.transport?.close(); live = null; pollJob?.cancel(); clearBookmarkState()
             _selectedId.value = _servers.value.firstOrNull()?.id
             c.prefs.selectedServerId = _selectedId.value
             _servers.value.firstOrNull()?.let(::openLive)
@@ -280,6 +280,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pollJob?.cancel()
         live?.transport?.close()
         live = Live(server)
+        clearBookmarkState()
         _docker.value = DockerUi.Loading
         _openStack.value = null
         // A saved reading shows at once (marked stale) while the first poll runs.
@@ -455,13 +456,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _bookmarkForm = MutableStateFlow<BookmarkForm?>(null)
     val bookmarkForm: StateFlow<BookmarkForm?> = _bookmarkForm.asStateFlow()
 
+    /** A message for the Bookmarks list (a removal that couldn't go ahead, or why Add did nothing), and a removal in progress. */
+    private val _bookmarkMessage = MutableStateFlow<String?>(null)
+    val bookmarkMessage: StateFlow<String?> = _bookmarkMessage.asStateFlow()
+    fun dismissBookmarkMessage() { _bookmarkMessage.value = null }
+    private val _bookmarkBusy = MutableStateFlow<String?>(null)
+    val bookmarkBusy: StateFlow<String?> = _bookmarkBusy.asStateFlow()
+
+    /** Everything a bookmark change started on the old server is dropped when the server changes: its confirmation would run on the wrong one. */
+    private fun clearBookmarkState() {
+        _pending.value = null; _bookmarkForm.value = null; _bookmarks.value = false; _bookmarkMessage.value = null; _bookmarkBusy.value = null
+    }
+
     private fun snapshot(): DockerSnapshot? = (_docker.value as? DockerUi.Ready)?.snapshot
     fun bookmarkChoices(): List<DockerStack> = snapshot()?.bookmarkableStacks ?: emptyList()
 
     /** Opens the add/edit sheet. With a stack (a card, or Edit) the stack is fixed; without one the user picks. */
     fun openBookmarkSheet(stackName: String? = null, service: String? = null) {
-        val snap = snapshot() ?: return
+        val snap = snapshot()
+        if (snap == null) { _bookmarkMessage.value = "Docker hasn't been read yet. Try again in a moment."; return }
         val stack = stackName?.let { n -> snap.stacks.firstOrNull { it.name == n } }
+        if (stackName == null) {
+            if (_readOnly.value) { _bookmarkMessage.value = "Read-only mode is on. Turn it off to add a bookmark."; return }
+            if (snap.bookmarkableStacks.isEmpty()) {
+                _bookmarkMessage.value = "No stack on this server can take a bookmark: it needs a compose file Rackoon can edit."
+                return
+            }
+        }
+        _bookmarkMessage.value = null
         _bookmarkForm.value = BookmarkForm(stackLocked = stack != null).let { if (stack != null) it.choosingStack(stack, service) else it }
     }
 
@@ -478,80 +500,113 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _bookmarkForm.update { it?.choosingService(stack, service) }
     }
 
+    /** Where a bookmark change reports to: the open sheet, or the list (for Remove, which has no sheet). */
+    private class Reporter(val busy: (String?) -> Unit, val notice: (String) -> Unit, val finished: () -> Unit)
+
+    /** A reporter for the sheet, which ignores everything once the server it started on is no longer the current one. */
+    private fun formReporter(l: Live) = Reporter(
+        busy = { b -> if (live === l) _bookmarkForm.update { it?.copy(busy = b) } },
+        notice = { n -> if (live === l) _bookmarkForm.update { it?.copy(busy = null, notice = n) } },
+        finished = { if (live === l) _bookmarkForm.value = null },
+    )
+
+    private fun listReporter(l: Live) = Reporter(
+        busy = { b -> if (live === l) _bookmarkBusy.value = b },
+        notice = { n -> if (live === l) { _bookmarkBusy.value = null; _bookmarkMessage.value = n } },
+        finished = { if (live === l) _bookmarkBusy.value = null },
+    )
+
     fun requestBookmarkSave(apply: Boolean) {
-        val form = _bookmarkForm.value ?: return
-        val reason = form.saveBlockedReason(_readOnly.value, snapshot()?.stacks?.firstOrNull { it.name == form.stackName })
-        val bookmark = form.bookmark() ?: return
-        if (reason != null) return
-        prepareBookmarkEdit(bookmark.labelChanges, apply, removing = false)
-    }
-
-    fun requestBookmarkRemoval() { prepareBookmarkEdit(Bookmark.removalChanges, apply = true, removing = true) }
-
-    /** Reads the compose file that defines the service, edits its labels, and asks the user to confirm the diff. */
-    private fun prepareBookmarkEdit(changes: List<com.bgallagher.rackoon.core.LabelChange>, apply: Boolean, removing: Boolean) {
         val form = _bookmarkForm.value ?: return
         val l = live ?: return
         val stack = snapshot()?.stacks?.firstOrNull { it.name == form.stackName } ?: return
-        if (form.busy != null || form.service.isEmpty() || StackFiles.editable(stack) == null) return
-        _bookmarkForm.update { it?.copy(busy = "Reading the compose file…", notice = null) }
+        val bookmark = form.bookmark() ?: return
+        if (form.saveBlockedReason(_readOnly.value, stack) != null) return
+        prepareBookmarkEdit(l, stack, form.service, bookmark.labelChanges, apply, removing = false, formReporter(l))
+    }
+
+    /** Remove from the sheet (Edit bookmark > Remove bookmark). */
+    fun requestBookmarkRemoval() {
+        val form = _bookmarkForm.value ?: return
+        val l = live ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.name == form.stackName } ?: return
+        if (form.busy != null) return
+        prepareBookmarkEdit(l, stack, form.service, Bookmark.removalChanges, apply = true, removing = true, formReporter(l))
+    }
+
+    /** Remove from the list: no edit sheet, just the confirmation (or a message saying why it can't be done). */
+    fun requestBookmarkRemovalFor(stackName: String, service: String) {
+        val l = live ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.name == stackName } ?: return
+        if (_bookmarkBusy.value != null) return
+        _bookmarkMessage.value = null
+        prepareBookmarkEdit(l, stack, service, Bookmark.removalChanges, apply = true, removing = true, listReporter(l))
+    }
+
+    /** Reads the compose file that defines the service, edits its labels, and asks the user to confirm the diff. */
+    private fun prepareBookmarkEdit(
+        l: Live, stack: DockerStack, service: String, changes: List<com.bgallagher.rackoon.core.LabelChange>, apply: Boolean, removing: Boolean, report: Reporter,
+    ) {
+        if (_readOnly.value) { report.notice("Read-only mode is on. Turn it off to change bookmarks."); return }
+        if (service.isEmpty() || StackFiles.editable(stack) == null) return
+        report.busy("Reading the compose file…")
         viewModelScope.launch {
             try {
                 val session = StackFileSession(l.transport, stack, policy)
-                when (val plan = BookmarkEditor.plan(session, stack, form.service, changes, removing, l.server.name)) {
-                    is BookmarkPlan.Notice -> _bookmarkForm.update { it?.copy(busy = null, notice = plan.text) }
+                when (val plan = BookmarkEditor.plan(session, stack, service, changes, removing, l.server.name)) {
+                    is BookmarkPlan.Notice -> report.notice(plan.text)
                     is BookmarkPlan.Ready -> {
                         val edit = plan.edit
                         val intent = session.intent(edit)
-                        if (intent == null) { _bookmarkForm.update { it?.copy(busy = null, notice = "That change can't be saved.") }; return@launch }
+                        if (intent == null) { report.notice("That change can't be saved."); return@launch }
+                        if (live !== l) return@launch
                         val up = if (apply) ComposeAction.UP.command(stack).orEmpty() else ""
-                        val what = if (removing) "Remove the bookmark from ${form.service}" else "Bookmark ${form.service}"
+                        val what = if (removing) "Remove the bookmark from $service" else "Bookmark $service"
                         val file = edit.file.fileName
-                        _bookmarkForm.update { it?.copy(busy = null) }
+                        report.busy(null)
                         _pending.value = PendingAction(
                             title = if (apply) "$what and update ${stack.name}?" else "$what?",
                             message = "The labels are written into $file; the server checks the file first, and the old one is kept as $file.rackoon.bak." +
-                                if (apply) " Then the stack is updated, which recreates ${form.service} (a few seconds of downtime) so the change shows up."
+                                if (apply) " Then the stack is updated, which recreates $service (a few seconds of downtime) so the change shows up."
                                 else " It takes effect the next time the stack is updated.",
                             user = l.endpointUser(), command = up, preview = intent.preview,
-                            run = { performBookmarkSave(session, edit, stack, apply) },
+                            // The server, session and reporter are the ones this was prepared with, not whatever is current when Run is tapped.
+                            run = { performBookmarkSave(l, session, edit, stack, apply, report) },
                         )
                     }
                 }
             } catch (e: Exception) {
-                _bookmarkForm.update { it?.copy(busy = null, notice = bookmarkError(e)) }
+                report.notice(bookmarkError(e))
             }
         }
     }
 
-    private fun performBookmarkSave(session: StackFileSession, edit: FileEdit, stack: DockerStack, apply: Boolean) {
-        val l = live ?: return
-        _bookmarkForm.update { it?.copy(busy = "Saving ${edit.file.fileName}…", notice = null) }
+    private fun performBookmarkSave(l: Live, session: StackFileSession, edit: FileEdit, stack: DockerStack, apply: Boolean, report: Reporter) {
+        if (live !== l) return   // the server was switched after the confirmation was shown: nothing is sent anywhere
+        report.busy("Saving ${edit.file.fileName}…")
         viewModelScope.launch {
             try {
                 when (val outcome = session.save(edit, session.confirm(edit))) {
                     is SaveOutcome.Saved -> {
                         if (apply) {
-                            _bookmarkForm.update { it?.copy(busy = "Updating ${stack.name}…") }
+                            report.busy("Updating ${stack.name}…")
                             l.docker.perform(ComposeAction.UP, stack, l.docker.confirm(ComposeAction.UP, stack))
                             l.docker.state.value.actionError?.let { err ->
-                                _bookmarkForm.update { it?.copy(busy = null, notice = "Saved, but updating ${stack.name} failed: $err") }
-                                refreshDockerNow()
+                                report.notice("Saved, but updating ${stack.name} failed: $err")
+                                if (live === l) refreshDockerNow()
                                 return@launch
                             }
                         }
-                        _bookmarkForm.value = null
-                        refreshDockerNow()
+                        report.finished()
+                        if (live === l) refreshDockerNow()
                     }
-                    SaveOutcome.ChangedOnServer -> _bookmarkForm.update {
-                        it?.copy(busy = null, notice = "${edit.file.fileName} changed on ${l.server.name} after you opened this, so nothing was saved. Close this and try again.")
-                    }
-                    is SaveOutcome.Invalid -> _bookmarkForm.update {
-                        it?.copy(busy = null, notice = "${l.server.name} refused the file: " + (outcome.issues.firstOrNull()?.message ?: "it did not pass the compose check"))
-                    }
+                    SaveOutcome.ChangedOnServer ->
+                        report.notice("${edit.file.fileName} changed on ${l.server.name} after you opened this, so nothing was saved. Close this and try again.")
+                    is SaveOutcome.Invalid ->
+                        report.notice("${l.server.name} refused the file: " + (outcome.issues.firstOrNull()?.message ?: "it did not pass the compose check"))
                 }
             } catch (e: Exception) {
-                _bookmarkForm.update { it?.copy(busy = null, notice = bookmarkError(e)) }
+                report.notice(bookmarkError(e))
             }
         }
     }

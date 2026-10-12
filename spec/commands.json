@@ -218,6 +218,28 @@
       ]
     },
     {
+      "id": "file_write_expect_existing",
+      "kind": "template",
+      "description": "The guard {expect} is replaced with in file_write for a file that existed when it was opened: exit 3 and ##changed unless the file still has the sha256 it was opened with ({sha} is that hash, single-quoted).",
+      "script": "[ \"$(sha256sum \"$F\" | cut -d' ' -f1)\" = {sha} ] || { echo '##changed'; exit 3; }",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "file_write_expect_none",
+      "kind": "template",
+      "description": "The guard {expect} is replaced with in file_write for a file that did not exist when the editor started: exit 3 and ##changed if something is there now.",
+      "script": "[ ! -e \"$F\" ] || { echo '##changed'; exit 3; }",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "stack_new_check",
       "kind": "query",
       "description": "Check a NEW stack's files without creating anything in its real folder: writes compose.yaml (and .env, when {env} is the .env step) into a scratch folder from mktemp -d, runs docker compose config -q there, and removes the scratch folder on exit. {b64} is the compose file base64-encoded and quoted; {project} must match ^[a-z0-9][a-z0-9_-]*$. {env} is empty or `echo <base64> | base64 -d > \"$T/.env\"; `. Exit 7 = cannot create the scratch folder.",

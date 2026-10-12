@@ -91,6 +91,8 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val c = Rackoon.colors
     val docker by vm.docker.collectAsStateWithLifecycle()
+    val message by vm.bookmarkMessage.collectAsStateWithLifecycle()
+    val busy by vm.bookmarkBusy.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // The list comes from the Docker poll, so keep it running while this screen is open.
     LaunchedEffect(Unit) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollDockerWhileVisible() } }
@@ -102,9 +104,18 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
         Row(Modifier.height(64.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTap(RackoonIcons.ChevronLeft, "Back to More", c.textPrimary, onBack)
             Text("Bookmarks", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, modifier = Modifier.weight(1f))
-            IconTap(RackoonIcons.Plus, "Add bookmark", if (canAdd && !readOnly) c.textPrimary else c.textMuted, { if (canAdd && !readOnly) vm.openBookmarkSheet() })
+            // Always tappable: when it can't open the sheet, the reason shows below instead of nothing happening.
+            IconTap(RackoonIcons.Plus, "Add bookmark", if (canAdd && !readOnly) c.textPrimary else c.textMuted, { vm.openBookmarkSheet() })
         }
         if (readOnly) ReadOnlyBanner(onTurnOff = vm::toggleReadOnly)
+        busy?.let { Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = c.accent)
+            Text(it, color = c.textSecondary, fontSize = 13.sp)
+        } }
+        message?.let { Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(it, color = c.danger, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
+            TextButton(vm::dismissBookmarkMessage) { Text("Dismiss", color = c.textSecondary) }
+        } }
         when {
             ready == null -> Box(Modifier.fillMaxSize().padding(24.dp)) {
                 Text(
@@ -137,7 +148,7 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
                             item(key = "h-$scope") { ScopeHeader(scope) }
                             items(rows, key = { it.id }) { item ->
                                 BookmarkRow(item, readOnly, onEdit = { vm.openBookmarkSheet(item.stack.name, item.service) },
-                                    onRemove = { vm.openBookmarkSheet(item.stack.name, item.service); vm.requestBookmarkRemoval() })
+                                    onRemove = { vm.requestBookmarkRemovalFor(item.stack.name, item.service) })
                             }
                         }
                         if (shown.isEmpty()) item { Text("No bookmarks match “$query”.", color = c.textMuted, modifier = Modifier.padding(16.dp)) }
