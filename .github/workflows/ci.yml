@@ -19,6 +19,18 @@ jobs:
         working-directory: licence-service
       - run: npm test
         working-directory: licence-service
+  android-core:
+    # The Kotlin mirror of RackoonCore (android/core). It reads spec/ directly, so every golden fixture is checked here too.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :core:test
+        working-directory: android
   swift-macos:
     # SwiftTerm 1.99 needs Swift 6.2+. On an older toolchain SwiftPM silently picked SwiftTerm 1.20.0, which lacks the
     # APIs the app uses, so CI failed on every push. macos-26 ships Xcode 26 (Swift 6.2+).
@@ -61,7 +73,7 @@ jobs:
 
   # A v* tag publishes the build from this same run as a GitHub Release.
   release:
-    needs: [spec, swift-macos]
+    needs: [spec, swift-macos, android-core]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
