@@ -7,6 +7,9 @@ import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.data.StoredAuth
 import com.bgallagher.rackoon.core.ActionPolicy
 import com.bgallagher.rackoon.core.AptAction
+import com.bgallagher.rackoon.core.RebootError
+import com.bgallagher.rackoon.core.RebootOutcome
+import com.bgallagher.rackoon.core.RebootSession
 import com.bgallagher.rackoon.core.AptPrompt
 import com.bgallagher.rackoon.core.UpdatesPresentation
 import com.bgallagher.rackoon.core.UpdatesSession
@@ -197,6 +200,17 @@ data class AddForm(
     val blocked: Issue.KeyChanged? = null,
 )
 
+/** A reboot started from the app, as the banner shows it. */
+sealed class RebootUi {
+    object Requesting : RebootUi()
+    data class Waiting(val sinceMillis: Long) : RebootUi()
+    data class Back(val afterMillis: Long) : RebootUi()
+    object TimedOut : RebootUi()
+    data class Failed(val message: String) : RebootUi()
+
+    val isActive: Boolean get() = this is Requesting || this is Waiting
+}
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val c = (application as RackoonApp).container
 
@@ -246,6 +260,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val docker = DockerSession(transport, policy = policy)
         val logs = LogFollower(transport)
         val updates = UpdatesSession(transport, policy = policy)
+        val reboot = RebootSession(transport, policy)
         val session = ServerSession(transport, cached = c.snapshots.load(server.id), onSnapshot = { c.snapshots.save(server.id, it) })
     }
 
@@ -331,6 +346,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         logsJob = viewModelScope.launch { followed.state.collect { _logs.value = it } }
         clearDockerActions()
         clearUpdatesState()
+        rebootJob?.cancel(); _reboot.value = null
         val updatesSession = live!!.updates
         updatesJob?.cancel()
         updatesJob = viewModelScope.launch { updatesSession.state.collect { _updates.value = it } }
@@ -818,6 +834,49 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             transport.close()
         }
     }
+
+    // MARK: Reboot (asks the server, then waits until it answers with a different boot id)
+
+    private val _reboot = MutableStateFlow<RebootUi?>(null)
+    val reboot: StateFlow<RebootUi?> = _reboot.asStateFlow()
+    private var rebootJob: Job? = null
+
+    fun requestReboot() {
+        val l = live ?: return
+        if (_readOnly.value || _reboot.value?.isActive == true) return
+        _pending.value = PendingAction(
+            "Reboot ${l.server.name}?",
+            "The server restarts in a couple of seconds. Everything running on it stops and comes back with it. Rackoon waits and reconnects when it is up again.",
+            l.endpointUser(), RebootSession.rebootCommand, destructive = true, confirmLabel = "Reboot",
+            run = { startReboot(l) },
+        )
+    }
+
+    private fun startReboot(l: Live) {
+        if (live !== l || _reboot.value?.isActive == true) return
+        _reboot.value = RebootUi.Requesting
+        rebootJob = viewModelScope.launch {
+            try {
+                // The same policy that vetted the request vets it again here; a switch to Read-only in between wins.
+                l.reboot.reboot(l.reboot.confirm())
+                _reboot.value = RebootUi.Waiting(System.currentTimeMillis())
+                when (val outcome = l.reboot.waitForReturn()) {
+                    is RebootOutcome.Back -> { _reboot.value = RebootUi.Back(outcome.elapsedMillis); refreshNow(); loadUpdates() }
+                    RebootOutcome.TimedOut -> _reboot.value = RebootUi.TimedOut
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: RebootError) {
+                _reboot.value = RebootUi.Failed(e.message ?: "The reboot failed.")
+            } catch (e: PolicyError) {
+                _reboot.value = RebootUi.Failed(e.message ?: "The reboot was refused.")
+            } catch (e: Exception) {
+                _reboot.value = RebootUi.Failed(e.message ?: e.toString())
+            }
+        }
+    }
+
+    fun dismissReboot() { if (_reboot.value?.isActive != true) _reboot.value = null }
 
     // MARK: Updates (read when the screen opens and after each action; no polling)
 

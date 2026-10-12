@@ -44,13 +44,14 @@ import com.bgallagher.rackoon.ui.theme.RackoonIcons
 
 /** The Updates page (More > Updates): what apt says is waiting, with Refresh Lists, Install All and Install Security Updates. */
 @Composable
-fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
+fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, serverName: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val c = Rackoon.colors
     val state by vm.updates.collectAsStateWithLifecycle()
     val loading by vm.updatesLoading.collectAsStateWithLifecycle()
     val working by vm.updatesWorking.collectAsStateWithLifecycle()
     val output by vm.updatesOutput.collectAsStateWithLifecycle()
+    val reboot by vm.reboot.collectAsStateWithLifecycle()
     var securityOnly by remember { mutableStateOf(false) }
     val snapshot = state.snapshot
     val packages = remember(snapshot) { UpdatesPresentation.sorted(snapshot?.packages.orEmpty()) }
@@ -82,7 +83,13 @@ fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
             state.error?.let { item { Banner(it, c.danger) } }
             state.actionError?.let { item { Banner(it, c.danger) } }
             if (snapshot != null) {
-                if (snapshot.rebootRequired) item { Banner("A reboot is needed to finish applying earlier updates.", c.warn) }
+                reboot?.let { r -> item { RebootBanner(r, serverName, vm::dismissReboot) } }
+                if (snapshot.rebootRequired && reboot?.isActive != true) item {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.warn.copy(alpha = 0.12f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("A reboot is needed to finish applying earlier updates.", color = c.warn, fontSize = 13.sp, lineHeight = 19.sp)
+                        SecondaryButton("Reboot…", vm::requestReboot, enabled = !readOnly)
+                    }
+                }
                 item { Summary(snapshot, now) }
                 item { Actions(vm, packages, readOnly, working) }
                 if (packages.isEmpty()) item {

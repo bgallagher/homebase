@@ -55,6 +55,7 @@ import com.bgallagher.rackoon.AppViewModel
 import com.bgallagher.rackoon.Issue
 import com.bgallagher.rackoon.OverviewUi
 import com.bgallagher.rackoon.Tab
+import com.bgallagher.rackoon.RebootUi
 import com.bgallagher.rackoon.core.Server
 import com.bgallagher.rackoon.ui.theme.Rackoon
 import com.bgallagher.rackoon.ui.theme.RackoonIcons
@@ -73,6 +74,7 @@ fun RackoonRoot(vm: AppViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val bookmarksOpen by vm.bookmarksOpen.collectAsStateWithLifecycle()
     val updatesOpen by vm.updatesOpen.collectAsStateWithLifecycle()
+    val reboot by vm.reboot.collectAsStateWithLifecycle()
     val editorFile by vm.editorFile.collectAsStateWithLifecycle()
     val addOpen by vm.addOpen.collectAsStateWithLifecycle()
     val bookmarkForm by vm.bookmarkForm.collectAsStateWithLifecycle()
@@ -86,12 +88,12 @@ fun RackoonRoot(vm: AppViewModel) {
             addOpen -> AddContainerScreen(vm, readOnly)
             editorFile != null -> EditorScreen(vm, editorFile!!, readOnly)
             bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
-            updatesOpen -> UpdatesScreen(vm, readOnly, onBack = { vm.showUpdates(false) })
+            updatesOpen -> UpdatesScreen(vm, readOnly, selected?.name.orEmpty(), onBack = { vm.showUpdates(false) })
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
             firstRun -> FirstRunScreen(vm::dismissFirstRun)
             selected == null -> Welcome(onAdd = vm::startAdd)
-            else -> Shell(vm, selected!!, overview, tab, readOnly)
+            else -> Shell(vm, selected!!, overview, tab, readOnly, reboot)
         }
         bookmarkForm?.let { BookmarkSheet(vm, it, readOnly) }
         deleting?.let { stack -> DeleteStackSheet(stack, selected?.name.orEmpty(), selected?.user?.takeIf { it.isNotEmpty() } ?: "root", onCancel = vm::cancelDelete, onRun = { vm.deleteStack(stack, it) }) }
@@ -115,7 +117,7 @@ private fun Welcome(onAdd: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: Tab, readOnly: Boolean) {
+private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: Tab, readOnly: Boolean, reboot: RebootUi?) {
     // The keyboard lifts the whole screen once; the bottom bar steps aside while it is open on the terminal (it would only waste space).
     val keyboardOpen = WindowInsets.isImeVisible
     // Tablets, unfolded foldables and landscape phones get a rail on the left instead of a bar at the bottom.
@@ -130,7 +132,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
                         // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
                         LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
-                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }.also { if (fix == "updates") vm.showUpdates(true) }) })
+                        OverviewScreen(overview, wide, reboot, serverName = server.name, readOnly = readOnly, onReboot = vm::requestReboot, onDismissReboot = vm::dismissReboot, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }.also { if (fix == "updates") vm.showUpdates(true) }) })
                     }
                     Tab.Docker -> {
                         val lifecycle = LocalLifecycleOwner.current.lifecycle

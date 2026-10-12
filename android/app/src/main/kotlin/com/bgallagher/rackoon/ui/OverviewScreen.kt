@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bgallagher.rackoon.Issue
 import com.bgallagher.rackoon.OverviewUi
+import com.bgallagher.rackoon.RebootUi
 import com.bgallagher.rackoon.core.AttentionItem
 import com.bgallagher.rackoon.core.Overview
 import com.bgallagher.rackoon.core.ServerState
@@ -49,7 +50,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OverviewScreen(ui: OverviewUi, wide: Boolean, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onBack: () -> Unit, onOpenFix: (String) -> Unit) {
+fun OverviewScreen(ui: OverviewUi, wide: Boolean, reboot: RebootUi?, serverName: String, readOnly: Boolean, onReboot: () -> Unit, onDismissReboot: () -> Unit, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onBack: () -> Unit, onOpenFix: (String) -> Unit) {
     when (ui) {
         OverviewUi.Connecting -> Loading()
         is OverviewUi.Failed -> when (val issue = ui.issue) {
@@ -57,7 +58,7 @@ fun OverviewScreen(ui: OverviewUi, wide: Boolean, onRefresh: () -> Unit, onTrust
             is Issue.KeyUnknown -> TrustSheet(issue.host, issue.presented, onTrust = { onTrustFirstKey(issue) }, onCancel = onBack)
             else -> Unavailable(issue, onRefresh)
         }
-        is OverviewUi.Ready -> Ready(ui.state, wide, onRefresh, onOpenFix)
+        is OverviewUi.Ready -> Ready(ui.state, wide, reboot, serverName, readOnly, onReboot, onDismissReboot, onRefresh, onOpenFix)
     }
 }
 
@@ -111,14 +112,16 @@ private fun Unavailable(issue: Issue, onRetry: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOpenFix: (String) -> Unit) {
+private fun Ready(state: ServerState, wide: Boolean, reboot: RebootUi?, serverName: String, readOnly: Boolean, onReboot: () -> Unit, onDismissReboot: () -> Unit, onRefresh: () -> Unit, onOpenFix: (String) -> Unit) {
     val o = state.overview ?: return
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { refreshing = true; onRefresh() }, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             val ago = state.updatedAt?.let { Format.ago(it) }
-            if (state.error != null) {
+            reboot?.let { RebootBanner(it, serverName, onDismissReboot) }
+            // While it reboots the failing polls are expected, not news.
+            if (state.error != null && reboot?.isActive != true) {
                 Text("Showing the last reading${ago?.let { " ($it)" } ?: ""}. ${state.error}", color = Rackoon.colors.warn, fontSize = 12.sp)
             } else if (state.isStale) {
                 Text("Last reading${ago?.let { " $it" } ?: ""}. Refreshing…", color = Rackoon.colors.textMuted, fontSize = 12.sp)
@@ -151,11 +154,11 @@ private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOp
                 // Tablet: usage on the left, the System card beside it.
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
                     usage(Modifier.weight(1f))
-                    Box(Modifier.weight(1f)) { SystemCard(o) }
+                    Box(Modifier.weight(1f)) { SystemCard(o, readOnly || reboot?.isActive == true, onReboot) }
                 }
             } else {
                 usage(Modifier.fillMaxWidth())
-                SystemCard(o)
+                SystemCard(o, readOnly || reboot?.isActive == true, onReboot)
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -197,7 +200,7 @@ private fun StatCard(label: String, value: String, sub: String, fraction: Double
 }
 
 @Composable
-private fun SystemCard(o: Overview) {
+private fun SystemCard(o: Overview, rebootDisabled: Boolean, onReboot: () -> Unit) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     fun copy(label: String, value: String) { scope.launch { clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(ClipData.newPlainText(label, value))) } }
@@ -205,7 +208,8 @@ private fun SystemCard(o: Overview) {
         Column {
             Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("System", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
-                Text(o.os.prettyName, fontSize = 13.sp, color = Rackoon.colors.textSecondary)
+                Text(o.os.prettyName, fontSize = 13.sp, color = Rackoon.colors.textSecondary, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onReboot, enabled = !rebootDisabled) { Text("Reboot…", color = if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger, fontWeight = FontWeight.SemiBold) }
             }
             val rows = buildList {
                 if (o.modelName.isNotEmpty()) add("Model" to o.modelName)
