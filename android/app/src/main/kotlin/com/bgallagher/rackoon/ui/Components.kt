@@ -66,11 +66,11 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
-fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     OutlinedButton(
-        onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(24.dp),
+        onClick = onClick, enabled = enabled, modifier = modifier.height(48.dp), shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, Rackoon.colors.border),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = Rackoon.colors.textPrimary),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Rackoon.colors.textPrimary, disabledContentColor = Rackoon.colors.textMuted),
     ) { Text(text, fontWeight = FontWeight.Medium) }
 }
 

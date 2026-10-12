@@ -25,6 +25,11 @@ object RackoonIcons {
 
     val Overview = stroke("overview", 1.4f, rr(2f, 2f, 5f, 5f, 1.2f), rr(9f, 2f, 5f, 5f, 1.2f), rr(2f, 9f, 5f, 5f, 1.2f), rr(9f, 9f, 5f, 5f, 1.2f))
     val Docker = stroke("docker", 1.4f, "M2 5l6-3 6 3v6l-6 3-6-3z", "M2 5l6 3 6-3M8 8v6")
+    val Bookmark = stroke("bookmark", 1.4f, "M4 2h8v12l-4-3-4 3z")
+    val BookmarkFilled: ImageVector = ImageVector.Builder("bookmarkFilled", 24.dp, 24.dp, 16f, 16f).apply {
+        addPath(PathParser().parsePathString("M4 2h8v12l-4-3-4 3z").toNodes(), fill = SolidColor(Color.Black), stroke = SolidColor(Color.Black), strokeLineWidth = 1.4f, strokeLineJoin = StrokeJoin.Round)
+    }.build()
+    val Search = stroke("search", 1.6f, "M7,2.5 a4.5,4.5 0 1,0 0,9 a4.5,4.5 0 1,0 0,-9 z", "M10.5,10.5 L14,14")
     val External = stroke("external", 1.6f, "M9 3h4v4M13 3L7 9M12 10v3H3V4h3")
     val Terminal = stroke("terminal", 1.4f, rr(2f, 3f, 12f, 10f, 2f), "M5 7l2 1.5L5 10M8.5 10.5H11")
     val Lock = stroke("lock", 1.8f, rr(3f, 7f, 10f, 7f, 1.5f), "M5.5 7V5a2.5 2.5 0 015 0v2")

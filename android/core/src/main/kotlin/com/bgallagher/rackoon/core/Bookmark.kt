@@ -16,10 +16,29 @@ data class Bookmark(
     val icon: String? = null,
     val description: String? = null,
 ) {
+    /** What to write for each label key: the value, or null to remove the label. Empty optional fields are removed. */
+    val labelChanges: List<LabelChange>
+        get() {
+            fun clean(s: String?): String? = s?.trim()?.takeIf { it.isNotEmpty() }
+            return listOf(
+                LabelChange("homepage.group", clean(group)), LabelChange("homepage.name", clean(name)), LabelChange("homepage.icon", clean(icon)),
+                LabelChange("homepage.href", href.trim { it == ' ' || it == '\t' }), LabelChange("homepage.description", clean(description)),
+            )
+        }
+
     /** The label to show: its name, or the service's. */
     fun title(fallback: String): String = name ?: fallback
 
     companion object {
+        /** A bare address like `app.example.com` is read as https. */
+        fun normalizedAddress(text: String): String {
+            val t = text.trim()
+            return if (t.isEmpty() || t.contains("://")) t else "https://$t"
+        }
+
+        /** Removing a bookmark clears all five labels. */
+        val removalChanges: List<LabelChange> get() = labelKeys.map { LabelChange(it, null) }
+
         /** The five label keys this convention uses, in the order they are written. */
         val labelKeys = listOf("homepage.group", "homepage.name", "homepage.icon", "homepage.href", "homepage.description")
 

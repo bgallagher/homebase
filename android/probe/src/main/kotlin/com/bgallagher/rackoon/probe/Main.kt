@@ -1,6 +1,15 @@
 package com.bgallagher.rackoon.probe
 
 import com.bgallagher.rackoon.core.ActionStreamEvent
+import com.bgallagher.rackoon.core.Bookmark
+import com.bgallagher.rackoon.core.BookmarkEditor
+import com.bgallagher.rackoon.core.BookmarkPlan
+import com.bgallagher.rackoon.core.DockerContainer
+import com.bgallagher.rackoon.core.DockerStack
+import com.bgallagher.rackoon.core.EditableFile
+import com.bgallagher.rackoon.core.FileEdit
+import com.bgallagher.rackoon.core.SaveOutcome
+import com.bgallagher.rackoon.core.StackFileSession
 import com.bgallagher.rackoon.core.ServerSession
 import com.bgallagher.rackoon.core.SessionEnd
 import com.bgallagher.rackoon.core.StreamRunner
@@ -26,11 +35,13 @@ import kotlin.system.exitProcess
  *   stream-check   a streamed `docker logs -f` leaves no process behind on the server after it is cancelled
  *   stream-marker  a command run through StreamRunner reports its real exit code over a real pty
  *   shell-check    a shell opens at the requested size, follows a resize and ends with the shell's own status
- * Every check only reads, or works on nothing but its own temporary process; none changes the server.
+ *   bookmark-test  REAL label edits and saves (server-side compose check, .rackoon.bak, the changed-on-server guard, removal) on a
+ *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
+ * Every other check only reads, or works on nothing but its own temporary process; none changes the server.
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|bookmark-test> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -131,6 +142,77 @@ fun main(args: Array<String>) {
                     val end = withTimeout(10_000) { shell.awaitEnd() }
                     reader.await()
                     expect("ends with the shell's own status (got $end)", end == SessionEnd.RemoteExit(0))
+                }
+
+                "bookmark-test" -> {
+                    val id = System.currentTimeMillis()
+                    val dir = "/tmp/rackoon-probe-bm-$id"
+                    val project = "rackoonprobebm$id"
+                    val file = "$dir/compose.yaml"
+                    val original = "# keep me\nservices:\n  web:\n    image: nginx:alpine\n    restart: always\n"
+                    suspend fun sh(cmd: String) = transport.run(cmd, 60_000)
+                    try {
+                        val b64 = java.util.Base64.getEncoder().encodeToString(original.toByteArray())
+                        val setup = sh("mkdir -p $dir && echo $b64 | base64 -d > $file && chmod 640 $file")
+                        expect("throwaway stack created under /tmp", setup.exitCode == 0)
+                        expect("docker compose is available", sh("docker compose version").exitCode == 0)
+                        val container = DockerContainer(
+                            id = "abcdef012345", name = "$project-web-1", image = "nginx:alpine", state = "running", health = "none", status = "Up",
+                            ports = emptyList(), project = project, service = "web", workingDir = dir, configFile = file, configFiles = listOf(file),
+                        )
+                        val stack = DockerStack(project, dir, file, listOf(file), listOf(container), false)
+                        val session = StackFileSession(transport, stack)
+                        val compose = EditableFile.Compose(file)
+
+                        val opened = session.read(compose)
+                        expect("read gives back exactly what is on the server", opened.content == original)
+                        expect("its hash is the server's own sha256", opened.sha256 == sh("sha256sum $file | cut -d' ' -f1").stdout.trim())
+
+                        val add = Bookmark("https://probe.example.com/", name = "Probe", group = "Test").labelChanges
+                        val plan = BookmarkEditor.plan(session, stack, "web", add, false, host)
+                        val edit = (plan as? BookmarkPlan.Ready)?.edit
+                        expect("the label edit is planned", edit != null)
+                        if (edit != null) {
+                            expect("comments and other lines are untouched", edit.content.startsWith("# keep me\n") && edit.content.contains("    restart: always"))
+                            expect("three labels added", edit.content.lines().count { it.contains("homepage.") } == 3)
+                            val check = session.validate(compose, edit.content)
+                            expect("the server's compose check accepts it", check.isValid)
+
+                            val saved = session.save(edit, session.confirm(edit))
+                            expect("saved (got $saved)", saved is SaveOutcome.Saved)
+                            val onServer = sh("cat $file").stdout
+                            expect("the file on the server is the new text", onServer == edit.content)
+                            expect("the old file is kept as compose.yaml.rackoon.bak", sh("cat $file.rackoon.bak").stdout == original)
+                            expect("permissions are carried over (640)", sh("stat -c %a $file").stdout.trim() == "640")
+                            if (saved is SaveOutcome.Saved) expect("the returned hash is the new file's", saved.sha256 == sh("sha256sum $file | cut -d' ' -f1").stdout.trim())
+
+                            // The guard: someone else changes the file after it was opened, then the old edit is saved.
+                            sh("echo '# external edit' >> $file")
+                            val stale = session.save(edit.copy(content = edit.content + "# mine\n"), session.confirm(edit.copy(content = edit.content + "# mine\n")))
+                            expect("a change made on the server in between is noticed (got $stale)", stale == SaveOutcome.ChangedOnServer)
+                            expect("and the external edit is still there", sh("cat $file").stdout.contains("# external edit"))
+
+                            // Removing the bookmark again.
+                            val reread = session.read(compose)
+                            val removal = BookmarkEditor.plan(session, stack, "web", Bookmark.removalChanges, true, host)
+                            val removeEdit = (removal as? BookmarkPlan.Ready)?.edit
+                            expect("the removal is planned", removeEdit != null)
+                            if (removeEdit != null) {
+                                expect("removal drops the labels block, keeps the rest", !removeEdit.content.contains("homepage.") && !removeEdit.content.contains("labels:") && removeEdit.content.contains("# external edit"))
+                                expect("removal saved", session.save(removeEdit, session.confirm(removeEdit)) is SaveOutcome.Saved)
+                                expect("no homepage labels left on the server", !sh("cat $file").stdout.contains("homepage."))
+                            }
+                            expect("the file was read again before the removal", reread.content != null)
+                        }
+                        val bad = session.validate(compose, "services:\n  web:\n    imagee: nginx\n")
+                        expect("a wrong key is rejected by the server's check", !bad.isValid)
+                        val badSave = FileEdit(compose, original, sh("sha256sum $file | cut -d' ' -f1").stdout.trim(), "services:\n  web:\n    imagee: nginx\n")
+                        val refused = session.save(badSave, session.confirm(badSave))
+                        expect("saving an invalid file is refused (got $refused)", refused is SaveOutcome.Invalid)
+                    } finally {
+                        sh("rm -rf $dir")
+                        expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
                 }
 
                 else -> { System.err.println("unknown check $check"); exitProcess(2) }

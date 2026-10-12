@@ -53,6 +53,7 @@ import com.bgallagher.rackoon.core.DockerStack
 import com.bgallagher.rackoon.core.LetterTile
 import com.bgallagher.rackoon.core.LinkScope
 import com.bgallagher.rackoon.core.Server
+import com.bgallagher.rackoon.core.StackFiles
 import com.bgallagher.rackoon.core.StackSeverity
 import com.bgallagher.rackoon.core.bookmarkLinks
 import com.bgallagher.rackoon.core.shortAddress
@@ -80,7 +81,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean) {
             else if (state.snapshot.containers.isEmpty()) Message(
                 "No containers found", "Docker is running on ${server.name}, but there are no containers yet. Stacks appear here once their containers exist.", "Scan again", vm::refreshDockerNow,
             )
-            else StackList(state, onOpen = { vm.openStack(it.name) }, onRefresh = vm::refreshDockerNow)
+            else StackList(state, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onRefresh = vm::refreshDockerNow)
         }
     }
 }
@@ -88,7 +89,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean) {
 // MARK: list
 
 @Composable
-private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onRefresh: () -> Unit) {
+private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onRefresh: () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
     val stacks = ui.snapshot.stacks
@@ -106,13 +107,15 @@ private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onRefre
                     if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = Rackoon.colors.warn, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
-            items(stacks, key = { it.name }) { stack -> StackCard(stack, onClick = { onOpen(stack) }) }
+            items(stacks, key = { it.name }) { stack ->
+                StackCard(stack, onClick = { onOpen(stack) }, onBookmark = if (!stack.isStandalone && StackFiles.editable(stack) != null) ({ onBookmark(stack) }) else null)
+            }
         }
     }
 }
 
 @Composable
-private fun StackCard(stack: DockerStack, onClick: () -> Unit) {
+private fun StackCard(stack: DockerStack, onClick: () -> Unit, onBookmark: (() -> Unit)?) {
     val c = Rackoon.colors
     val status = stack.status()
     val unhealthy = stack.unhealthyCount > 0
@@ -131,6 +134,16 @@ private fun StackCard(stack: DockerStack, onClick: () -> Unit) {
             }
             if (status.text.isNotEmpty()) Text(status.text, fontSize = 13.sp, color = severityColor(status.severity))
             StatusDot(severityColor(status.severity, dot = true))
+            if (onBookmark != null) {
+                // Its own button, so tapping it never also opens the stack.
+                Box(Modifier.size(40.dp).padding(start = 0.dp).clip(CircleShape).clickable(onClick = onBookmark), contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (stack.hasBookmark) RackoonIcons.BookmarkFilled else RackoonIcons.Bookmark,
+                        if (stack.hasBookmark) "Edit bookmark for ${stack.name}" else "Add bookmark for ${stack.name}",
+                        tint = if (stack.hasBookmark) c.accent else c.textMuted, modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             stack.containers.forEach { ct ->
@@ -185,7 +198,7 @@ private fun severityColor(s: StackSeverity, dot: Boolean = false): Color = when 
 
 /** A tinted letter standing in for a site icon, coloured from the name like the Mac app's. */
 @Composable
-private fun LetterBadge(name: String, size: androidx.compose.ui.unit.Dp) {
+fun LetterBadge(name: String, size: androidx.compose.ui.unit.Dp) {
     val hue = LetterTile.hue(name).toFloat()
     val bg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.45f, 0.28f)))
     val fg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.35f, 0.9f)))

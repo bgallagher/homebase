@@ -56,6 +56,8 @@ public enum ComposeLabels {
             let d = indent(lines[i])
             if d < keyIndent || (d == keyIndent && !trimmed(lines[i]).hasPrefix("-")) { blockEnd = i; break }
         }
+        // Blank lines and comments after the last label belong to whatever follows, not to the labels: leave them alone.
+        while blockEnd - 1 > labelsLine && !isContent(lines[blockEnd - 1]) { blockEnd -= 1 }
         let items = (labelsLine + 1..<blockEnd).filter { isContent(lines[$0]) }
         let isList = items.first.map { trimmed(lines[$0]).hasPrefix("- ") || trimmed(lines[$0]) == "-" } ?? true
         let itemIndent = items.first.map { indent(lines[$0]) } ?? keyIndent + unit

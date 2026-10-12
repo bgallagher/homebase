@@ -155,6 +155,15 @@ final class ComposeLabelsTests: XCTestCase {
         XCTAssertEqual(try set(Bookmark(href: "http://x"), last), "services:\n  web:\n    image: nginx\n    labels:\n    - a=b\n    - homepage.href=http://x\n  db:\n    image: pg\n")
     }
 
+    func testRemovingTheLastLabelKeepsCommentsAndBlankLinesThatFollow() throws {
+        let file = "services:\n  web:\n    image: nginx\n    labels:\n      - homepage.href=http://x\n\n# footer comment\nvolumes:\n  d: {}\n"
+        XCTAssertEqual(try set(nil, file), "services:\n  web:\n    image: nginx\n\n# footer comment\nvolumes:\n  d: {}\n")
+        let atEnd = "services:\n  web:\n    image: nginx\n    labels:\n      - homepage.href=http://x\n# external edit\n"
+        XCTAssertEqual(try set(nil, atEnd), "services:\n  web:\n    image: nginx\n# external edit\n")
+        XCTAssertEqual(try set(Bookmark(href: "http://y"), "services:\n  web:\n    image: nginx\n    labels:\n      - a=b\n# note\n"),
+                       "services:\n  web:\n    image: nginx\n    labels:\n      - a=b\n      - homepage.href=http://y\n# note\n")
+    }
+
     func testDefinesService() {
         let t = "services:\n  web:\n    image: x\n"
         XCTAssertTrue(ComposeLabels.definesService("web", in: t))

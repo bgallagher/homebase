@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) is in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
 
 ```
 android/
@@ -28,8 +28,9 @@ android/
 
 ```
 cd android
-./gradlew :core:test :ssh:test            # 146 + 14 tests; needs JDK 21
+./gradlew :core:test :ssh:test            # 186 + 14 tests; needs JDK 21
 ./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
+./gradlew :probe:run --args="hetzner bookmark-test"   # REAL writes, but only on a throwaway stack it makes and removes under /tmp
 ```
 
 CI runs the same (`android-core` job). Android Studio opens `android/` directly once the app module exists.
@@ -39,8 +40,9 @@ CI runs the same (`android-core` job). Android Studio opens `android/` directly 
 - Sessions expose `StateFlow` instead of `AsyncStream`, and are driven by coroutines.
 - `Confirmation` has a module-internal constructor: only `ActionPolicy.confirm` can make one from another module.
 - A cancelled `StreamRunner.run` returns normally with `cancelled = true` (like the Swift one), so callers can still clean up.
-- Not ported (Mac-only or later stages): `SSHConfig`, `ServerStore`, `LicenceKey`, favicon fetching, the compose/.env editor
-  stack (`ComposeFormParser`, `ContainerSpec`, `NewStack`, `StackFiles*`, `EditorChecks`, `LineDiff`, `SyntaxHighlighter`),
+- Ported for Bookmarks: `ComposeLabels`, `StackFiles`/`StackFileCommands`/`StackFileSession`, `LineDiff`, `BookmarkEditor`.
+- Not ported (Mac-only or later stages): `SSHConfig`, `ServerStore`, `LicenceKey`, favicon fetching, the rest of the compose/.env editor
+  stack (`ComposeFormParser`, `ContainerSpec`, `NewStack`, `EditorChecks`, `SyntaxHighlighter`),
   `RemoteFiles`, `StackRemoval`.
 
 - Regexes in core must also compile on Android's ICU engine, which the JVM tests cannot show: no `(?U)` flag (use explicit `\p{L}\p{N}` classes) and escape `:` inside classes (`[:` starts a POSIX class). Both crashed the phone once.

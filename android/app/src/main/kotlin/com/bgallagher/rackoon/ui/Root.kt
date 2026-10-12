@@ -71,17 +71,23 @@ fun RackoonRoot(vm: AppViewModel) {
     val switcher by vm.switcher.collectAsStateWithLifecycle()
     val appearance by vm.appearance.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val bookmarksOpen by vm.bookmarksOpen.collectAsStateWithLifecycle()
+    val bookmarkForm by vm.bookmarkForm.collectAsStateWithLifecycle()
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val themeId by vm.themeId.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
             settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings)
+            bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
             firstRun -> FirstRunScreen(vm::dismissFirstRun)
             selected == null -> Welcome(onAdd = vm::startAdd)
             else -> Shell(vm, selected!!, overview, tab, readOnly)
         }
+        bookmarkForm?.let { BookmarkSheet(vm, it, readOnly) }
+        pending?.let { ConfirmSheet(it, onCancel = vm::cancelPending, onConfirm = vm::confirmPending) }
         if (switcher) ServerSwitcher(servers, selected, overview, onPick = vm::select, onAdd = vm::startAdd, onRemove = vm::remove, onDismiss = { vm.showSwitcher(false) })
     }
 }
@@ -124,7 +130,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         DockerScreen(vm, server, wide)
                     }
                     Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
-                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name)
+                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name, onBookmarks = { vm.showBookmarks(true) })
                 }
             }
             if (!wide && !(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
@@ -219,11 +225,13 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String) {
+private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String, onBookmarks: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RCard(Modifier.fillMaxWidth()) {
             Column {
                 MoreRow("Servers", "Switch, add or remove", onServers)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                MoreRow("Bookmarks", "Links to your services", onBookmarks)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Server settings", serverName, onSettings)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
