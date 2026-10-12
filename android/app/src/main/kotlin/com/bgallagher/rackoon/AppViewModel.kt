@@ -111,6 +111,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         c.terminals.open(server.id, server.name, endpointOf(server), theme, _highlight.value)
     }
 
+    // MARK: appearance
+
+    private val _themeId = MutableStateFlow(c.prefs.themeId)
+    val themeId: StateFlow<String> = _themeId.asStateFlow()
+    fun setTheme(id: String) { _themeId.value = id; c.prefs.themeId = id }
+
+    private val _appearance = MutableStateFlow(false)
+    val appearance: StateFlow<Boolean> = _appearance.asStateFlow()
+    fun showAppearance(show: Boolean) { _appearance.value = show }
+
     private val _fontSize = MutableStateFlow(c.prefs.terminalFontSize)
     val terminalFontSize: StateFlow<Int> = _fontSize.asStateFlow()
 

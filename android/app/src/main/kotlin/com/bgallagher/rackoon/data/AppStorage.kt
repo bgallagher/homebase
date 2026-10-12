@@ -48,6 +48,11 @@ class Prefs(context: Context) {
         get() = prefs.getInt("terminal_font_size", 9)
         set(value) = prefs.edit().putInt("terminal_font_size", value.coerceIn(7, 20)).apply()
 
+    /** A theme id from themes.json, or `automatic` (Rackoon Dark/Light following the system). */
+    var themeId: String
+        get() = prefs.getString("theme_id", "automatic") ?: "automatic"
+        set(value) = prefs.edit().putString("theme_id", value).apply()
+
     var firstRunDone: Boolean
         get() = prefs.getBoolean("first_run_done", false)
         set(value) = prefs.edit().putBoolean("first_run_done", value).apply()

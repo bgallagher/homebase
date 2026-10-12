@@ -29,6 +29,7 @@ object RackoonIcons {
     val Copy = stroke("copy", 1.4f, rr(5.5f, 5.5f, 8f, 8f, 1.5f), "M10.5 5.5v-2a1.5 1.5 0 00-1.5-1.5H4a1.5 1.5 0 00-1.5 1.5V9A1.5 1.5 0 004 10.5h1.5")
     val ChevronDown = stroke("chevronDown", 1.8f, "M4 6l4 4 4-4")
     val ChevronRight = stroke("chevronRight", 1.8f, "M6 4l4 4-4 4")
+    val ChevronLeft = stroke("chevronLeft", 1.8f, "M10 4l-4 4 4 4")
     val Close = stroke("close", 1.6f, "M4 4l8 8M12 4l-8 8")
     val Back = stroke("back", 1.6f, "M10 3L5 8l5 5")
     val Plus = stroke("plus", 1.8f, "M8 3v10M3 8h10")

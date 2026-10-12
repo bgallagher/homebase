@@ -27,7 +27,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,9 +39,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bgallagher.rackoon.AppViewModel
 import com.bgallagher.rackoon.core.Server
-import com.bgallagher.rackoon.core.ThemeCatalog
 import com.bgallagher.rackoon.terminal.TabState
 import com.bgallagher.rackoon.terminal.TerminalTab
+import com.bgallagher.rackoon.ui.theme.LocalTerminalTheme
 import com.bgallagher.rackoon.ui.theme.Rackoon
 import com.bgallagher.rackoon.ui.theme.RackoonIcons
 import org.connectbot.terminal.Terminal
@@ -64,8 +63,7 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
         return
     }
 
-    val systemDark = isSystemInDarkTheme()
-    val theme = remember(systemDark) { ThemeCatalog.resolve(ThemeCatalog.AUTOMATIC_ID, systemDark, ThemeCatalog.bundled())!! }
+    val theme = LocalTerminalTheme.current
     val all by vm.terminals.tabs.collectAsStateWithLifecycle()
     val selectedIds by vm.terminals.selected.collectAsStateWithLifecycle()
     val fontSize by vm.terminalFontSize.collectAsStateWithLifecycle()

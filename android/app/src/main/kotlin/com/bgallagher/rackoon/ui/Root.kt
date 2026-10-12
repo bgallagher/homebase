@@ -68,9 +68,12 @@ fun RackoonRoot(vm: AppViewModel) {
     val tab by vm.tab.collectAsStateWithLifecycle()
     val overview by vm.overview.collectAsStateWithLifecycle()
     val switcher by vm.switcher.collectAsStateWithLifecycle()
+    val appearance by vm.appearance.collectAsStateWithLifecycle()
+    val themeId by vm.themeId.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
+            appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
             firstRun -> FirstRunScreen(vm::dismissFirstRun)
             selected == null -> Welcome(onAdd = vm::startAdd)
@@ -109,7 +112,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                     OverviewScreen(overview, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) })
                 }
                 Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
-                Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight)
+                Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) })
             }
         }
         if (!(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
@@ -183,7 +186,7 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit) {
+private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RCard(Modifier.fillMaxWidth()) {
             Column {
@@ -191,7 +194,7 @@ private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Bool
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Add server", "Connect to another machine", onAdd)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Appearance", "Themes arrive in the next build", null)
+                MoreRow("Appearance", themeName, onAppearance)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -274,3 +277,7 @@ private fun failureNote(issue: Issue) = when (issue) {
     is Issue.KeyUnknown -> "Host key not trusted"
     is Issue.Other -> "Connection failed"
 }
+
+private fun themeLabel(id: String): String =
+    if (id == com.bgallagher.rackoon.core.ThemeCatalog.AUTOMATIC_ID) "Automatic (follows the system)"
+    else com.bgallagher.rackoon.core.ThemeCatalog.bundled().firstOrNull { it.id == id }?.name ?: "Automatic (follows the system)"

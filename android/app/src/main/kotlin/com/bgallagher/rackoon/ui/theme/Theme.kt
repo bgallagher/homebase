@@ -1,6 +1,11 @@
 package com.bgallagher.rackoon.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import com.bgallagher.rackoon.core.TerminalTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -47,15 +52,27 @@ private fun AppPalette.toColorScheme() = (if (isDark) darkColorScheme() else lig
     scrim = Color.Black,
 )
 
+/** The terminal theme behind the current app palette, so terminals and screens always agree. */
+val LocalTerminalTheme = staticCompositionLocalOf<TerminalTheme> { error("RackoonTheme is missing") }
+
 /** `themeId` is a saved selection: a theme id or `automatic` (Rackoon Dark/Light following the system). */
 @Composable
 fun RackoonTheme(themeId: String = ThemeCatalog.AUTOMATIC_ID, content: @Composable () -> Unit) {
     val systemDark = isSystemInDarkTheme()
-    val palette = remember(themeId, systemDark) {
-        val themes = ThemeCatalog.bundled()
-        AppPalette.derive(ThemeCatalog.resolve(themeId, systemDark, themes)!!)
+    val theme = remember(themeId, systemDark) { ThemeCatalog.resolve(themeId, systemDark, ThemeCatalog.bundled())!! }
+    val palette = remember(theme) { AppPalette.derive(theme) }
+    // Edge-to-edge picks status and navigation bar icon colours from the SYSTEM mode; follow the chosen theme instead.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !palette.isDark
+                isAppearanceLightNavigationBars = !palette.isDark
+            }
+        }
     }
-    CompositionLocalProvider(LocalRackoon provides palette.toColors()) {
+    CompositionLocalProvider(LocalRackoon provides palette.toColors(), LocalTerminalTheme provides theme) {
         MaterialTheme(colorScheme = palette.toColorScheme(), content = content)
     }
 }
