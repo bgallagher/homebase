@@ -101,11 +101,8 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                     LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
                     OverviewScreen(overview, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) })
                 }
-                Tab.Terminal -> Placeholder(
-                    "Terminal",
-                    if (readOnly) "Turn off Read-only to open a session. The terminal arrives in the next build." else "The terminal arrives in the next build.",
-                )
-                Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd)
+                Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
+                Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight)
             }
         }
         BottomBar(tab, vm::showTab)
@@ -179,7 +176,7 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit) {
+private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RCard(Modifier.fillMaxWidth()) {
             Column {
@@ -188,6 +185,14 @@ private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit) {
                 MoreRow("Add server", "Connect to another machine", onAdd)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Appearance", "Themes arrive in the next build", null)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Highlight terminal output", fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
+                        Text("Colour errors, warnings, IP addresses and high percentages", fontSize = 12.sp, color = Rackoon.colors.textMuted)
+                    }
+                    androidx.compose.material3.Switch(highlight, onHighlight)
+                }
             }
         }
         Text("Rackoon 0.1.0-alpha.1 · developed by Brian Gallagher", color = Rackoon.colors.textMuted, fontSize = 12.sp)

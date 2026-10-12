@@ -101,6 +101,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init { current()?.let(::openLive) }
 
+    // MARK: terminals (sessions live in TerminalManager, not here, so they outlast screens)
+
+    val terminals = c.terminals
+    private val _highlight = MutableStateFlow(c.prefs.highlightOutput)
+    val highlightOutput: StateFlow<Boolean> = _highlight.asStateFlow()
+
+    fun openTerminal(server: Server, theme: com.bgallagher.rackoon.core.TerminalTheme) {
+        c.terminals.open(server.id, server.name, endpointOf(server), theme, _highlight.value)
+    }
+
+    fun setHighlight(on: Boolean) {
+        _highlight.value = on; c.prefs.highlightOutput = on; c.terminals.setHighlight(on)
+    }
+
     // MARK: first run, read-only, tabs
 
     fun dismissFirstRun() { c.prefs.firstRunDone = true; _firstRun.value = false }
@@ -119,6 +133,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun remove(server: Server) {
+        c.terminals.closeAll(server.id)
         c.knownHosts.forget(server.host, server.port ?: 22)
         _servers.update { list -> list.filterNot { it.id == server.id } }
         c.servers.save(_servers.value)

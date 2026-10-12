@@ -5,6 +5,7 @@ import com.bgallagher.rackoon.core.Server
 import com.bgallagher.rackoon.ssh.JsonFileKnownHosts
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.bgallagher.rackoon.terminal.TerminalManager
 import java.io.File
 
 /** `servers.json`: the saved servers, using the core `Server` model. Written atomically; a corrupt file reads as empty. */
@@ -37,6 +38,11 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("read_only", true)
         set(value) = prefs.edit().putBoolean("read_only", value).apply()
 
+    /** Colour error words, IP addresses and high percentages in terminal output (core TerminalOutputFilter). */
+    var highlightOutput: Boolean
+        get() = prefs.getBoolean("highlight_output", true)
+        set(value) = prefs.edit().putBoolean("highlight_output", value).apply()
+
     var firstRunDone: Boolean
         get() = prefs.getBoolean("first_run_done", false)
         set(value) = prefs.edit().putBoolean("first_run_done", value).apply()
@@ -44,8 +50,10 @@ class Prefs(context: Context) {
 
 /** Everything that lives for the whole process, built once by [com.bgallagher.rackoon.RackoonApp]. */
 class AppContainer(context: Context) {
+    private val appContext = context.applicationContext
     private val dir = File(context.filesDir, "Rackoon")
     val servers = ServersFile(File(dir, "servers.json"))
     val knownHosts = JsonFileKnownHosts(File(dir, "known_hosts.json"))
     val prefs = Prefs(context)
+    val terminals = TerminalManager(appContext, knownHosts)
 }

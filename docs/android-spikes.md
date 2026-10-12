@@ -101,3 +101,7 @@ the budget; only a lost connection retries). Tests: core 141, ssh 8.
 
 Probe lesson: a terminal echoes what is typed, so a check must wait for text only the OUTPUT contains (the first version of
 `shell-check` raced the echo and read the size too early).
+
+## Stage A5 first cut: terminal on the Pixel 10 Pro (12 Oct 2026)
+
+termlib terminal on the real server: pty at the emulator's size, login banner, prompt, typing through the soft keyboard, extra-keys row, output highlighting (error words, IPs, percentages), tab strip, Read-only gate, foreground service ("N SSH sessions open"), and a session that survived 45 s of screen-off. Found on device: Android's regex engine rejects `(?U)` and reads `[:` as a POSIX class (fixed in core `OutputHighlighter`). Not yet tried: Wi-Fi/mobile switch and the reconnect card, full-screen programs through this app (htop/vim worked in the spike), landscape layout, font size control.

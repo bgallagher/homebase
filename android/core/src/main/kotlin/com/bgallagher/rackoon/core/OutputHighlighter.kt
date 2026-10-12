@@ -10,14 +10,16 @@ data class HighlightSpan(val start: Int, val end: Int, val kind: HighlightKind)
  * Conservative on purpose: only whole words, only unambiguous patterns.
  */
 object OutputHighlighter {
-    // (?U): Unicode-aware \w, \b and \d, like the ICU regex engine the Swift version uses.
+    // Explicit Unicode classes instead of (?U) with \w, \b and \d: Android's ICU engine rejects the inline flag (it crashed on a
+    // phone) and is Unicode-aware by default, while the JVM is not. Explicit classes mean the same on both, like Swift's ICU. (ICU also reads "[:" as a POSIX class: escape colons in classes.)
+    private const val W = """[\p{L}\p{M}\p{N}_]"""
     private const val OCTET = """(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"""
-    private val ipv4 = Regex("""(?U)(?<![\w.])$OCTET(?:\.$OCTET){3}(?![\w]|\.\d)""")
-    private val ipv6Candidate = Regex("""(?U)(?<![\w:.])[0-9A-Fa-f:]{3,}(?![\w:])""")
-    private val errorWords = Regex("""(?Ui)\b(?:error|failed|failure|fatal|denied|refused|critical|panic)\b""")
-    private val warningWords = Regex("""(?Ui)\b(?:warning|warn)\b""")
-    private val successWords = Regex("""(?Ui)\b(?:success|successful|successfully|passed)\b""")
-    private val percent = Regex("""(?U)(?<![\w.])(\d{1,3})(?:\.\d+)?%""")
+    private val ipv4 = Regex("""(?<!$W|\.)$OCTET(?:\.$OCTET){3}(?!$W|\.\p{Nd})""")
+    private val ipv6Candidate = Regex("""(?<!$W|[\:.])[0-9A-Fa-f\:]{3,}(?!$W|\:)""")
+    private val errorWords = Regex("""(?<!$W)(?:error|failed|failure|fatal|denied|refused|critical|panic)(?!$W)""", RegexOption.IGNORE_CASE)
+    private val warningWords = Regex("""(?<!$W)(?:warning|warn)(?!$W)""", RegexOption.IGNORE_CASE)
+    private val successWords = Regex("""(?<!$W)(?:success|successful|successfully|passed)(?!$W)""", RegexOption.IGNORE_CASE)
+    private val percent = Regex("""(?<!$W|\.)(\p{Nd}{1,3})(?:\.\p{Nd}+)?%""")
 
     fun spans(text: String): List<HighlightSpan> {
         // UTF-16 index -> UTF-8 byte offset, computed once.

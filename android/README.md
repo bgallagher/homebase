@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app comes next (A3 onward). First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key/password auth and release packaging are still to do. First release: themes, Overview, terminal.
 
 ```
 android/
@@ -9,7 +9,8 @@ android/
            log and stream helpers, command library, themes, output highlighter). No Android or SSH imports.
   ssh/     sshj behind core's SSHTransport: one connection for commands, a pty connection for streams (Ctrl-C on cancel),
            terminal shells with resize, host-key trust (SHA256 fingerprints, trust-on-first-use, changed key blocked)
-  app/     (A3+) Jetpack Compose UI, ConnectBot termlib terminal
+  app/     Jetpack Compose UI; terminal = ConnectBot termlib fed by `TerminalTab` (reconnect via ReconnectPolicy, extra keys,
+           output highlighting) held by `TerminalManager`, kept alive by a foreground `SessionService`
   probe/   a JVM CLI for real-server checks: ./gradlew :probe:run --args="<host> overview|hostkey|stream-check|stream-marker|shell-check"
 ```
 
@@ -41,3 +42,5 @@ CI runs the same (`android-core` job). Android Studio opens `android/` directly 
 - Not ported (Mac-only or later stages): `SSHConfig`, `ServerStore`, `LicenceKey`, favicon fetching, the compose/.env editor
   stack (`ComposeFormParser`, `ContainerSpec`, `NewStack`, `StackFiles*`, `EditorChecks`, `LineDiff`, `SyntaxHighlighter`),
   `RemoteFiles`, `StackRemoval`.
+
+- Regexes in core must also compile on Android's ICU engine, which the JVM tests cannot show: no `(?U)` flag (use explicit `\p{L}\p{N}` classes) and escape `:` inside classes (`[:` starts a POSIX class). Both crashed the phone once.
