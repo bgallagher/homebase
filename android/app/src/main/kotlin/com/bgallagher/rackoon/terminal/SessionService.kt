@@ -43,7 +43,7 @@ class SessionService : Service() {
     private fun notification(count: Int): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(com.bgallagher.rackoon.R.drawable.ic_stat_session)
             .setContentTitle("Rackoon")
             .setContentText(if (count == 1) "1 SSH session open" else "$count SSH sessions open")
             .setContentIntent(open)
