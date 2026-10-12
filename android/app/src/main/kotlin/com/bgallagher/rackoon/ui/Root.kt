@@ -72,6 +72,7 @@ fun RackoonRoot(vm: AppViewModel) {
     val appearance by vm.appearance.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val bookmarksOpen by vm.bookmarksOpen.collectAsStateWithLifecycle()
+    val editorFile by vm.editorFile.collectAsStateWithLifecycle()
     val bookmarkForm by vm.bookmarkForm.collectAsStateWithLifecycle()
     val pending by vm.pending.collectAsStateWithLifecycle()
     val themeId by vm.themeId.collectAsStateWithLifecycle()
@@ -79,6 +80,7 @@ fun RackoonRoot(vm: AppViewModel) {
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
             settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings)
+            editorFile != null -> EditorScreen(vm, editorFile!!, readOnly)
             bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)

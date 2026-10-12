@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) and the container and stack actions (start, stop, restart, rebuild, recreate, pull, update, Shell, with a confirmation and live Output) and the stack Logs tab (merged follow, per-container focus, level chips, search, pause/Latest, copy) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) and the container and stack actions (start, stop, restart, rebuild, recreate, pull, update, Shell, with a confirmation and live Output) and the compose.yaml/.env editor (line numbers, highlighting, the server's own checks, diff-confirmed save, redeploy, conflict handling) and the stack Logs tab (merged follow, per-container focus, level chips, search, pause/Latest, copy) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
 
 ```
 android/
@@ -31,6 +31,7 @@ cd android
 ./gradlew :core:test :ssh:test            # 186 + 14 tests; needs JDK 21
 ./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
 ./gradlew :probe:run --args="hetzner compose-test"    # REAL pull/update/rebuild/recreate on a throwaway stack it makes and removes under /tmp
+./gradlew :probe:run --args="hetzner env-test"   # REAL .env create/edit/guards on a throwaway stack under /tmp
 ./gradlew :probe:run --args="hetzner logs-check"   # follows two real containers merged (read-only) and proves nothing is left running
 ./gradlew :probe:run --args="hetzner exec-shell-check"   # a command and an interactive program on a pty (what Shell-in-container uses)
 ./gradlew :probe:run --args="hetzner bookmark-test"   # REAL writes, but only on a throwaway stack it makes and removes under /tmp

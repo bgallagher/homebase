@@ -20,6 +20,9 @@ import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.serviceNames
 import com.bgallagher.rackoon.ui.PendingAction
 import com.bgallagher.rackoon.core.DockerAction
+import com.bgallagher.rackoon.core.EditableFile
+import com.bgallagher.rackoon.core.EditorState
+import com.bgallagher.rackoon.core.StackEditor
 import com.bgallagher.rackoon.core.LogFollower
 import com.bgallagher.rackoon.core.LogsState
 import com.bgallagher.rackoon.core.DockerState
@@ -362,6 +365,88 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // MARK: compose.yaml and .env editor (drafts live here, so rotating the phone or leaving the screen never loses typing)
+
+    private var editor: StackEditor? = null
+    private var editorJob: Job? = null
+    private val _editorState = MutableStateFlow(EditorState())
+    val editorState: StateFlow<EditorState> = _editorState.asStateFlow()
+
+    /** The file on screen in the editor, or null when the editor is closed. */
+    private val _editorFile = MutableStateFlow<EditableFile?>(null)
+    val editorFile: StateFlow<EditableFile?> = _editorFile.asStateFlow()
+    private var editorStack: DockerStack? = null
+
+    /** Set when the user leaves with unsaved changes: the screen asks before throwing them away. */
+    private val _confirmDiscard = MutableStateFlow(false)
+    val confirmDiscard: StateFlow<Boolean> = _confirmDiscard.asStateFlow()
+
+    fun editorStackName(): String? = editorStack?.name
+
+    fun openEditor(stack: DockerStack, file: EditableFile) {
+        val l = live ?: return
+        if (editor == null || editorStack?.name != stack.name) {
+            editor?.close(); editorJob?.cancel()
+            val ed = StackEditor(StackFileSession(l.transport, stack, policy), stack, l.server.name, viewModelScope, { _readOnly.value })
+            editor = ed; editorStack = stack
+            editorJob = viewModelScope.launch { ed.state.collect { _editorState.value = it } }
+        }
+        editor?.open(file)
+        _editorFile.value = file
+    }
+
+    fun showEditorFile(file: EditableFile) { editor?.open(file); _editorFile.value = file }
+    fun editorFiles(): List<EditableFile> = editor?.files ?: emptyList()
+    fun editorText(file: EditableFile, text: String) { editor?.setText(file, text) }
+    fun editorRevert(file: EditableFile) { editor?.revert(file) }
+    fun editorReload(file: EditableFile) { editor?.reload(file) }
+    fun editorDismissNotice() { editor?.dismissNotice() }
+    fun editorRows(file: EditableFile) = editor?.rows(file, _editorState.value) ?: emptyList()
+    fun editorCanSave(file: EditableFile) = editor?.canSave(file, _editorState.value) == true
+    fun editorCanRedeploy(file: EditableFile) = editor?.canRedeploy(file, _editorState.value) == true
+    fun editorBlockedReason(file: EditableFile) = editor?.saveBlockedReason(file, _editorState.value)
+
+    /** Back from the editor: asks first when there are unsaved changes. */
+    fun closeEditor() {
+        if (editor?.hasUnsavedChanges == true) _confirmDiscard.value = true else closeEditorNow()
+    }
+
+    fun keepEditing() { _confirmDiscard.value = false }
+
+    fun closeEditorNow() {
+        _confirmDiscard.value = false
+        editor?.close(); editorJob?.cancel(); editor = null; editorStack = null
+        _editorState.value = EditorState(); _editorFile.value = null
+    }
+
+    /** Save asks first, showing the diff (the command carries the file encoded, so it isn't readable) and the redeploy command. */
+    fun requestEditorSave(redeploy: Boolean) {
+        val l = live ?: return
+        val ed = editor ?: return
+        val file = _editorFile.value ?: return
+        val stack = editorStack ?: return
+        if (redeploy && !ed.canRedeploy(file)) return
+        val edit = ed.editFor(file) ?: return
+        val intent = ed.intent(edit) ?: return
+        val name = file.fileName
+        _pending.value = PendingAction(
+            title = if (redeploy) "Save $name and update ${stack.name}?" else "Save $name?",
+            message = "The server checks it first, and nothing is written if that fails. The previous version is kept as $name.rackoon.bak." +
+                if (redeploy) " Then the stack is updated: containers whose image or settings changed are recreated." else "",
+            user = l.endpointUser(), command = if (redeploy) com.bgallagher.rackoon.core.ComposeAction.UP.command(stack).orEmpty() else "", preview = intent.preview,
+            run = {
+                if (live === l) ed.save(edit, redeploy) {
+                    if (redeploy && live === l) {
+                        // Leave the editor on the stack page's Output, where the update streams.
+                        val target = stack
+                        closeEditorNow()
+                        runStackAction(l, target, com.bgallagher.rackoon.core.ComposeAction.UP, null)
+                    }
+                }
+            },
+        )
+    }
+
     // MARK: container and stack actions (every one is confirmed, bound to the server it was made for, and streams into Output)
 
     enum class StackTab { Containers, Logs, Output }
@@ -389,7 +474,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _working = MutableStateFlow<String?>(null)
     val working: StateFlow<String?> = _working.asStateFlow()
 
-    private fun clearDockerActions() { _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
+    private fun clearDockerActions() { closeEditorNow(); _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
 
     /** Why a stack's actions are unavailable (null when they can run). */
     fun stackBlockedReason(stack: DockerStack): String? = ActionPrompts.blockedReason(stack, _readOnly.value, _working.value != null)

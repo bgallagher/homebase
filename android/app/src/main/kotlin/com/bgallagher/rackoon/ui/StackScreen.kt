@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -130,6 +131,8 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
                         blocked = blocked, vm = vm,
                     )
                 }
+                val editable = com.bgallagher.rackoon.core.StackFiles.editable(stack)
+                if (editable != null) item(key = "files") { FilesSection(editable) { vm.openEditor(stack, it) } }
             }
             AppViewModel.StackTab.Logs -> LogsPanel(vm, stack)
             AppViewModel.StackTab.Output -> if (ownOutput != null) ActionOutputPanel(ownOutput, onCancel = vm::cancelOutput, onClose = vm::closeOutput)
@@ -191,6 +194,9 @@ private fun ContainerCard(ct: DockerContainer, stack: DockerStack, busy: Boolean
             Box {
                 IconTap(RackoonIcons.More, "More actions for ${ct.service ?: ct.name}", c.textSecondary, { menu = true })
                 DropdownMenu(menu, { menu = false }, containerColor = c.selection) {
+                    com.bgallagher.rackoon.core.StackFiles.editable(stack)?.firstOrNull { !it.isEnv }?.let { compose ->
+                        DropdownMenuItem(text = { Text("View compose.yaml", color = c.textPrimary) }, onClick = { menu = false; vm.openEditor(stack, compose) })
+                    }
                     DropdownMenuItem(
                         text = { Text("Stop…", color = if (canAct && ct.isRunning) c.danger else c.textMuted) },
                         enabled = canAct && ct.isRunning, onClick = { menu = false; vm.requestContainerAction(stack, ct, DockerAction.STOP) },
@@ -207,6 +213,30 @@ private fun ContainerCard(ct: DockerContainer, stack: DockerStack, busy: Boolean
 private fun ActionLink(label: String, enabled: Boolean, onClick: () -> Unit) {
     TextButton(onClick, enabled = enabled, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) {
         Text(label, color = if (enabled) Rackoon.colors.accent else Rackoon.colors.textMuted, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** The design's Files section: the stack's compose file(s) and `.env`, each opening the editor. */
+@Composable
+private fun FilesSection(files: List<com.bgallagher.rackoon.core.EditableFile>, onOpen: (com.bgallagher.rackoon.core.EditableFile) -> Unit) {
+    val c = Rackoon.colors
+    Column(Modifier.padding(top = 6.dp)) {
+        SectionLabel("Files")
+        RCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Column {
+                files.forEachIndexed { i, f ->
+                    if (i > 0) androidx.compose.material3.HorizontalDivider(color = c.border)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { onOpen(f) }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(f.fileName, fontFamily = MonoFamily, color = c.textPrimary)
+                            Text(f.path.substringBeforeLast('/'), fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Icon(RackoonIcons.ChevronRight, null, tint = c.textMuted, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+        Text("Edits are syntax-checked on the server before anything is written.", fontSize = 12.sp, color = c.textMuted, lineHeight = 17.sp, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
     }
 }
 

@@ -2,6 +2,9 @@ package com.bgallagher.rackoon.probe
 
 import com.bgallagher.rackoon.core.ActionStreamEvent
 import com.bgallagher.rackoon.core.ActionPolicy
+import com.bgallagher.rackoon.core.EditorChecks
+import com.bgallagher.rackoon.core.EnvSyntax
+import com.bgallagher.rackoon.core.RemoteFileState
 import com.bgallagher.rackoon.core.Bookmark
 import com.bgallagher.rackoon.core.ComposeAction
 import com.bgallagher.rackoon.core.LogFollower
@@ -45,6 +48,8 @@ import kotlin.system.exitProcess
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
  *   compose-test   REAL pull/update/rebuild/recreate/streamed runs/read-only checks on a throwaway stack under /tmp that it creates and
  *                  removes (project rackoon-probe-test). Never touches your own stacks.
+ *   env-test       REAL .env editing on a throwaway stack under /tmp (project rackoon-probe-env): a missing .env, create it, check it with
+ *                  the server's --env-file, the not-exists guard when it appears underneath, edit it, and the checklist
  *   logs-check     LogFollower follows TWO real containers merged for a few seconds (read-only), then stops: no `docker logs -f` is left
  *                  running on the server
  *   exec-shell-check  a command on a pty and an interactive shell both work through the real SSH library (what Shell-in-container uses)
@@ -55,7 +60,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|env-test|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -223,6 +228,63 @@ fun main(args: Array<String>) {
                         val badSave = FileEdit(compose, original, sh("sha256sum $file | cut -d' ' -f1").stdout.trim(), "services:\n  web:\n    imagee: nginx\n")
                         val refused = session.save(badSave, session.confirm(badSave))
                         expect("saving an invalid file is refused (got $refused)", refused is SaveOutcome.Invalid)
+                    } finally {
+                        sh("rm -rf $dir")
+                        expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
+                }
+
+                "env-test" -> {
+                    val project = "rackoon-probe-env"
+                    val dir = "/tmp/rackoon-probe-env-stack"
+                    val file = "$dir/compose.yaml"
+                    suspend fun sh(cmd: String) = transport.run(cmd, 120_000)
+                    try {
+                        val compose = "services:\n  web:\n    image: busybox:1.36\n    command: sleep 3600\n    environment:\n      - GREETING=${'$'}{GREETING:?set GREETING in .env}\n"
+                        val b64 = java.util.Base64.getEncoder().encodeToString(compose.toByteArray())
+                        expect("throwaway folder created", sh("rm -rf $dir; mkdir -p $dir && echo $b64 | base64 -d > $file").exitCode == 0)
+                        val container = com.bgallagher.rackoon.core.DockerContainer(
+                            id = "abcdef012345", name = "$project-web-1", image = "busybox:1.36", state = "running", health = "none", status = "Up", ports = emptyList(),
+                            project = project, service = "web", workingDir = dir, configFile = file, configFiles = listOf(file),
+                        )
+                        val stack = DockerStack(project, dir, file, listOf(file), listOf(container), false)
+                        val session = com.bgallagher.rackoon.core.StackFileSession(transport, stack, ActionPolicy())
+                        val env = com.bgallagher.rackoon.core.EditableFile.Env("$dir/.env")
+                        val comp = com.bgallagher.rackoon.core.EditableFile.Compose(file)
+
+                        expect(".env is reported missing", session.read(env) == RemoteFileState.Missing)
+                        // The compose file needs GREETING, so it fails without a .env: the checklist must say so, not pass.
+                        val without = session.validate(comp, compose)
+                        expect("without a .env the compose check fails (${without.errors.firstOrNull()?.message?.take(70)})", !without.isValid)
+                        val rows = EditorChecks.rows(false, "hetzner", emptyList(), null, without, compose, compose)
+                        expect("and the checklist says which step failed", rows.any { it.state == com.bgallagher.rackoon.core.EditorCheckRow.State.FAIL })
+
+                        val good = "GREETING=hello\n"
+                        expect("local env syntax accepts it", EnvSyntax.check(good).isEmpty())
+                        expect("the server's --env-file check accepts the new .env", session.validate(env, good).isValid)
+                        val bad = "GREETING hello\n"
+                        expect("local env syntax rejects 'GREETING hello' on line 1", EnvSyntax.check(bad).firstOrNull()?.line == 1)
+
+                        val create = com.bgallagher.rackoon.core.FileEdit(env, null, null, good)
+                        val saved = session.save(create, session.confirm(create))
+                        expect("a new .env is created (got $saved)", saved is com.bgallagher.rackoon.core.SaveOutcome.Saved)
+                        expect("it is on the server with that content", sh("cat $dir/.env").stdout == good)
+                        expect("a new file is private (mode 600)", sh("stat -c %a $dir/.env").stdout.trim() == "600")
+                        expect("the stack now resolves with it", session.validate(comp, compose).isValid)
+
+                        // The not-exists guard: the file is created by someone else after the editor opened it as missing.
+                        sh("rm -f $dir/.env && echo 'OTHER=1' > $dir/.env")
+                        val raced = session.save(create, session.confirm(create))
+                        expect("a .env that appeared underneath is not overwritten (got $raced)", raced == com.bgallagher.rackoon.core.SaveOutcome.ChangedOnServer)
+                        expect("and what is on the server is untouched", sh("cat $dir/.env").stdout == "OTHER=1\n")
+
+                        // Edit an existing .env with the sha guard, and keep the backup.
+                        val opened = session.read(env) as RemoteFileState.File
+                        val edit = com.bgallagher.rackoon.core.FileEdit(env, opened.file.content, opened.file.sha256, "GREETING=bye\nOTHER=2\n")
+                        val second = session.save(edit, session.confirm(edit))
+                        expect("an existing .env is edited (got $second)", second is com.bgallagher.rackoon.core.SaveOutcome.Saved)
+                        expect("its backup keeps the old content", sh("cat $dir/.env.rackoon.bak").stdout == "OTHER=1\n")
+                        expect("permissions of the existing file are carried over", sh("stat -c %a $dir/.env").stdout.trim() == sh("stat -c %a $dir/.env.rackoon.bak").stdout.trim())
                     } finally {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
