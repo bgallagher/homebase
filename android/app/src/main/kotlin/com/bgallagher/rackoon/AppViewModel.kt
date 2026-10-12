@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.data.StoredAuth
+import com.bgallagher.rackoon.core.DockerSession
+import com.bgallagher.rackoon.core.DockerSnapshot
 import com.bgallagher.rackoon.core.Server
 import com.bgallagher.rackoon.core.ServerSession
 import com.bgallagher.rackoon.core.ServerState
@@ -43,7 +45,15 @@ sealed class OverviewUi {
     class Failed(val issue: Issue) : OverviewUi()
 }
 
-enum class Tab { Overview, Terminal, More }
+/** What the Docker screen shows: the first load, the stacks, no Docker, or a failure (with whether the server could not be reached at all). */
+sealed class DockerUi {
+    object Loading : DockerUi()
+    class Ready(val snapshot: DockerSnapshot, val updatedAt: Long?, val error: String?) : DockerUi()
+    object NotInstalled : DockerUi()
+    class Failed(val message: String, val unreachable: Boolean) : DockerUi()
+}
+
+enum class Tab { Overview, Docker, Terminal, More }
 
 /** The sign-in choice in the Add server and Server settings forms. Secrets live here only while the form is open. */
 data class AuthFields(
@@ -128,6 +138,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private inner class Live(val server: Server) {
         val transport = SshjTransport(endpointOf(server), c.knownHosts)
+        val docker = DockerSession(transport)
         val session = ServerSession(transport, cached = c.snapshots.load(server.id), onSnapshot = { c.snapshots.save(server.id, it) })
     }
 
@@ -136,7 +147,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         c.secrets.load(server.id)?.toSshAuth() ?: SshAuth.TailscaleNone,
     )
 
-    init { current()?.let(::openLive) }
 
     // MARK: terminals (sessions live in TerminalManager, not here, so they outlast screens)
 
@@ -206,8 +216,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pollJob?.cancel()
         live?.transport?.close()
         live = Live(server)
+        _docker.value = DockerUi.Loading
+        _openStack.value = null
         // A saved reading shows at once (marked stale) while the first poll runs.
         _overview.value = live!!.session.state.value.takeIf { it.overview != null }?.let { OverviewUi.Ready(it) } ?: OverviewUi.Connecting
+    }
+
+    // MARK: Docker (polled every 10 s, only while the Docker tab is on screen: `docker stats` is slow)
+
+    private val _docker = MutableStateFlow<DockerUi>(DockerUi.Loading)
+    val docker: StateFlow<DockerUi> = _docker.asStateFlow()
+
+    /** The compose project whose page is open, or null for the list. */
+    private val _openStack = MutableStateFlow<String?>(null)
+    val openStack: StateFlow<String?> = _openStack.asStateFlow()
+    fun openStack(name: String?) { _openStack.value = name }
+
+    suspend fun pollDockerWhileVisible() {
+        val l = live ?: return
+        while (true) {
+            refreshDockerOnce(l)
+            delay(10_000)
+        }
+    }
+
+    fun refreshDockerNow() {
+        val l = live ?: return
+        viewModelScope.launch { refreshDockerOnce(l) }
+    }
+
+    private suspend fun refreshDockerOnce(l: Live) {
+        val previous = _docker.value
+        try {
+            l.transport.connect()
+            l.docker.refresh()
+            val s = l.docker.state.value
+            _docker.value = when {
+                s.snapshot != null -> DockerUi.Ready(s.snapshot!!, s.updatedAt, s.error)
+                s.error?.contains("not installed", ignoreCase = true) == true -> DockerUi.NotInstalled
+                s.error != null -> DockerUi.Failed(s.error!!, unreachable = false)
+                else -> DockerUi.Loading
+            }
+        } catch (e: SshException) {
+            // Keep the last stacks on screen when the link drops; with nothing to show, explain.
+            _docker.value = if (previous is DockerUi.Ready) DockerUi.Ready(previous.snapshot, previous.updatedAt, e.message)
+            else DockerUi.Failed(e.message ?: "Connection failed", unreachable = e is SshException.Unreachable)
+        }
     }
 
     // MARK: Overview polling (the screen runs this only while it is visible)
@@ -387,6 +441,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _settings.value = null
         remove(server)
     }
+
+    // Last on purpose: openLive() sets state flows declared above, and property initialisers run in order.
+    init { current()?.let(::openLive) }
 
     override fun onCleared() {
         live?.transport?.close()

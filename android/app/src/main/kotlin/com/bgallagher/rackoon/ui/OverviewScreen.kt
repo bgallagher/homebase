@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OverviewScreen(ui: OverviewUi, wide: Boolean, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onBack: () -> Unit, onOpenTerminal: () -> Unit) {
+fun OverviewScreen(ui: OverviewUi, wide: Boolean, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onBack: () -> Unit, onOpenFix: (String) -> Unit) {
     when (ui) {
         OverviewUi.Connecting -> Loading()
         is OverviewUi.Failed -> when (val issue = ui.issue) {
@@ -57,7 +57,7 @@ fun OverviewScreen(ui: OverviewUi, wide: Boolean, onRefresh: () -> Unit, onTrust
             is Issue.KeyUnknown -> TrustSheet(issue.host, issue.presented, onTrust = { onTrustFirstKey(issue) }, onCancel = onBack)
             else -> Unavailable(issue, onRefresh)
         }
-        is OverviewUi.Ready -> Ready(ui.state, wide, onRefresh, onOpenTerminal)
+        is OverviewUi.Ready -> Ready(ui.state, wide, onRefresh, onOpenFix)
     }
 }
 
@@ -111,7 +111,7 @@ private fun Unavailable(issue: Issue, onRetry: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOpenTerminal: () -> Unit) {
+private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOpenFix: (String) -> Unit) {
     val o = state.overview ?: return
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
@@ -125,7 +125,7 @@ private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOp
             }
             if (state.attention.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.attention.forEach { AttentionChip(it, onClick = if (it.fix == "terminal") onOpenTerminal else null) }
+                    state.attention.forEach { AttentionChip(it, onClick = if (it.fix == "terminal" || it.fix == "docker") ({ onOpenFix(it.fix) }) else null) }
                 }
             }
             val usage: @Composable (Modifier) -> Unit = { m ->

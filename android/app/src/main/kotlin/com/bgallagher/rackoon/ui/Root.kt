@@ -116,7 +116,12 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
                         // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
                         LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
-                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenTerminal = { vm.showTab(Tab.Terminal) })
+                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }) })
+                    }
+                    Tab.Docker -> {
+                        val lifecycle = LocalLifecycleOwner.current.lifecycle
+                        LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollDockerWhileVisible() } }
+                        DockerScreen(vm, server, wide)
                     }
                     Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
                     Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name)
@@ -127,7 +132,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
     }
 }
 
-private val tabItems get() = listOf(Tab.Overview to ("Overview" to RackoonIcons.Overview), Tab.Terminal to ("Terminal" to RackoonIcons.Terminal), Tab.More to ("More" to RackoonIcons.More))
+private val tabItems get() = listOf(Tab.Overview to ("Overview" to RackoonIcons.Overview), Tab.Docker to ("Docker" to RackoonIcons.Docker), Tab.Terminal to ("Terminal" to RackoonIcons.Terminal), Tab.More to ("More" to RackoonIcons.More))
 
 @Composable
 private fun NavRail(tab: Tab, onTab: (Tab) -> Unit) {

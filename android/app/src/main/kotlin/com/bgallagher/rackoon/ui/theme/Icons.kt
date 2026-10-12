@@ -24,6 +24,8 @@ object RackoonIcons {
         }.build()
 
     val Overview = stroke("overview", 1.4f, rr(2f, 2f, 5f, 5f, 1.2f), rr(9f, 2f, 5f, 5f, 1.2f), rr(2f, 9f, 5f, 5f, 1.2f), rr(9f, 9f, 5f, 5f, 1.2f))
+    val Docker = stroke("docker", 1.4f, "M2 5l6-3 6 3v6l-6 3-6-3z", "M2 5l6 3 6-3M8 8v6")
+    val External = stroke("external", 1.6f, "M9 3h4v4M13 3L7 9M12 10v3H3V4h3")
     val Terminal = stroke("terminal", 1.4f, rr(2f, 3f, 12f, 10f, 2f), "M5 7l2 1.5L5 10M8.5 10.5H11")
     val Lock = stroke("lock", 1.8f, rr(3f, 7f, 10f, 7f, 1.5f), "M5.5 7V5a2.5 2.5 0 015 0v2")
     val Copy = stroke("copy", 1.4f, rr(5.5f, 5.5f, 8f, 8f, 1.5f), "M10.5 5.5v-2a1.5 1.5 0 00-1.5-1.5H4a1.5 1.5 0 00-1.5 1.5V9A1.5 1.5 0 004 10.5h1.5")
