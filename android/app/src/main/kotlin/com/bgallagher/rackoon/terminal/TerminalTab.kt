@@ -10,7 +10,7 @@ import com.bgallagher.rackoon.core.TerminalOutputFilter
 import com.bgallagher.rackoon.core.TerminalTheme
 import com.bgallagher.rackoon.ssh.ShellSession
 import com.bgallagher.rackoon.ssh.SshException
-import com.bgallagher.rackoon.ssh.SshjTransport
+import com.bgallagher.rackoon.ssh.ServerConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -45,7 +45,7 @@ sealed class TabState {
 class TerminalTab(
     val id: Int,
     val title: String,
-    private val transport: SshjTransport,
+    private val transport: ServerConnection,
     private val scope: CoroutineScope,
     theme: TerminalTheme,
     highlight: Boolean,

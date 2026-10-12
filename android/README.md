@@ -46,3 +46,8 @@ CI runs the same (`android-core` job). Android Studio opens `android/` directly 
   `RemoteFiles`, `StackRemoval`.
 
 - Regexes in core must also compile on Android's ICU engine, which the JVM tests cannot show: no `(?U)` flag (use explicit `\p{L}\p{N}` classes) and escape `:` inside classes (`[:` starts a POSIX class). Both crashed the phone once.
+
+## Demo mode and the sandbox (for trying things without touching a real server)
+
+- **Demo mode (debug builds only):** `adb shell am force-stop com.bgallagher.rackoon && adb shell am start -n com.bgallagher.rackoon/.MainActivity --ez demo true`. The app runs against three made-up servers (homelab with 9 stacks and an unhealthy container, garage-nuc, and old-nas which is always unreachable), with its own empty storage; nothing is read from or written to your real servers, keys or settings. Fake connections answer the same commands the app really sends, and actions change the fake world (a restart, an update that picks up edited labels, a save through the compose editor). A release build has no demo code at all. An emulator works well for this: `emulator -avd Medium_Phone_API_37.0 -no-window`.
+- **Sandbox stack on a real server:** `./gradlew :probe:run --args="hetzner sandbox-up"` creates ONE harmless stack (`/tmp/rackoon-sandbox`, project `rackoonsandbox`: a hello page on 127.0.0.1:18080 and redis) so the phone's Docker actions can be tried on it; `sandbox-down` removes exactly that stack and folder. Your own stacks are never touched.

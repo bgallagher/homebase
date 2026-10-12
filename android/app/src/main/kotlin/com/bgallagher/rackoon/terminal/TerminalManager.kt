@@ -4,8 +4,7 @@ import android.content.Context
 import android.content.Intent
 import com.bgallagher.rackoon.core.TerminalTheme
 import com.bgallagher.rackoon.ssh.SshEndpoint
-import com.bgallagher.rackoon.ssh.KnownHosts
-import com.bgallagher.rackoon.ssh.SshjTransport
+import com.bgallagher.rackoon.ssh.ServerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,9 +21,9 @@ import kotlinx.coroutines.flow.update
  * session. Each server gets its own SSH connection, separate from the Overview poll. A foreground service keeps the process
  * alive while any tab is open, so sessions survive the screen turning off.
  */
-class TerminalManager(private val context: Context, private val knownHosts: KnownHosts) {
+class TerminalManager(private val context: Context, private val connect: (SshEndpoint) -> ServerConnection) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val transports = HashMap<String, SshjTransport>()
+    private val transports = HashMap<String, ServerConnection>()
     private var nextId = 1
 
     private val _tabs = MutableStateFlow<Map<String, List<TerminalTab>>>(emptyMap())
@@ -36,7 +35,7 @@ class TerminalManager(private val context: Context, private val knownHosts: Know
     val openCount: StateFlow<Int> = _tabs.map { m -> m.values.sumOf { it.size } }.stateIn(scope, SharingStarted.Eagerly, 0)
 
     fun open(serverId: String, serverName: String, endpoint: SshEndpoint, theme: TerminalTheme, highlight: Boolean): TerminalTab {
-        val transport = synchronized(transports) { transports.getOrPut(serverId) { SshjTransport(endpoint, knownHosts) } }
+        val transport = synchronized(transports) { transports.getOrPut(serverId) { connect(endpoint) } }
         val number = (_tabs.value[serverId]?.size ?: 0) + 1
         val tab = TerminalTab(nextId++, if (number == 1) serverName else "$serverName $number", transport, scope, theme, highlight)
         val wasEmpty = _tabs.value.values.all { it.isEmpty() }

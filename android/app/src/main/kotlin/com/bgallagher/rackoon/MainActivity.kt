@@ -15,6 +15,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // `am start --ez demo true` on a debug build: the app runs against made-up servers (see demo/). Ignored in release builds.
+        if (intent.getBooleanExtra("demo", false)) (application as RackoonApp).enterDemo()
         enableEdgeToEdge()
         setContent {
             val themeId by viewModel.themeId.collectAsStateWithLifecycle()

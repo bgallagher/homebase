@@ -5,6 +5,10 @@ import com.bgallagher.rackoon.core.Server
 import com.bgallagher.rackoon.ssh.JsonFileKnownHosts
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.bgallagher.rackoon.demo.DemoHooks
+import com.bgallagher.rackoon.ssh.ServerConnection
+import com.bgallagher.rackoon.ssh.SshEndpoint
+import com.bgallagher.rackoon.ssh.SshjTransport
 import com.bgallagher.rackoon.terminal.TerminalManager
 import java.io.File
 
@@ -27,8 +31,8 @@ class ServersFile(private val file: File) {
 }
 
 /** Small preferences. Read-only starts ON: a phone is easier to mis-tap than a Mac. */
-class Prefs(context: Context) {
-    private val prefs = context.getSharedPreferences("rackoon", Context.MODE_PRIVATE)
+class Prefs(context: Context, name: String = "rackoon") {
+    private val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
 
     var selectedServerId: String?
         get() = prefs.getString("selected_server", null)
@@ -58,14 +62,25 @@ class Prefs(context: Context) {
         set(value) = prefs.edit().putBoolean("first_run_done", value).apply()
 }
 
-/** Everything that lives for the whole process, built once by [com.bgallagher.rackoon.RackoonApp]. */
-class AppContainer(context: Context) {
+/**
+ * Everything that lives for the whole process, built once by [com.bgallagher.rackoon.RackoonApp]. In demo mode ([demo] non-null,
+ * debug builds only) it uses its own empty storage under the cache folder and fake connections, so a demo run never reads or
+ * changes the real servers, keys or settings.
+ */
+class AppContainer(context: Context, private val demo: DemoHooks? = null) {
     private val appContext = context.applicationContext
-    private val dir = File(context.filesDir, "Rackoon")
-    val servers = ServersFile(File(dir, "servers.json"))
+    private val dir = if (demo != null) File(context.cacheDir, "demo").also { it.deleteRecursively() } else File(context.filesDir, "Rackoon")
+    val isDemo: Boolean get() = demo != null
+    val servers = ServersFile(File(dir, "servers.json")).also { f -> demo?.let { f.save(it.servers()) } }
     val knownHosts = JsonFileKnownHosts(File(dir, "known_hosts.json"))
-    val prefs = Prefs(context)
+    val prefs = Prefs(context, if (demo != null) "rackoon_demo" else "rackoon").also { p ->
+        if (demo != null) { p.firstRunDone = true; p.selectedServerId = demo.servers().first().id }
+    }
     val secrets = SecretStore(dir)
     val snapshots = SnapshotStore(dir)
-    val terminals = TerminalManager(appContext, knownHosts)
+
+    /** A connection to a server: the real one, or the demo's fake. */
+    fun connection(endpoint: SshEndpoint): ServerConnection = demo?.connection(endpoint) ?: SshjTransport(endpoint, knownHosts)
+
+    val terminals = TerminalManager(appContext, ::connection)
 }

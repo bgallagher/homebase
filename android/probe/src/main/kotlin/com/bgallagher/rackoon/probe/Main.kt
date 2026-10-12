@@ -37,11 +37,14 @@ import kotlin.system.exitProcess
  *   shell-check    a shell opens at the requested size, follows a resize and ends with the shell's own status
  *   bookmark-test  REAL label edits and saves (server-side compose check, .rackoon.bak, the changed-on-server guard, removal) on a
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
+ *   sandbox-up     REAL: creates ONE harmless stack, /tmp/rackoon-sandbox (project rackoonsandbox: a hello-world web page on
+ *                  127.0.0.1:18080 and redis), and starts it, so the phone's Docker actions can be tried on it
+ *   sandbox-down   REAL: stops and removes exactly that stack and its folder. Neither touches anything else.
  * Every other check only reads, or works on nothing but its own temporary process; none changes the server.
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|bookmark-test> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -212,6 +215,36 @@ fun main(args: Array<String>) {
                     } finally {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
+                }
+
+                "sandbox-up", "sandbox-down" -> {
+                    val dir = "/tmp/rackoon-sandbox"
+                    val project = "rackoonsandbox"
+                    val file = "$dir/compose.yaml"
+                    suspend fun sh(cmd: String) = transport.run(cmd, 300_000)
+                    if (check == "sandbox-up") {
+                        println("  will create $dir/compose.yaml and run: docker compose -p $project -f $file up -d   (nothing else is touched)")
+                        val exists = sh("[ -e $dir ] && echo yes || echo no").stdout.trim() == "yes"
+                        expect("the sandbox is not already there", !exists)
+                        if (!exists) {
+                            val compose = "services:\n  web:\n    image: nginxdemos/hello\n    ports:\n      - \"127.0.0.1:18080:80\"\n" +
+                                "    labels:\n      - homepage.name=Sandbox\n      - homepage.href=http://127.0.0.1:18080/\n" +
+                                "  cache:\n    image: redis:alpine\n"
+                            val b64 = java.util.Base64.getEncoder().encodeToString(compose.toByteArray())
+                            val up = sh("mkdir -p $dir && echo $b64 | base64 -d > $file && docker compose -p $project -f $file up -d 2>&1")
+                            println(up.stdout.trim().lines().joinToString("\n") { "    $it" })
+                            expect("the stack started", up.exitCode == 0)
+                            val ps = sh("docker ps --filter label=com.docker.compose.project=$project --format '{{.Names}}  {{.Status}}  {{.Ports}}'").stdout
+                            println(ps.trim().lines().joinToString("\n") { "    $it" })
+                            expect("two containers are running", ps.trim().lines().count { it.isNotBlank() } == 2)
+                        }
+                    } else {
+                        println("  will run: docker compose -p $project -f $file down -v --remove-orphans, then remove exactly $dir")
+                        val down = sh("[ -f $file ] && docker compose -p $project -f $file down -v --remove-orphans 2>&1; rm -rf $dir; echo cleaned")
+                        println(down.stdout.trim().lines().joinToString("\n") { "    $it" })
+                        expect("no sandbox containers are left", sh("docker ps -a --filter label=com.docker.compose.project=$project -q").stdout.isBlank())
+                        expect("the sandbox folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
                     }
                 }
 

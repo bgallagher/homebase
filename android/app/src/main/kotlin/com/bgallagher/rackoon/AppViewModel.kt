@@ -28,7 +28,6 @@ import com.bgallagher.rackoon.ssh.SshAuth
 import com.bgallagher.rackoon.ssh.SshEndpoint
 import com.bgallagher.rackoon.ssh.SshException
 import com.bgallagher.rackoon.ssh.SshKeys
-import com.bgallagher.rackoon.ssh.SshjTransport
 import com.bgallagher.rackoon.ssh.TrustedHostKey
 import com.bgallagher.rackoon.ssh.scanHostKey
 import kotlinx.coroutines.Job
@@ -201,7 +200,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var pollJob: Job? = null
 
     private inner class Live(val server: Server) {
-        val transport = SshjTransport(endpointOf(server), c.knownHosts)
+        val transport = c.connection(endpointOf(server))
         val docker = DockerSession(transport, policy = policy)
         val session = ServerSession(transport, cached = c.snapshots.load(server.id), onSnapshot = { c.snapshots.save(server.id, it) })
     }
@@ -389,6 +388,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun submitAdd() {
         val form = _add.value ?: return
+        if (c.isDemo) { editAdd { it.copy(error = "Demo mode: servers can't be added. Restart the app normally to use your own.") }; return }
         val endpoint = SshEndpoint.parse(form.target, auth = form.auth.toStored().toSshAuth())
         if (endpoint == null) { editAdd { it.copy(error = "Enter the user and host, like ubuntu@100.64.12.7") }; return }
         form.auth.problem()?.let { problem -> editAdd { it.copy(error = problem) }; return }
@@ -420,7 +420,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun connectAndSave(endpoint: SshEndpoint) {
         val form = _add.value ?: return
-        val transport = SshjTransport(endpoint, c.knownHosts)
+        val transport = c.connection(endpoint)
         try {
             transport.connect()
             val server = Server(
@@ -649,7 +649,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val stored = form.auth.toStored()
             val endpoint = SshEndpoint(server.host, server.port ?: 22, server.user?.takeIf { it.isNotEmpty() } ?: "root", stored.toSshAuth())
-            val test = SshjTransport(endpoint, c.knownHosts)
+            val test = c.connection(endpoint)
             try {
                 test.connect()
                 c.secrets.save(server.id, stored)

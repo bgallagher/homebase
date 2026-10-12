@@ -142,6 +142,21 @@ interface ShellSession {
 }
 
 /**
+ * What the app needs from a connection to one server: commands and streams (core's [SSHTransport]), a way to test the connection,
+ * and terminal shells. [SshjTransport] is the real one; the debug-only demo mode has a fake.
+ */
+interface ServerConnection : SSHTransport, AutoCloseable {
+    /** Connects now (host key, authentication) without running anything. Used by "Test connection" and before polling. */
+    suspend fun connect()
+
+    /**
+     * Opens a terminal of the given size: a login shell, or, with [command], that command on a pty (for example
+     * `docker exec -it <id> sh`). Take the size from the emulator's measured size.
+     */
+    suspend fun openShell(cols: Int, rows: Int, command: String? = null): ShellSession
+}
+
+/**
  * sshj behind core's [SSHTransport]. One long-lived authenticated connection serves `run` (a channel per command, like a
  * ControlMaster) and terminal shells; `stream` uses its own connection with a pty, because stopping a stream must send Ctrl-C
  * through the pty (closing alone leaves the remote command running; proven against the real server).
@@ -150,7 +165,7 @@ class SshjTransport(
     private val endpoint: SshEndpoint,
     private val knownHosts: KnownHosts,
     private val connectTimeoutMillis: Long = 30_000,
-) : SSHTransport, AutoCloseable {
+) : ServerConnection {
     private val connectLock = Mutex()
     @Volatile private var client: SSHClient? = null
 
@@ -167,8 +182,7 @@ class SshjTransport(
         ssh.quietlyDisconnect()
     }
 
-    /** Connects now (host key, authentication) without running anything. Used by "Test connection". */
-    suspend fun connect() { connection() }
+    override suspend fun connect() { connection() }
 
     override suspend fun run(command: String, timeoutMillis: Long): CommandResult {
         var retried = false
@@ -256,14 +270,15 @@ class SshjTransport(
         }
     }
 
-    /** Opens a terminal: a shell on a pty of the given size (take it from the emulator's measured size). */
-    suspend fun openShell(cols: Int, rows: Int): ShellSession {
+    override suspend fun openShell(cols: Int, rows: Int, command: String?): ShellSession {
         val ssh = connection()
         return withContext(Dispatchers.IO) {
             try {
                 val session = ssh.startSession()
                 session.allocatePTY("xterm-256color", cols, rows, 0, 0, emptyMap())
-                SshjShell(ssh, session, session.startShell())
+                // One channel object serves as both the command and the shell, so a command on a pty is driven the same way.
+                val shell = if (command == null) session.startShell() else session.exec(command) as Session.Shell
+                SshjShell(ssh, session, shell)
             } catch (e: Exception) {
                 invalidate(ssh)
                 throw map(e)
