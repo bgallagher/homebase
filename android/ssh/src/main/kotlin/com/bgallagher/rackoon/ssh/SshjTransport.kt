@@ -29,7 +29,6 @@ import net.schmizz.sshj.transport.TransportException
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.method.AuthNone
-import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -89,10 +88,7 @@ private fun authenticate(ssh: SSHClient, endpoint: SshEndpoint) {
     when (val auth = endpoint.auth) {
         SshAuth.TailscaleNone -> ssh.auth(endpoint.user, AuthNone())
         is SshAuth.Password -> ssh.authPassword(endpoint.user, auth.password)
-        is SshAuth.PrivateKey -> {
-            val finder = auth.passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
-            ssh.authPublickey(endpoint.user, ssh.loadKeys(auth.pem, null, finder))
-        }
+        is SshAuth.PrivateKey -> ssh.authPublickey(endpoint.user, SshKeys.load(ssh, auth.pem, auth.passphrase))
     }
 }
 

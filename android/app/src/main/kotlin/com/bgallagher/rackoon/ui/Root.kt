@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,10 +70,12 @@ fun RackoonRoot(vm: AppViewModel) {
     val overview by vm.overview.collectAsStateWithLifecycle()
     val switcher by vm.switcher.collectAsStateWithLifecycle()
     val appearance by vm.appearance.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val themeId by vm.themeId.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
+            settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings)
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
             firstRun -> FirstRunScreen(vm::dismissFirstRun)
@@ -101,28 +104,53 @@ private fun Welcome(onAdd: () -> Unit) {
 private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: Tab, readOnly: Boolean) {
     // The keyboard lifts the whole screen once; the bottom bar steps aside while it is open on the terminal (it would only waste space).
     val keyboardOpen = WindowInsets.isImeVisible
-    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
-        Box(Modifier.weight(1f)) {
-            when (tab) {
-                Tab.Overview -> {
-                    val lifecycle = LocalLifecycleOwner.current.lifecycle
-                    // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
-                    LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
-                    OverviewScreen(overview, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) })
+    // Tablets, unfolded foldables and landscape phones get a rail on the left instead of a bar at the bottom.
+    val wide = LocalConfiguration.current.screenWidthDp >= 840
+    Row(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+        if (wide) NavRail(tab, vm::showTab)
+        Column(Modifier.weight(1f).fillMaxSize()) {
+            TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
+            Box(Modifier.weight(1f)) {
+                when (tab) {
+                    Tab.Overview -> {
+                        val lifecycle = LocalLifecycleOwner.current.lifecycle
+                        // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
+                        LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
+                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenTerminal = { vm.showTab(Tab.Terminal) })
+                    }
+                    Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
+                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name)
                 }
-                Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
-                Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) })
             }
+            if (!wide && !(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
         }
-        if (!(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
+    }
+}
+
+private val tabItems get() = listOf(Tab.Overview to ("Overview" to RackoonIcons.Overview), Tab.Terminal to ("Terminal" to RackoonIcons.Terminal), Tab.More to ("More" to RackoonIcons.More))
+
+@Composable
+private fun NavRail(tab: Tab, onTab: (Tab) -> Unit) {
+    val c = Rackoon.colors
+    androidx.compose.material3.NavigationRail(containerColor = c.sidebar) {
+        Spacer(Modifier.weight(1f))
+        tabItems.forEach { (t, label) ->
+            androidx.compose.material3.NavigationRailItem(
+                selected = tab == t, onClick = { onTab(t) }, icon = { Icon(label.second, null) }, label = { Text(label.first) },
+                colors = androidx.compose.material3.NavigationRailItemDefaults.colors(
+                    selectedIconColor = c.accent, selectedTextColor = c.textPrimary, unselectedIconColor = c.textSecondary,
+                    unselectedTextColor = c.textSecondary, indicatorColor = c.accent.copy(alpha = 0.2f),
+                ),
+            )
+        }
+        Spacer(Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun statusColor(ui: OverviewUi) = when (ui) {
     OverviewUi.Connecting -> Rackoon.colors.warn
-    is OverviewUi.Ready -> Rackoon.colors.ok
+    is OverviewUi.Ready -> if (ui.state.error != null || ui.state.isStale) Rackoon.colors.warn else Rackoon.colors.ok
     is OverviewUi.Failed -> Rackoon.colors.danger
 }
 
@@ -161,7 +189,7 @@ fun ReadOnlyChip(on: Boolean, onClick: () -> Unit, small: Boolean = false) {
 private fun BottomBar(tab: Tab, onTab: (Tab) -> Unit) {
     val c = Rackoon.colors
     NavigationBar(containerColor = c.sidebar, modifier = Modifier.navigationBarsPaddingFix()) {
-        listOf(Tab.Overview to ("Overview" to RackoonIcons.Overview), Tab.Terminal to ("Terminal" to RackoonIcons.Terminal), Tab.More to ("More" to RackoonIcons.More)).forEach { (t, label) ->
+        tabItems.forEach { (t, label) ->
             NavigationBarItem(
                 selected = tab == t, onClick = { onTab(t) }, icon = { Icon(label.second, null) }, label = { Text(label.first) },
                 colors = NavigationBarItemDefaults.colors(
@@ -186,11 +214,13 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit) {
+private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RCard(Modifier.fillMaxWidth()) {
             Column {
                 MoreRow("Servers", "Switch, add or remove", onServers)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                MoreRow("Server settings", serverName, onSettings)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Add server", "Connect to another machine", onAdd)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))

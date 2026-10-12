@@ -27,4 +27,15 @@ object Format {
             else -> unit(minutes, "minute")
         }
     }
+
+    /** "just now", "5 min ago", "3 hours ago", "2 days ago" for a time in epoch milliseconds. */
+    fun ago(thenMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
+        val s = ((nowMillis - thenMillis) / 1000).coerceAtLeast(0)
+        return when {
+            s < 45 -> "just now"
+            s < 3_600 -> "${(s / 60).coerceAtLeast(1)} min ago"
+            s < 86_400 -> "${s / 3_600} ${if (s / 3_600 == 1L) "hour" else "hours"} ago"
+            else -> "${s / 86_400} ${if (s / 86_400 == 1L) "day" else "days"} ago"
+        }
+    }
 }

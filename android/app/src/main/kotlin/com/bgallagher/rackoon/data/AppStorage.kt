@@ -65,5 +65,7 @@ class AppContainer(context: Context) {
     val servers = ServersFile(File(dir, "servers.json"))
     val knownHosts = JsonFileKnownHosts(File(dir, "known_hosts.json"))
     val prefs = Prefs(context)
+    val secrets = SecretStore(dir)
+    val snapshots = SnapshotStore(dir)
     val terminals = TerminalManager(appContext, knownHosts)
 }

@@ -37,7 +37,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import android.provider.OpenableColumns
 import com.bgallagher.rackoon.AddForm
+import com.bgallagher.rackoon.AuthFields
+import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.ssh.HostKeyInfo
 import com.bgallagher.rackoon.ssh.TrustedHostKey
 import com.bgallagher.rackoon.ui.theme.Rackoon
@@ -62,24 +69,16 @@ fun AddServerScreen(form: AddForm, onChange: ((AddForm) -> AddForm) -> Unit, onC
                 Field("User and host", form.target, "ubuntu@100.64.12.7", mono = true, enabled = !form.busy, keyboard = KeyboardType.Uri) { v -> onChange { it.copy(target = v, error = null) } }
                 Text("Hostname, LAN address or Tailscale name. Port 22 unless you add :port.", color = Rackoon.colors.textMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp, start = 2.dp))
             }
-            Column {
-                Text("Sign in with", color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
-                RCard(Modifier.fillMaxWidth()) {
-                    Column {
-                        AuthRow("Tailscale SSH", "No key needed. Uses your tailnet identity.", selected = true, enabled = true)
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                        AuthRow("SSH key", "Coming in the next build.", selected = false, enabled = false)
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                        AuthRow("Password", "Coming in the next build.", selected = false, enabled = false)
-                    }
-                }
-            }
+            AuthSection(form.auth, enabled = !form.busy) { a -> onChange { it.copy(auth = a, error = null) } }
             RCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
                     Icon(RackoonIcons.Info, null, tint = Rackoon.colors.textSecondary, modifier = Modifier.size(18.dp).padding(top = 1.dp))
                     Text("Nothing is installed on the server. Rackoon connects over SSH and runs standard commands.", color = Rackoon.colors.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
                 }
             }
+        }
+        // Pinned above the buttons so a refusal is never hidden below the fold of a long form.
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (form.busy) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Rackoon.colors.accent)
@@ -99,14 +98,15 @@ fun AddServerScreen(form: AddForm, onChange: ((AddForm) -> AddForm) -> Unit, onC
 private fun hostOf(target: String) = target.substringAfter('@').substringBefore(':')
 
 @Composable
-private fun Field(label: String, value: String, placeholder: String, mono: Boolean = false, enabled: Boolean = true, keyboard: KeyboardType = KeyboardType.Text, onChange: (String) -> Unit) {
+fun Field(label: String, value: String, placeholder: String, mono: Boolean = false, enabled: Boolean = true, keyboard: KeyboardType = KeyboardType.Text, secret: Boolean = false, onChange: (String) -> Unit) {
     Column {
         Text(label, color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
         OutlinedTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder, color = Rackoon.colors.textMuted) },
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontFamily = if (mono) MonoFamily else null, color = Rackoon.colors.textPrimary),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = false),
+            keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
+            visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Rackoon.colors.accent, unfocusedBorderColor = Rackoon.colors.border,
@@ -117,8 +117,11 @@ private fun Field(label: String, value: String, placeholder: String, mono: Boole
 }
 
 @Composable
-private fun AuthRow(name: String, hint: String, selected: Boolean, enabled: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).alpha(if (enabled) 1f else 0.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun AuthRow(name: String, hint: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp).alpha(if (enabled) 1f else 0.5f),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         RadioButton(
             selected = selected, onClick = null, enabled = enabled,
             colors = RadioButtonDefaults.colors(selectedColor = Rackoon.colors.accent, unselectedColor = Rackoon.colors.idle),
@@ -128,6 +131,60 @@ private fun AuthRow(name: String, hint: String, selected: Boolean, enabled: Bool
             Text(hint, color = Rackoon.colors.textMuted, fontSize = 12.sp)
         }
     }
+}
+
+/**
+ * How to sign in: Tailscale SSH (nothing to enter), a private key chosen with the system file picker, or a password.
+ * Secrets are kept encrypted on this phone (Android Keystore) and are only held here while the form is open.
+ */
+@Composable
+fun AuthSection(auth: AuthFields, enabled: Boolean, savedKeyName: String? = null, onChange: (AuthFields) -> Unit) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val name = context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (c.moveToFirst() && i >= 0) c.getString(i) else null
+            }
+            // A private key is a few KB. Refuse to read anything big (the wrong file) into memory.
+            val text = context.contentResolver.openInputStream(uri)?.use { it.readNBytes(64 * 1024 + 1) }?.takeIf { it.size <= 64 * 1024 }?.let { String(it) }
+            onChange(auth.copy(keyPem = text ?: "", keyName = name))
+        }
+    }
+    Column {
+        Text("Sign in with", color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+        RCard(Modifier.fillMaxWidth()) {
+            Column {
+                AuthRow("Tailscale SSH", "No key needed. Uses your tailnet identity.", auth.kind == AuthKind.Tailscale, enabled) { onChange(auth.copy(kind = AuthKind.Tailscale)) }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                AuthRow("SSH key", "A private key file from this phone.", auth.kind == AuthKind.Key, enabled) { onChange(auth.copy(kind = AuthKind.Key)) }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                AuthRow("Password", "The account's password.", auth.kind == AuthKind.Password, enabled) { onChange(auth.copy(kind = AuthKind.Password)) }
+            }
+        }
+        when (auth.kind) {
+            AuthKind.Tailscale -> {}
+            AuthKind.Password -> Column(Modifier.padding(top = 14.dp)) {
+                Field("Password", auth.password, "", enabled = enabled, secret = true) { onChange(auth.copy(password = it)) }
+                SecretNote()
+            }
+            AuthKind.Key -> Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val shown = auth.keyName ?: savedKeyName?.let { "$it (saved)" }
+                SecondaryButton(if (shown == null) "Choose private key file" else "Key: $shown. Choose another", { picker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth())
+                Field("Passphrase (if the key has one)", auth.passphrase, "", enabled = enabled, secret = true) { onChange(auth.copy(passphrase = it)) }
+                Text("Pick the private key (for example id_ed25519), not the .pub file.", color = Rackoon.colors.textMuted, fontSize = 12.sp)
+                SecretNote()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecretNote() {
+    Text(
+        "Stored encrypted on this phone with the Android Keystore. It is only ever sent to this server.",
+        color = Rackoon.colors.textMuted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 6.dp, start = 2.dp),
+    )
 }
 
 /** First connection: the server's fingerprint, to compare with the server before trusting it. */

@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker is in (untested on a device); SSH key/password auth and release packaging are still to do. First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; release packaging is still to do. First release: themes, Overview, terminal.
 
 ```
 android/
@@ -28,7 +28,7 @@ android/
 
 ```
 cd android
-./gradlew :core:test :ssh:test            # 141 + 8 tests; needs JDK 21
+./gradlew :core:test :ssh:test            # 141 + 14 tests; needs JDK 21
 ./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
 ```
 
