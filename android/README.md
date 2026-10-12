@@ -1,15 +1,16 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stage A1 is done**: the portable core and its CI. The app, SSH module and terminal come next.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app comes next (A3 onward). First release: themes, Overview, terminal.
 
 ```
 android/
   core/    pure Kotlin/JVM: a mirror of apple/Packages/RackoonCore (models, parsers, sessions, ActionPolicy, ShellQuote,
            log and stream helpers, command library, themes, output highlighter). No Android or SSH imports.
-  ssh/     (A2) the sshj transport, host-key trust, key import
-  app/     (A2+) Jetpack Compose UI, ConnectBot termlib terminal
-  probe/   (A2+) a JVM CLI that runs the same real-server checks as rackoon-probe
+  ssh/     sshj behind core's SSHTransport: one connection for commands, a pty connection for streams (Ctrl-C on cancel),
+           terminal shells with resize, host-key trust (SHA256 fingerprints, trust-on-first-use, changed key blocked)
+  app/     (A3+) Jetpack Compose UI, ConnectBot termlib terminal
+  probe/   a JVM CLI for real-server checks: ./gradlew :probe:run --args="<host> overview|hostkey|stream-check|stream-marker|shell-check"
 ```
 
 ## The contract
@@ -26,7 +27,8 @@ android/
 
 ```
 cd android
-./gradlew :core:test        # 136 tests; needs JDK 21
+./gradlew :core:test :ssh:test            # 141 + 8 tests; needs JDK 21
+./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
 ```
 
 CI runs the same (`android-core` job). Android Studio opens `android/` directly once the app module exists.

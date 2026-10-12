@@ -82,3 +82,22 @@ fixtures, the attention rules, the session and policy tests, the streaming and C
 library (including real `/bin/sh` runs), reboot, themes and palette contrast over all 45 bundled themes, and the terminal
 output filter. Deviations from the plan: commands are read from the spec at runtime instead of being duplicated, and
 `themes.json` stays in the Mac app's resources (SwiftPM cannot copy from outside its target) and is shared from there.
+
+## Stage A2 result (12 Oct 2026)
+
+`android/ssh` (sshj 0.41.1 + BouncyCastle 1.84, pure JVM) and `android/probe` run against the real server from the Mac:
+
+| Probe check | Result |
+|---|---|
+| `overview` | connect 0.5 s, first poll 1.0 s, second 0.9 s; parsed hetzner (Ubuntu 24.04.5, 4 cores), CPU % from two polls |
+| `hostkey` | an untrusted server is refused with its fingerprint; a trusted one connects; a changed key is blocked and never offered |
+| `stream-check` | `docker logs -f` over a pty, cancelled: **no follower left** on the server (Ctrl-C then close) |
+| `stream-marker` | `StreamRunner` reports the command's own exit code (3) through the real pty marker; the marker line is not shown |
+| `shell-check` | a shell opens at 24 x 80, follows a resize to 30 x 100, and ends with `RemoteExit(0)` |
+
+The fingerprint sshj gives equals `ssh-keygen -lf` (`SHA256:WVoNXEYG9GL78kRUJLzuwQQmXNsrazBfkwlK+/0qzM8` for hetzner), and a unit test
+pins it against two keys generated with ssh-keygen. `core` gained `ReconnectPolicy` (1/2/4/8/15 s, 5 attempts, 10 s of uptime resets
+the budget; only a lost connection retries). Tests: core 141, ssh 8.
+
+Probe lesson: a terminal echoes what is typed, so a check must wait for text only the OUTPUT contains (the first version of
+`shell-check` raced the echo and read the size too early).
