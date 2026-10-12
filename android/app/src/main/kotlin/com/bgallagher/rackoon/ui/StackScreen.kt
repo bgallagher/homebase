@@ -95,7 +95,7 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
             }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            LetterBadge(stack.name, 44.dp)
+            SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 44.dp, vm.favicons)
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stack.name, fontSize = 22.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

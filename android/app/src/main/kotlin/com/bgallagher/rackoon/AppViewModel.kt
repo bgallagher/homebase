@@ -195,6 +195,9 @@ data class AddForm(
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val c = (application as RackoonApp).container
 
+    /** Site icons of bookmarked services (see [com.bgallagher.rackoon.data.FaviconStore]). */
+    val favicons get() = c.favicons
+
     private val _servers = MutableStateFlow(c.servers.load())
     val servers: StateFlow<List<Server>> = _servers.asStateFlow()
 

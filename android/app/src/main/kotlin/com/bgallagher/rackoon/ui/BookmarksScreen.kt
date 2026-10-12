@@ -98,6 +98,8 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
     LaunchedEffect(Unit) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollDockerWhileVisible() } }
     var query by remember { mutableStateOf("") }
     val ready = docker as? DockerUi.Ready
+    val addresses = remember(ready?.snapshot) { ready?.snapshot?.bookmarkItems?.map { it.bookmark.href }?.distinct().orEmpty() }
+    LaunchedEffect(addresses) { vm.favicons.ensure(addresses) }
     val canAdd = ready?.snapshot?.bookmarkableStacks?.isNotEmpty() == true
 
     Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding()) {
@@ -147,7 +149,7 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
                             if (rows.isEmpty()) continue
                             item(key = "h-$scope") { ScopeHeader(scope) }
                             items(rows, key = { it.id }) { item ->
-                                BookmarkRow(item, readOnly, onEdit = { vm.openBookmarkSheet(item.stack.name, item.service) },
+                                BookmarkRow(item, vm.favicons, readOnly, onEdit = { vm.openBookmarkSheet(item.stack.name, item.service) },
                                     onRemove = { vm.requestBookmarkRemovalFor(item.stack.name, item.service) })
                             }
                         }
@@ -212,7 +214,7 @@ private fun ScopeHeader(scope: LinkScope) {
 }
 
 @Composable
-private fun BookmarkRow(item: BookmarkItem, readOnly: Boolean, onEdit: () -> Unit, onRemove: () -> Unit) {
+private fun BookmarkRow(item: BookmarkItem, favicons: com.bgallagher.rackoon.data.FaviconStore, readOnly: Boolean, onEdit: () -> Unit, onRemove: () -> Unit) {
     val c = Rackoon.colors
     val uri = LocalUriHandler.current
     val clipboard = LocalClipboard.current
@@ -223,7 +225,7 @@ private fun BookmarkRow(item: BookmarkItem, readOnly: Boolean, onEdit: () -> Uni
         Modifier.fillMaxWidth().padding(bottom = 8.dp).heightIn(min = 68.dp).clip(shape).background(c.card).border(1.dp, c.border, shape).padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        LetterBadge(item.title, 36.dp)
+        SiteIcon(item.title, item.bookmark.href, 36.dp, favicons)
         Column(Modifier.weight(1f)) {
             Text(item.title, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.bookmark.shortAddress(), fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))

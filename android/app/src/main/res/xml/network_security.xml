@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Many bookmarks are plain http:// on a home network. The app's only HTTP client is the favicon fetcher (SSH is not HTTP). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true"/>
+</network-security-config>

@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +58,7 @@ import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.StackSeverity
 import com.bgallagher.rackoon.core.bookmarkLinks
 import com.bgallagher.rackoon.core.shortAddress
+import com.bgallagher.rackoon.core.bookmarkItems
 import com.bgallagher.rackoon.core.status
 import com.bgallagher.rackoon.core.summary
 import com.bgallagher.rackoon.core.usageText
@@ -81,7 +83,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
             else if (state.snapshot.containers.isEmpty()) Message(
                 "No containers found", "Docker is running on ${server.name}, but there are no containers yet. Stacks appear here once their containers exist.", "Scan again", vm::refreshDockerNow,
             )
-            else StackList(state, readOnly, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onAdd = vm::openAddContainer, onRefresh = vm::refreshDockerNow)
+            else StackList(state, vm.favicons, readOnly, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onAdd = vm::openAddContainer, onRefresh = vm::refreshDockerNow)
         }
     }
 }
@@ -89,10 +91,12 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
 // MARK: list
 
 @Composable
-private fun StackList(ui: DockerUi.Ready, readOnly: Boolean, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onAdd: () -> Unit, onRefresh: () -> Unit) {
+private fun StackList(ui: DockerUi.Ready, favicons: com.bgallagher.rackoon.data.FaviconStore, readOnly: Boolean, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onAdd: () -> Unit, onRefresh: () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
     val stacks = ui.stacks
+    val addresses = remember(ui.snapshot) { ui.snapshot.bookmarkItems.map { it.bookmark.href }.distinct() }
+    LaunchedEffect(addresses) { favicons.ensure(addresses) }
     // Which stacks can take a bookmark is worked out once per snapshot, not for every card on every recomposition.
     val bookmarkable = remember(ui.snapshot) { ui.snapshot.bookmarkableStacks.map { it.name }.toSet() }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { refreshing = true; onRefresh() }, modifier = Modifier.fillMaxSize()) {
@@ -118,14 +122,14 @@ private fun StackList(ui: DockerUi.Ready, readOnly: Boolean, onOpen: (DockerStac
                 }
             }
             items(stacks, key = { it.name }) { stack ->
-                StackCard(stack, onClick = { onOpen(stack) }, onBookmark = if (stack.name in bookmarkable) ({ onBookmark(stack) }) else null)
+                StackCard(stack, favicons, onClick = { onOpen(stack) }, onBookmark = if (stack.name in bookmarkable) ({ onBookmark(stack) }) else null)
             }
         }
     }
 }
 
 @Composable
-private fun StackCard(stack: DockerStack, onClick: () -> Unit, onBookmark: (() -> Unit)?) {
+private fun StackCard(stack: DockerStack, favicons: com.bgallagher.rackoon.data.FaviconStore, onClick: () -> Unit, onBookmark: (() -> Unit)?) {
     val c = Rackoon.colors
     val status = stack.status()
     val unhealthy = stack.unhealthyCount > 0
@@ -138,7 +142,7 @@ private fun StackCard(stack: DockerStack, onClick: () -> Unit, onBookmark: (() -
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // Name and file share the space left of the status, so the status and its dot always end at the right edge.
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LetterBadge(stack.name, 28.dp)
+                SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 28.dp, favicons)
                 Text(stack.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 stack.configFileName?.let { Text(it, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
             }
@@ -208,11 +212,11 @@ internal fun severityColor(s: StackSeverity, dot: Boolean = false): Color = when
 
 /** A tinted letter standing in for a site icon, coloured from the name like the Mac app's. */
 @Composable
-fun LetterBadge(name: String, size: androidx.compose.ui.unit.Dp) {
+fun LetterBadge(name: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val hue = LetterTile.hue(name).toFloat()
     val bg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.45f, 0.28f)))
     val fg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.35f, 0.9f)))
-    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(bg), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(bg), contentAlignment = Alignment.Center) {
         Text(LetterTile.letter(name), color = fg, fontSize = (size.value * 0.5f).sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -279,5 +283,28 @@ private fun Unreachable(server: Server, message: String, onRetry: () -> Unit) {
             if (tailscale != null) SecondaryButton("Open Tailscale", { runCatching { context.startActivity(tailscale.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }, Modifier.weight(1f))
             PrimaryButton("Retry", onRetry, Modifier.weight(1f))
         }
+    }
+}
+
+/**
+ * A service's site icon when the phone has fetched one for [href], else the letter tile. Tapping it fetches a fresh icon
+ * (only when there is an address to fetch from).
+ */
+@Composable
+fun SiteIcon(name: String, href: String?, size: androidx.compose.ui.unit.Dp, favicons: com.bgallagher.rackoon.data.FaviconStore) {
+    val origin = remember(href) { href?.let(favicons::origin) }
+    val images by favicons.images.collectAsStateWithLifecycle()
+    val fetching by favicons.fetching.collectAsStateWithLifecycle()
+    val image = origin?.let { images[it] }
+    val tap = if (href != null && origin != null) Modifier.clip(RoundedCornerShape(size * 0.27f)).clickable { favicons.refresh(href) } else Modifier
+    when {
+        origin != null && origin in fetching && image == null -> Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(size * 0.55f), strokeWidth = 2.dp, color = Rackoon.colors.accent)
+        }
+        image != null -> androidx.compose.foundation.Image(
+            image, contentDescription = "Site icon for $name", modifier = Modifier.size(size).then(tap).clip(RoundedCornerShape(size * 0.22f)),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        )
+        else -> LetterBadge(name, size, tap)
     }
 }

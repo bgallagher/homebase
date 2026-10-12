@@ -83,4 +83,5 @@ class AppContainer(context: Context, private val demo: DemoHooks? = null) {
     fun connection(endpoint: SshEndpoint): ServerConnection = demo?.connection(endpoint) ?: SshjTransport(endpoint, knownHosts)
 
     val terminals = TerminalManager(appContext, ::connection)
+    val favicons = FaviconStore(File(dir, "favicons"))
 }

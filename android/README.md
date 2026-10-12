@@ -1,7 +1,7 @@
 # Rackoon for Android
 
 Native Kotlin and Jetpack Compose, built in approved stages (see `docs/android-spikes.md` for the stack decision and the
-spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) and the container and stack actions (start, stop, restart, rebuild, recreate, pull, update, Shell, with a confirmation and live Output) Add container (a new stack from a form or a pasted compose.yaml, or one more service in an existing stack, with server-side checks), Delete stack (docker compose down, optional volumes and folder, typed name, the Mac's folder-safety rules) and the compose.yaml/.env editor (line numbers, highlighting, the server's own checks, diff-confirmed save, redeploy, conflict handling) and the stack Logs tab (merged follow, per-container focus, level chips, search, pause/Latest, copy) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
+spike results). **Stages A1 (portable core) and A2 (SSH module and probe) are done.** The app (A3+) has servers, host-key trust, the Overview and now the terminal; the theme picker, SSH key and password sign-in (Keystore-encrypted), server settings and the snapshot cache are in; the Docker overview (stack cards, links with Local/Tailscale/Public tags, a read-only stack page) and Bookmarks (list, add, edit, remove, written into compose files) and the container and stack actions (start, stop, restart, rebuild, recreate, pull, update, Shell, with a confirmation and live Output) Add container (a new stack from a form or a pasted compose.yaml, or one more service in an existing stack, with server-side checks), Delete stack (docker compose down, optional volumes and folder, typed name, the Mac's folder-safety rules) and the compose.yaml/.env editor (line numbers, highlighting, the server's own checks, diff-confirmed save, redeploy, conflict handling) site icons (`FaviconLinks` in core, `FaviconStore` on the phone: 128 px PNG cache, daily retry, letter-tile fallback; cleartext http is allowed app-wide because the icon fetcher is the only HTTP client) and the stack Logs tab (merged follow, per-container focus, level chips, search, pause/Latest, copy) are in; release packaging is still to do, and the alpha waits for feature parity with the Mac app (Docker actions and logs, Updates, Commands, Bookmarks). First release: themes, Overview, terminal.
 
 ```
 android/
@@ -28,7 +28,7 @@ android/
 
 ```
 cd android
-./gradlew :core:test :ssh:test            # 186 + 14 tests; needs JDK 21
+./gradlew :core:test :ssh:test            # 280 + 14 tests; needs JDK 21
 ./gradlew :probe:run --args="hetzner overview"   # real server, read-only (see the check list above)
 ./gradlew :probe:run --args="hetzner compose-test"    # REAL pull/update/rebuild/recreate on a throwaway stack it makes and removes under /tmp
 ./gradlew :probe:run --args="hetzner newstack-test"   # REAL new-stack check/create on a throwaway folder under /tmp
@@ -48,7 +48,7 @@ CI runs the same (`android-core` job). Android Studio opens `android/` directly 
 - `Confirmation` has a module-internal constructor: only `ActionPolicy.confirm` can make one from another module.
 - A cancelled `StreamRunner.run` returns normally with `cancelled = true` (like the Swift one), so callers can still clean up.
 - Ported for Bookmarks: `ComposeLabels`, `StackFiles`/`StackFileCommands`/`StackFileSession`, `LineDiff`, `BookmarkEditor`.
-- Not ported (Mac-only or later stages): `SSHConfig`, `ServerStore`, `LicenceKey`, favicon fetching, the rest of the compose/.env editor
+- Not ported (Mac-only or later stages): `SSHConfig`, `ServerStore`, `LicenceKey`, the rest of the compose/.env editor
   stack (`ComposeFormParser`, `ContainerSpec`, `NewStack`, `EditorChecks`, `SyntaxHighlighter`),
   `RemoteFiles`, `StackRemoval`.
 
