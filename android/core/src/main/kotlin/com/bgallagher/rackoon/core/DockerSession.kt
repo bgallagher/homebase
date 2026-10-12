@@ -218,6 +218,25 @@ class DockerSession(
         stream(intent, confirmation, scoped.map { it.id }.toSet(), stack.name, "docker compose ${action.raw}", cols, rows, onEvent)
     }
 
+    fun confirm(removal: StackRemoval, stack: DockerStack): Confirmation {
+        val intent = removal.intent(stack) ?: throw PolicyError.InvalidTarget
+        return policy.confirm(intent)
+    }
+
+    /** Deletes the stack (see [StackRemoval]) with live output, then refreshes. Same pty streaming as the other stack actions. */
+    suspend fun performStreaming(
+        removal: StackRemoval, stack: DockerStack, confirmation: Confirmation?,
+        cols: Int, rows: Int, onEvent: (ActionStreamEvent) -> Unit,
+    ) {
+        val intent = removal.intent(stack)
+        if (intent == null) {
+            fail("Refusing to delete ${stack.name}: it has no usable compose project, or its folder can't be deleted safely.")
+            onEvent(ActionStreamEvent.Finished(null))
+            return
+        }
+        stream(intent, confirmation, stack.containers.map { it.id }.toSet(), stack.name, "docker compose down", cols, rows, onEvent)
+    }
+
     /** The same for one container's start, stop or restart, so every action shows up in the same live output. */
     suspend fun performStreaming(
         action: DockerAction, containerID: String, confirmation: Confirmation?,

@@ -23,6 +23,7 @@ final class StackRemovalTests: XCTestCase {
         let data = try Data(contentsOf: specDir.appendingPathComponent("commands.json"))
         let commands = (try JSONSerialization.jsonObject(with: data) as! [String: Any])["commands"] as! [[String: Any]]
         XCTAssertEqual(StackRemoval.template, commands.first { $0["id"] as? String == "compose_down" }?["script"] as? String)
+        XCTAssertEqual(StackRemoval.folderStep, commands.first { $0["id"] as? String == "compose_down_folder" }?["script"] as? String)
         let base = "cd '/opt/stacks/media' && docker compose -p media -f '/opt/stacks/media/compose.yaml' down --remove-orphans"
         XCTAssertEqual(StackRemoval().command(for: stack()), base)
         XCTAssertEqual(StackRemoval(removeVolumes: true).command(for: stack()), base + " -v")

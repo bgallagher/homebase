@@ -86,6 +86,11 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
                             enabled = blocked == null, onClick = { menu = false; vm.requestStackAction(stack, action) },
                         )
                     }
+                    androidx.compose.material3.HorizontalDivider(color = c.border)
+                    DropdownMenuItem(
+                        text = { Text("Delete stack…", color = if (blocked != null) c.textMuted else c.danger, fontWeight = FontWeight.Medium) },
+                        enabled = blocked == null, onClick = { menu = false; vm.requestDelete(stack) },
+                    )
                 }
             }
         }

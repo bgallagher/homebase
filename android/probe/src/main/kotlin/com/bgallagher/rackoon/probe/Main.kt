@@ -3,6 +3,7 @@ package com.bgallagher.rackoon.probe
 import com.bgallagher.rackoon.core.ActionStreamEvent
 import com.bgallagher.rackoon.core.ActionPolicy
 import com.bgallagher.rackoon.core.EditorChecks
+import com.bgallagher.rackoon.core.StackRemoval
 import com.bgallagher.rackoon.core.EnvSyntax
 import com.bgallagher.rackoon.core.RemoteFileState
 import com.bgallagher.rackoon.core.Bookmark
@@ -48,6 +49,8 @@ import kotlin.system.exitProcess
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
  *   compose-test   REAL pull/update/rebuild/recreate/streamed runs/read-only checks on a throwaway stack under /tmp that it creates and
  *                  removes (project rackoon-probe-test). Never touches your own stacks.
+ *   delete-test    REAL stack delete (compose down + folder removal) on throwaway stacks under /tmp/rackoon-probe-delete, with data written BY the
+ *                  container (root-owned): the other stack, your own stacks and the rest of /tmp are never touched
  *   env-test       REAL .env editing on a throwaway stack under /tmp (project rackoon-probe-env): a missing .env, create it, check it with
  *                  the server's --env-file, the not-exists guard when it appears underneath, edit it, and the checklist
  *   logs-check     LogFollower follows TWO real containers merged for a few seconds (read-only), then stops: no `docker logs -f` is left
@@ -60,7 +63,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|env-test|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|env-test|delete-test|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -231,6 +234,57 @@ fun main(args: Array<String>) {
                     } finally {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
+                }
+
+                "delete-test" -> {
+                    val parent = "/tmp/rackoon-probe-delete"
+                    suspend fun sh(script: String, timeout: Long = 300_000) = try { transport.run(script, timeout) } catch (e: Exception) { com.bgallagher.rackoon.core.CommandResult("", e.message ?: "ssh failed", 255) }
+                    suspend fun teardown() { sh("for d in $parent/*/; do [ -f \"${'$'}d/compose.yaml\" ] && (cd \"${'$'}d\" && docker compose -p \"rackoon-probe-del-${'$'}(basename \"${'$'}d\")\" down -v --remove-orphans 2>&1); done; rm -rf $parent") }
+                    suspend fun make(name: String): Boolean {
+                        val dir = "$parent/$name"
+                        val compose = "services:\n  web:\n    image: busybox\n    command: sh -c \"echo hi > /data/made-by-container; sleep 3600\"\n    volumes:\n      - ./data:/data\n"
+                        val b64 = java.util.Base64.getEncoder().encodeToString(compose.toByteArray())
+                        return sh("mkdir -p $dir && cd $dir && echo $b64 | base64 -d > compose.yaml && docker compose -p rackoon-probe-del-$name up -d 2>&1", 600_000).exitCode == 0
+                    }
+                    teardown()
+                    try {
+                        val policy = ActionPolicy()
+                        val docker = DockerSession(transport, policy = policy)
+                        expect("setup: stack with a container-written bind mount", make("full"))
+                        expect("setup: second stack that must be left alone", make("keep"))
+                        delay(2_000)
+                        docker.refresh()
+                        val full = docker.state.value.snapshot?.stacks?.firstOrNull { it.name == "rackoon-probe-del-full" }
+                        expect("docker reports the stack by its real labels", full != null)
+                        if (full == null) return@runBlocking
+                        expect("folder deletion is offered for it: ${StackRemoval.folderProblem(full) ?: "yes"}", StackRemoval.folderProblem(full) == null)
+                        println("   data file owner on the server: ${sh("stat -c %U $parent/full/data/made-by-container").stdout.trim()}")
+
+                        val removal = StackRemoval(removeVolumes = false, deleteFolder = true)
+                        val text = StringBuilder()
+                        docker.performStreaming(removal, full, runCatching { docker.confirm(removal, full) }.getOrNull(), 100, 24) { if (it is ActionStreamEvent.Output) text.append(it.text) }
+                        val after = sh("docker ps -a --filter label=com.docker.compose.project=rackoon-probe-del-full -q | wc -l; ls $parent 2>&1")
+                        println(com.bgallagher.rackoon.core.ANSI.strip(text.toString()).split("\n").filter { it.isNotBlank() }.takeLast(4).joinToString("\n") { "   $it" })
+                        expect("its container is gone", after.stdout.startsWith("0\n"))
+                        expect("its folder, with the root-owned data, is gone and the other stack's is not (${after.stdout.replace("\n", " ")})", !after.stdout.contains("full") && after.stdout.contains("keep"))
+                        expect("the other stack still runs", sh("docker ps --filter label=com.docker.compose.project=rackoon-probe-del-keep --filter status=running -q | wc -l").stdout.trim() == "1")
+
+                        // Without confirmation, or in read-only mode, nothing runs.
+                        docker.refresh()
+                        val keep = docker.state.value.snapshot?.stacks?.firstOrNull { it.name == "rackoon-probe-del-keep" }
+                        if (keep != null) {
+                            policy.isReadOnly = true
+                            expect("read-only refuses to confirm a delete", runCatching { docker.confirm(removal, keep) }.isFailure)
+                            policy.isReadOnly = false
+                            docker.performStreaming(removal, keep, null, 100, 24) {}
+                            val still = sh("ls $parent/keep/compose.yaml 2>&1")
+                            expect("a delete without confirmation changed nothing", still.stdout.contains("compose.yaml") && !still.stdout.contains("No such"))
+                        }
+                    } finally {
+                        teardown()
+                        val leftover = sh("ls $parent 2>&1 | head -1; docker ps -a --filter label=com.docker.compose.project=rackoon-probe-del-keep -q | wc -l")
+                        expect("teardown removed everything", leftover.stdout.contains("No such file") && leftover.stdout.endsWith("0\n"))
                     }
                 }
 

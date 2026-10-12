@@ -295,6 +295,17 @@
       ]
     },
     {
+      "id": "compose_down_folder",
+      "kind": "template",
+      "description": "The text {folder} is replaced with in compose_down when the stack's folder is deleted too. It runs only after `down` succeeded: leave /, then guard (each with its own message and exit 6, because the containers are gone by then): the stack's compose file {file} exists, the folder {dir} itself is not a symlink, and the compose file's real path lies inside the folder's real path (a symlinked PARENT such as /opt -> /mnt/data/opt is fine and is deleted through). Then rm -rf the folder, with sudo -n as a second try for files a container created as root.",
+      "script": " && cd / && { [ -f {file} ] || { echo 'The containers are removed, but the folder was left alone: its compose file is missing.'; exit 6; }; } && { [ ! -L {dir} ] || { echo 'The containers are removed, but the folder was left alone: it is a symbolic link.'; exit 6; }; } && R=$(readlink -f -- {dir}) && { case \"$(readlink -f -- {file})\" in \"$R\"/*) true;; *) echo 'The containers are removed, but the folder was left alone: its compose file is not inside it.'; exit 6;; esac; } && { rm -rf -- {dir} || { [ \"$(id -u)\" -ne 0 ] && sudo -n rm -rf -- {dir}; } || { echo 'The containers are removed, but the folder could not be deleted (permissions).'; exit 6; }; }",
+      "timeoutSeconds": 0,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "boot_id",
       "description": "The kernel's boot id: a random id that changes on every boot. Used after a reboot to tell the server has really restarted, not just kept its old connection.",
       "script": "cat /proc/sys/kernel/random/boot_id",

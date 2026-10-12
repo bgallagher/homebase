@@ -75,7 +75,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
         is DockerUi.Failed -> if (state.unreachable) Unreachable(server, state.message, vm::refreshDockerNow)
         else Message("Docker isn't responding", state.message, "Try again", vm::refreshDockerNow)
         is DockerUi.Ready -> {
-            val stack = openName?.let { n -> state.snapshot.stacks.firstOrNull { it.name == n } }
+            val stack = openName?.let { n -> state.stacks.firstOrNull { it.name == n } }
             if (openName != null && stack == null) LaunchedEffect(openName) { vm.openStack(null) }   // the stack went away
             if (stack != null) StackDetail(vm, server, stack, state, readOnly, onBack = { vm.openStack(null) })
             else if (state.snapshot.containers.isEmpty()) Message(
@@ -92,7 +92,7 @@ fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Bool
 private fun StackList(ui: DockerUi.Ready, onOpen: (DockerStack) -> Unit, onBookmark: (DockerStack) -> Unit, onRefresh: () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(refreshing) { if (refreshing) { delay(900); refreshing = false } }
-    val stacks = ui.snapshot.stacks
+    val stacks = ui.stacks
     // Which stacks can take a bookmark is worked out once per snapshot, not for every card on every recomposition.
     val bookmarkable = remember(ui.snapshot) { ui.snapshot.bookmarkableStacks.map { it.name }.toSet() }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { refreshing = true; onRefresh() }, modifier = Modifier.fillMaxSize()) {

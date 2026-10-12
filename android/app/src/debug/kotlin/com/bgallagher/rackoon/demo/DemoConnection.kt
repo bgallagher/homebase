@@ -87,6 +87,18 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
                 }
             }
         }
+        Regex("""docker compose -p (\S+) .*? down --remove-orphans""").find(inner)?.let { d ->
+            val project = d.groupValues[1]
+            val members = world.containers.filter { it.project == project }
+            val folder = inner.contains("rm -rf --")
+            return Plan(
+                members.flatMap { listOf(" Container ${it.name}  Stopped", tick("Container ${it.name}  Removed")) } + tick("Network ${project}_default  Removed") +
+                    if (folder) listOf("Removing ${world.dir(project)}") else emptyList(),
+            ) {
+                world.containers.removeAll { it.project == project }
+                if (folder) world.files.keys.removeAll { it.startsWith(world.dir(project) + "/") }
+            }
+        }
         val m = Regex("""docker compose -p (\S+) .*?(pull|restart|up -d --build --no-deps (\S+)|up -d --build|up -d --force-recreate|up -d)\s*$""").find(inner) ?: return null
         val project = m.groupValues[1]
         val verb = m.groupValues[2]

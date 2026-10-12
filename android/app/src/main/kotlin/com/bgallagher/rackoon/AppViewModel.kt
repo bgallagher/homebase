@@ -76,9 +76,18 @@ sealed class DockerUi {
         val snapshot: DockerSnapshot, val updatedAt: Long?, val error: String?,
         /** Containers and compose projects with an action in flight, and why the last action failed (if it did). */
         val busy: Set<String> = emptySet(), val busyStacks: Set<String> = emptySet(), val actionError: String? = null,
+        /** Stacks docker doesn't list right now but that should stay on screen: one being deleted, or left "Not started" after a failed delete. */
+        val extraStacks: List<DockerStack> = emptyList(),
     ) : DockerUi() {
+        /** Every stack to show: the ones docker reports, then the extras it doesn't (so a stack never vanishes while it is being deleted). */
+        val stacks: List<DockerStack> by lazy {
+            val names = snapshot.stacks.map { it.name }.toSet()
+            snapshot.stacks + extraStacks.filter { it.name !in names }.sortedBy { it.name }
+        }
+
         companion object {
-            fun from(s: DockerState, snapshot: DockerSnapshot) = Ready(snapshot, s.updatedAt, s.error, s.busy, s.busyStacks, s.actionError)
+            fun from(s: DockerState, snapshot: DockerSnapshot, extra: List<DockerStack> = emptyList()) =
+                Ready(snapshot, s.updatedAt, s.error, s.busy, s.busyStacks, s.actionError, extra)
         }
     }
     object NotInstalled : DockerUi()
@@ -312,7 +321,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // actions only change that state, and this publishes it.
         dockerJob?.cancel()
         val docker = live!!.docker
-        dockerJob = viewModelScope.launch { docker.state.collect { st -> st.snapshot?.let { _docker.value = DockerUi.Ready.from(st, it) } } }
+        dockerJob = viewModelScope.launch { docker.state.collect { st -> lastDockerState = st; publishDocker() } }
         _docker.value = DockerUi.Loading
         _openStack.value = null
         // A saved reading shows at once (marked stale) while the first poll runs.
@@ -353,14 +362,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             l.docker.refresh()
             val s = l.docker.state.value
             _docker.value = when {
-                s.snapshot != null -> DockerUi.Ready.from(s, s.snapshot!!)
+                s.snapshot != null -> DockerUi.Ready.from(s, s.snapshot!!, extraStacks())
                 s.error?.contains("not installed", ignoreCase = true) == true -> DockerUi.NotInstalled
                 s.error != null -> DockerUi.Failed(s.error!!, unreachable = false)
                 else -> DockerUi.Loading
             }
         } catch (e: SshException) {
             // Keep the last stacks on screen when the link drops; with nothing to show, explain.
-            _docker.value = if (previous is DockerUi.Ready) DockerUi.Ready(previous.snapshot, previous.updatedAt, e.message, previous.busy, previous.busyStacks, previous.actionError)
+            _docker.value = if (previous is DockerUi.Ready) DockerUi.Ready(previous.snapshot, previous.updatedAt, e.message, previous.busy, previous.busyStacks, previous.actionError, extraStacks())
             else DockerUi.Failed(e.message ?: "Connection failed", unreachable = e is SshException.Unreachable)
         }
     }
@@ -447,6 +456,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    // MARK: delete stack (docker compose down, optionally volumes and the folder; the folder rules live in core's StackRemoval)
+
+    private var lastDockerState: DockerState? = null
+    private val removingStacks = LinkedHashMap<String, DockerStack>()
+    private val leftoverStacks = LinkedHashMap<String, DockerStack>()
+
+    private fun extraStacks(): List<DockerStack> = (leftoverStacks + removingStacks).values.toList()
+
+    private fun publishDocker() {
+        val st = lastDockerState ?: return
+        val snap = st.snapshot ?: return
+        _docker.value = DockerUi.Ready.from(st, snap, extraStacks())
+    }
+
+    /** The stack the user is deciding to delete (a sheet), or null. */
+    private val _deleting = MutableStateFlow<DockerStack?>(null)
+    val deleting: StateFlow<DockerStack?> = _deleting.asStateFlow()
+    fun requestDelete(stack: DockerStack) { if (stackBlockedReason(stack) == null) _deleting.value = stack }
+    fun cancelDelete() { _deleting.value = null }
+
+    /** Deletes a stack after the sheet's confirmation, streaming into the stack's Output tab. On success the stack page closes. */
+    fun deleteStack(stack: DockerStack, removal: com.bgallagher.rackoon.core.StackRemoval) {
+        val l = live ?: return
+        _deleting.value = null
+        if (_working.value != null || _readOnly.value) return
+        removingStacks[stack.name] = stack
+        publishDocker()
+        launchOutput(
+            stack.name, "docker compose down", "Deleting ${stack.name}…", null,
+            onDone = { out ->
+                removingStacks.remove(stack.name)
+                if (out.phase.value == ActionOutput.Phase.Succeeded) {
+                    leftoverStacks.remove(stack.name)
+                    publishDocker()
+                    if (live === l && _openStack.value == stack.name) { _openStack.value = null; _stackTab.value = StackTab.Containers; _output.value = null }
+                } else {
+                    // Failed or cancelled part way (the containers may be gone but the folder is not): keep the stack on screen, as
+                    // "Not started" if docker no longer reports it, so its Output can be read and its files are not orphaned.
+                    leftoverStacks[stack.name] = stack.copy(containers = emptyList())
+                    publishDocker()
+                }
+            },
+        ) { cols, rows, onEvent ->
+            val confirmation = try { l.docker.confirm(removal, stack) } catch (_: PolicyError) { null }
+            l.docker.performStreaming(removal, stack, confirmation, cols, rows, onEvent)
+        }
+    }
+
     // MARK: container and stack actions (every one is confirmed, bound to the server it was made for, and streams into Output)
 
     enum class StackTab { Containers, Logs, Output }
@@ -474,7 +531,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _working = MutableStateFlow<String?>(null)
     val working: StateFlow<String?> = _working.asStateFlow()
 
-    private fun clearDockerActions() { closeEditorNow(); _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
+    private fun clearDockerActions() { removingStacks.clear(); leftoverStacks.clear(); lastDockerState = null; _deleting.value = null; closeEditorNow(); _working.value = null; _output.value?.cancel(); _output.value = null; _stackTab.value = StackTab.Containers }
 
     /** Why a stack's actions are unavailable (null when they can run). */
     fun stackBlockedReason(stack: DockerStack): String? = ActionPrompts.blockedReason(stack, _readOnly.value, _working.value != null)
@@ -537,13 +594,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun launchOutput(
         scope: String, title: String, working: String, intro: String?,
+        onDone: (ActionOutput) -> Unit = {},
         work: suspend (cols: Int, rows: Int, onEvent: (com.bgallagher.rackoon.core.ActionStreamEvent) -> Unit) -> Unit,
     ) {
         _working.value = working
         val out = ActionOutput(scope, title, viewModelScope)
         _output.value = out
         _stackTab.value = StackTab.Output   // the Output tab opens when a run starts (its view reports the size the run needs)
-        out.start(intro, work, completion = { _working.value = null })
+        out.start(intro, work, completion = { _working.value = null; onDone(out) })
     }
 
     fun cancelOutput() { _output.value?.cancel() }

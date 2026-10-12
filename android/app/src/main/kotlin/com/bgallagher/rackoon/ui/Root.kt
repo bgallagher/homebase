@@ -75,6 +75,7 @@ fun RackoonRoot(vm: AppViewModel) {
     val editorFile by vm.editorFile.collectAsStateWithLifecycle()
     val bookmarkForm by vm.bookmarkForm.collectAsStateWithLifecycle()
     val pending by vm.pending.collectAsStateWithLifecycle()
+    val deleting by vm.deleting.collectAsStateWithLifecycle()
     val themeId by vm.themeId.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
@@ -89,6 +90,7 @@ fun RackoonRoot(vm: AppViewModel) {
             else -> Shell(vm, selected!!, overview, tab, readOnly)
         }
         bookmarkForm?.let { BookmarkSheet(vm, it, readOnly) }
+        deleting?.let { stack -> DeleteStackSheet(stack, selected?.name.orEmpty(), selected?.user?.takeIf { it.isNotEmpty() } ?: "root", onCancel = vm::cancelDelete, onRun = { vm.deleteStack(stack, it) }) }
         pending?.let { ConfirmSheet(it, onCancel = vm::cancelPending, onConfirm = vm::confirmPending) }
         if (switcher) ServerSwitcher(servers, selected, overview, onPick = vm::select, onAdd = vm::startAdd, onRemove = vm::remove, onDismiss = { vm.showSwitcher(false) })
     }
