@@ -30,7 +30,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :core:test :ssh:test
+      - run: ./gradlew :core:test :ssh:test :app:assembleDebug
         working-directory: android
   swift-macos:
     # SwiftTerm 1.99 needs Swift 6.2+. On an older toolchain SwiftPM silently picked SwiftTerm 1.20.0, which lacks the
