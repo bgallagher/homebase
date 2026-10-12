@@ -103,7 +103,7 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
         if (readOnly) ReadOnlyBanner(onTurnOff = vm::toggleReadOnly)
         else if (blocked != null && working == null && tab == AppViewModel.StackTab.Containers) Text(blocked, color = c.textMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         // On the Output tab the panel itself says "Running…", and a row appearing here would push Cancel out from under the finger.
-        working?.takeIf { tab == AppViewModel.StackTab.Containers }?.let { w ->
+        working?.takeIf { tab != AppViewModel.StackTab.Output }?.let { w ->
             Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.accent)
                 Text(w, color = c.textSecondary, fontSize = 13.sp)
@@ -113,7 +113,10 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
         if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = c.warn, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
 
         TabStrip(
-            listOf(AppViewModel.StackTab.Containers to "Containers", AppViewModel.StackTab.Output to if (ownOutput?.isRunning == true) "Output ●" else "Output"),
+            listOf(
+                AppViewModel.StackTab.Containers to "Containers", AppViewModel.StackTab.Logs to "Logs",
+                AppViewModel.StackTab.Output to if (ownOutput?.isRunning == true) "Output ●" else "Output",
+            ),
             tab, vm::showStackTab,
         )
         when (tab) {
@@ -128,6 +131,7 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
                     )
                 }
             }
+            AppViewModel.StackTab.Logs -> LogsPanel(vm, stack)
             AppViewModel.StackTab.Output -> if (ownOutput != null) ActionOutputPanel(ownOutput, onCancel = vm::cancelOutput, onClose = vm::closeOutput)
             else Text("Nothing has run for this stack yet. The output of Pull, Update, Restart and the container actions appears here.", color = c.textMuted, lineHeight = 20.sp, modifier = Modifier.padding(20.dp))
         }

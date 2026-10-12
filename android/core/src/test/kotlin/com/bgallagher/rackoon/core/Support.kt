@@ -10,6 +10,9 @@ class FakeTransport(responses: List<Result<CommandResult>> = emptyList()) : SSHT
 
     /** What `stream` emits, chunk by chunk, before finishing; and what it was asked to run. */
     var streamChunks: List<String> = emptyList()
+
+    /** Per-command output for `stream`; a command without an entry here gets [streamChunks]. */
+    val streamsByCommand = mutableMapOf<String, List<String>>()
     val streamedCommands = mutableListOf<String>()
 
     @Synchronized private fun next(command: String): Result<CommandResult> {
@@ -22,7 +25,7 @@ class FakeTransport(responses: List<Result<CommandResult>> = emptyList()) : SSHT
 
     override fun stream(command: String): Flow<String> {
         synchronized(this) { streamedCommands += command }
-        val chunks = streamChunks
+        val chunks = streamsByCommand[command] ?: streamChunks
         return flow { chunks.forEach { emit(it) } }
     }
 }

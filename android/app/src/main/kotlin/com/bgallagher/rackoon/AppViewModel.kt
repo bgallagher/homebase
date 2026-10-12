@@ -20,6 +20,8 @@ import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.serviceNames
 import com.bgallagher.rackoon.ui.PendingAction
 import com.bgallagher.rackoon.core.DockerAction
+import com.bgallagher.rackoon.core.LogFollower
+import com.bgallagher.rackoon.core.LogsState
 import com.bgallagher.rackoon.core.DockerState
 import com.bgallagher.rackoon.core.DockerSnapshot
 import com.bgallagher.rackoon.core.ActionPrompts
@@ -218,6 +220,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private inner class Live(val server: Server) {
         val transport = c.connection(endpointOf(server))
         val docker = DockerSession(transport, policy = policy)
+        val logs = LogFollower(transport)
         val session = ServerSession(transport, cached = c.snapshots.load(server.id), onSnapshot = { c.snapshots.save(server.id, it) })
     }
 
@@ -284,7 +287,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _servers.update { list -> list.filterNot { it.id == server.id } }
         c.servers.save(_servers.value)
         if (_selectedId.value == server.id) {
-            live?.transport?.close(); live = null; pollJob?.cancel(); clearBookmarkState()
+            live?.logs?.stop(); live?.transport?.close(); live = null; pollJob?.cancel(); clearBookmarkState()
             _selectedId.value = _servers.value.firstOrNull()?.id
             c.prefs.selectedServerId = _selectedId.value
             _servers.value.firstOrNull()?.let(::openLive)
@@ -294,8 +297,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun openLive(server: Server) {
         pollJob?.cancel()
         live?.transport?.close()
+        live?.logs?.stop()
         live = Live(server)
         clearBookmarkState()
+        logsJob?.cancel()
+        _logs.value = LogsState()
+        val followed = live!!.logs
+        logsJob = viewModelScope.launch { followed.state.collect { _logs.value = it } }
         clearDockerActions()
         // The Docker session's own state (stacks, busy markers, action errors) is what the screens show; the polling loop and the
         // actions only change that state, and this publishes it.
@@ -356,13 +364,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // MARK: container and stack actions (every one is confirmed, bound to the server it was made for, and streams into Output)
 
-    enum class StackTab { Containers, Output }
+    enum class StackTab { Containers, Logs, Output }
 
     private val _stackTab = MutableStateFlow(StackTab.Containers)
     val stackTab: StateFlow<StackTab> = _stackTab.asStateFlow()
     fun showStackTab(tab: StackTab) { _stackTab.value = tab }
 
     /** The latest streamed action, kept until it is closed; the stack page shows it when it belongs to the open stack. */
+    private val _logs = MutableStateFlow(LogsState())
+    /** The followed logs of the open stack (empty unless the Logs tab is showing). */
+    val logs: StateFlow<LogsState> = _logs.asStateFlow()
+    private var logsJob: Job? = null
+
+    /** Follows these containers' logs, merged. Called while the Logs tab is on screen. */
+    fun followLogs(containers: List<DockerContainer>) { live?.logs?.follow(viewModelScope, containers) }
+
+    /** Stops following (Ctrl-C reaches each remote `docker logs -f`). */
+    fun stopLogs() { live?.logs?.stop() }
+
     private val _output = MutableStateFlow<ActionOutput?>(null)
     val output: StateFlow<ActionOutput?> = _output.asStateFlow()
 

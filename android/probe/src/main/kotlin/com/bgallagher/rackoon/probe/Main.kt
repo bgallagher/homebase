@@ -4,6 +4,8 @@ import com.bgallagher.rackoon.core.ActionStreamEvent
 import com.bgallagher.rackoon.core.ActionPolicy
 import com.bgallagher.rackoon.core.Bookmark
 import com.bgallagher.rackoon.core.ComposeAction
+import com.bgallagher.rackoon.core.LogFollower
+import com.bgallagher.rackoon.core.DockerParser
 import com.bgallagher.rackoon.core.DockerSession
 import com.bgallagher.rackoon.core.PolicyError
 import com.bgallagher.rackoon.core.BookmarkEditor
@@ -43,6 +45,8 @@ import kotlin.system.exitProcess
  *                  throwaway stack under /tmp that it creates and removes. It never touches your own stacks.
  *   compose-test   REAL pull/update/rebuild/recreate/streamed runs/read-only checks on a throwaway stack under /tmp that it creates and
  *                  removes (project rackoon-probe-test). Never touches your own stacks.
+ *   logs-check     LogFollower follows TWO real containers merged for a few seconds (read-only), then stops: no `docker logs -f` is left
+ *                  running on the server
  *   exec-shell-check  a command on a pty and an interactive shell both work through the real SSH library (what Shell-in-container uses)
  *   sandbox-up     REAL: creates ONE harmless stack, /tmp/rackoon-sandbox (project rackoonsandbox: a hello-world web page on
  *                  127.0.0.1:18080 and redis), and starts it, so the phone's Docker actions can be tried on it
@@ -51,7 +55,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
+        System.err.println("usage: probe <host> <overview|hostkey|stream-check|stream-marker|shell-check|exec-shell-check|logs-check|compose-test|bookmark-test|sandbox-up|sandbox-down> [user]")
         exitProcess(2)
     }
     val host = args[0]
@@ -222,6 +226,28 @@ fun main(args: Array<String>) {
                     } finally {
                         sh("rm -rf $dir")
                         expect("the throwaway folder is gone", sh("[ ! -e $dir ] && echo gone").stdout.trim() == "gone")
+                    }
+                }
+
+                "logs-check" -> {
+                    val snapshot = DockerParser.parse(transport.run(com.bgallagher.rackoon.core.DockerSession.command, 30_000).stdout)
+                    val chosen = snapshot.containers.filter { it.isRunning }.take(2)
+                    expect("two running containers to follow (found ${chosen.size})", chosen.size == 2)
+                    if (chosen.size == 2) {
+                        val follower = LogFollower(transport)
+                        follower.follow(this, chosen)
+                        delay(6_000)
+                        val st = follower.state.value
+                        println("   received ${st.received} lines from ${st.entries.map { it.source }.distinct()}")
+                        expect("following is live", st.live)
+                        expect("no error", st.error == null)
+                        expect("lines arrived (the last 100 of each are replayed)", st.received > 0)
+                        val during = transport.run("pgrep -af 'docker logs -f --tail 100' | grep -v pgrep | wc -l", 10_000).stdout.trim().toInt()
+                        expect("one follower per container is running on the server (found $during)", during >= 2)
+                        follower.stop()
+                        delay(3_000)
+                        val left = transport.run("pgrep -af 'docker logs -f --tail 100' | grep -v pgrep | wc -l", 10_000).stdout.trim()
+                        expect("no follower left on the server after stop (found $left)", left == "0")
                     }
                 }
 
