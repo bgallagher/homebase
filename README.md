@@ -87,7 +87,7 @@
 
 ## Install
 
-Download `Rackoon-<version>-macos-arm64.zip` from the [Releases](https://github.com/bgallagher/rackoon/releases) page (Apple silicon, macOS 14 or later). The app is ad-hoc signed and not notarized, so the first launch needs **right-click, Open**.
+Download `Rackoon-<version>-macos-arm64.zip` from the **Rackoon for Mac** release on the [Releases](https://github.com/bgallagher/rackoon/releases) page (tags `mac-v*`; Apple silicon, macOS 14 or later). Each platform has its own releases and tag prefix, so look for the one named for your platform. The app is ad-hoc signed and not notarized, so the first launch needs **right-click, Open**.
 
 To keep a stable copy installed while you work on the code, build the stable app into `/Applications` and run development builds beside it: a dev build has its own icon (the mascot behind yellow caution tape) so you can tell them apart in the Dock.
 

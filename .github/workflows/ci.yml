@@ -47,9 +47,9 @@ jobs:
         working-directory: apple
       - name: Build the app bundle
         run: |
-          # A v1.2.3 tag builds version 1.2.3; any other push builds the default version, named by commit.
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
+          # A mac-v1.2.3 tag builds version 1.2.3; any other push builds the default version, named by commit.
+          if [[ "$GITHUB_REF" == refs/tags/mac-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#mac-v}"
             tools/make-app "$VERSION"
           else
             VERSION="dev-$(git rev-parse --short HEAD)"
@@ -72,10 +72,11 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # A v* tag publishes the build from this same run as a GitHub Release.
+  # A mac-v* tag publishes the build from this same run as the Mac release. Each platform has its own tag prefix (mac-v*, and
+  # android-v* when that app ships), so a release page is about exactly one platform.
   release:
     needs: [spec, swift-macos, android-core]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/mac-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -88,11 +89,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A tag with a suffix (v0.1.0-alpha.1, v0.2.0-beta.1) is published as a pre-release; plain v1.2.3 is a normal release.
+          # A tag with a suffix (mac-v0.1.0-alpha.1, mac-v0.2.0-beta.1) is published as a pre-release; plain mac-v1.2.3 is a normal release.
           PRE=""
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
           gh release create "$GITHUB_REF_NAME" dist/* $PRE \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Rackoon ${GITHUB_REF_NAME#v}" \
+            --title "Rackoon for Mac ${GITHUB_REF_NAME#mac-v}" \
             --generate-notes \
-            --notes "Developed by Brian Gallagher (https://github.com/bgallagher). Apple silicon Mac build. It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
+            --notes "**Platform: macOS (Apple silicon, macOS 14 or later).** Developed by Brian Gallagher (https://github.com/bgallagher). It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
