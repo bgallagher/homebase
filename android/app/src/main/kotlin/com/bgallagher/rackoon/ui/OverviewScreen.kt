@@ -125,7 +125,7 @@ private fun Ready(state: ServerState, wide: Boolean, onRefresh: () -> Unit, onOp
             }
             if (state.attention.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.attention.forEach { AttentionChip(it, onClick = if (it.fix == "terminal" || it.fix == "docker") ({ onOpenFix(it.fix) }) else null) }
+                    state.attention.forEach { AttentionChip(it, onClick = if (it.fix == "terminal" || it.fix == "docker" || it.fix == "updates") ({ onOpenFix(it.fix) }) else null) }
                 }
             }
             val usage: @Composable (Modifier) -> Unit = { m ->

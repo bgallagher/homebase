@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.data.StoredAuth
 import com.bgallagher.rackoon.core.ActionPolicy
+import com.bgallagher.rackoon.core.AptAction
+import com.bgallagher.rackoon.core.AptPrompt
+import com.bgallagher.rackoon.core.UpdatesPresentation
+import com.bgallagher.rackoon.core.UpdatesSession
+import com.bgallagher.rackoon.core.UpdatesState
 import com.bgallagher.rackoon.core.Bookmark
 import com.bgallagher.rackoon.core.BookmarkEditor
 import com.bgallagher.rackoon.core.BookmarkPlan
@@ -240,6 +245,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val transport = c.connection(endpointOf(server))
         val docker = DockerSession(transport, policy = policy)
         val logs = LogFollower(transport)
+        val updates = UpdatesSession(transport, policy = policy)
         val session = ServerSession(transport, cached = c.snapshots.load(server.id), onSnapshot = { c.snapshots.save(server.id, it) })
     }
 
@@ -324,6 +330,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val followed = live!!.logs
         logsJob = viewModelScope.launch { followed.state.collect { _logs.value = it } }
         clearDockerActions()
+        clearUpdatesState()
+        val updatesSession = live!!.updates
+        updatesJob?.cancel()
+        updatesJob = viewModelScope.launch { updatesSession.state.collect { _updates.value = it } }
         // The Docker session's own state (stacks, busy markers, action errors) is what the screens show; the polling loop and the
         // actions only change that state, and this publishes it.
         dockerJob?.cancel()
@@ -807,6 +817,82 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         } finally {
             transport.close()
         }
+    }
+
+    // MARK: Updates (read when the screen opens and after each action; no polling)
+
+    private val _updatesOpen = MutableStateFlow(false)
+    val updatesOpen: StateFlow<Boolean> = _updatesOpen.asStateFlow()
+    private val _updates = MutableStateFlow(UpdatesState())
+    val updates: StateFlow<UpdatesState> = _updates.asStateFlow()
+    private val _updatesLoading = MutableStateFlow(false)
+    val updatesLoading: StateFlow<Boolean> = _updatesLoading.asStateFlow()
+    /** What an apt action is doing right now ("Installing 5 updates…"), or null. */
+    private val _updatesWorking = MutableStateFlow<String?>(null)
+    val updatesWorking: StateFlow<String?> = _updatesWorking.asStateFlow()
+    /** The latest apt run and what it printed, kept until closed or replaced. */
+    private val _updatesOutput = MutableStateFlow<ActionOutput?>(null)
+    val updatesOutput: StateFlow<ActionOutput?> = _updatesOutput.asStateFlow()
+    private var updatesJob: Job? = null
+
+    fun showUpdates(show: Boolean) {
+        _updatesOpen.value = show
+        if (show) loadUpdates()
+    }
+
+    fun loadUpdates() {
+        val l = live ?: return
+        if (_updatesLoading.value || _updatesWorking.value != null) return
+        _updatesLoading.value = true
+        viewModelScope.launch {
+            try { l.updates.refresh() } finally { if (live === l) _updatesLoading.value = false }
+        }
+    }
+
+    /** Why an apt button is off, or null: Read-only, or another action is running. */
+    fun aptBlockedReason(): String? = when {
+        _readOnly.value -> "Read-only mode is on"
+        _updatesWorking.value != null -> "Another update is running"
+        else -> null
+    }
+
+    fun requestApt(action: AptAction) {
+        val l = live ?: return
+        if (aptBlockedReason() != null) return
+        val intent = action.intent ?: return
+        val packages = _updates.value.snapshot?.packages.orEmpty()
+        val prompt = UpdatesPresentation.prompt(action, packages.size, packages.count { it.isSecurity })
+        _pending.value = PendingAction(prompt.title, prompt.message, l.endpointUser(), intent.command, run = { runApt(l, action, prompt) })
+    }
+
+    /** "Install security updates": an explicit, capped list of the security packages, else null. */
+    fun securityAction(): AptAction? {
+        val packages = _updates.value.snapshot?.packages.orEmpty()
+        return if (UpdatesPresentation.canInstallSecurity(packages)) AptAction.Upgrade(UpdatesPresentation.securityNames(packages)) else null
+    }
+
+    private fun runApt(l: Live, action: AptAction, prompt: AptPrompt) {
+        if (live !== l || _updatesWorking.value != null) return
+        _updatesWorking.value = prompt.workingLabel
+        val out = ActionOutput("updates", prompt.outputTitle, viewModelScope)
+        _updatesOutput.value = out
+        out.start(null, { cols, rows, onEvent ->
+            // The same policy that vetted the request vets it again here; a switch to Read-only in between wins.
+            val confirmation = try { l.updates.confirm(action) } catch (_: PolicyError) { null }
+            l.updates.performStreaming(action, confirmation, cols, rows, onEvent)
+        }, completion = { if (live === l) _updatesWorking.value = null })
+    }
+
+    fun cancelUpdatesOutput() { _updatesOutput.value?.cancel() }
+
+    fun closeUpdatesOutput() {
+        val o = _updatesOutput.value ?: return
+        if (!o.isRunning) _updatesOutput.value = null
+    }
+
+    private fun clearUpdatesState() {
+        _updatesOpen.value = false; _updates.value = UpdatesState(); _updatesLoading.value = false; _updatesWorking.value = null
+        _updatesOutput.value?.cancel(); _updatesOutput.value = null
     }
 
     // MARK: bookmarks (Homepage labels written into the stack's compose file)

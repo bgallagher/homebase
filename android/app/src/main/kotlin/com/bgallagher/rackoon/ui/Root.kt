@@ -72,6 +72,7 @@ fun RackoonRoot(vm: AppViewModel) {
     val appearance by vm.appearance.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val bookmarksOpen by vm.bookmarksOpen.collectAsStateWithLifecycle()
+    val updatesOpen by vm.updatesOpen.collectAsStateWithLifecycle()
     val editorFile by vm.editorFile.collectAsStateWithLifecycle()
     val addOpen by vm.addOpen.collectAsStateWithLifecycle()
     val bookmarkForm by vm.bookmarkForm.collectAsStateWithLifecycle()
@@ -85,6 +86,7 @@ fun RackoonRoot(vm: AppViewModel) {
             addOpen -> AddContainerScreen(vm, readOnly)
             editorFile != null -> EditorScreen(vm, editorFile!!, readOnly)
             bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
+            updatesOpen -> UpdatesScreen(vm, readOnly, onBack = { vm.showUpdates(false) })
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
             firstRun -> FirstRunScreen(vm::dismissFirstRun)
@@ -128,7 +130,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
                         // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
                         LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
-                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }) })
+                        OverviewScreen(overview, wide, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }.also { if (fix == "updates") vm.showUpdates(true) }) })
                     }
                     Tab.Docker -> {
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -136,7 +138,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         DockerScreen(vm, server, wide, readOnly)
                     }
                     Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
-                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name, onBookmarks = { vm.showBookmarks(true) })
+                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name, onBookmarks = { vm.showBookmarks(true) }, updatesNote = updatesNote(overview), onUpdates = { vm.showUpdates(true) })
                 }
             }
             if (!wide && !(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
@@ -231,13 +233,15 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String, onBookmarks: () -> Unit) {
+private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String, onBookmarks: () -> Unit, updatesNote: String, onUpdates: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RCard(Modifier.fillMaxWidth()) {
             Column {
                 MoreRow("Servers", "Switch, add or remove", onServers)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Bookmarks", "Links to your services", onBookmarks)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
+                MoreRow("Updates", updatesNote, onUpdates)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
                 MoreRow("Server settings", serverName, onSettings)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
@@ -330,3 +334,13 @@ private fun failureNote(issue: Issue) = when (issue) {
 private fun themeLabel(id: String): String =
     if (id == com.bgallagher.rackoon.core.ThemeCatalog.AUTOMATIC_ID) "Automatic (follows the system)"
     else com.bgallagher.rackoon.core.ThemeCatalog.bundled().firstOrNull { it.id == id }?.name ?: "Automatic (follows the system)"
+
+/** The More row's subtitle, from the Overview's own counts (so it costs no extra poll). */
+private fun updatesNote(overview: OverviewUi): String {
+    val o = (overview as? OverviewUi.Ready)?.state?.overview ?: return "Packages waiting to be installed"
+    return when {
+        o.pendingUpdates == 0 -> "Everything is up to date"
+        o.securityUpdates > 0 -> "${o.pendingUpdates} available, ${o.securityUpdates} security"
+        else -> "${o.pendingUpdates} available"
+    }
+}
