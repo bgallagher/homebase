@@ -206,10 +206,15 @@ private fun SystemCard(o: Overview, rebootDisabled: Boolean, onReboot: () -> Uni
     fun copy(label: String, value: String) { scope.launch { clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(ClipData.newPlainText(label, value))) } }
     RCard(Modifier.fillMaxWidth()) {
         Column {
-            Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("System", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
                 Text(o.os.prettyName, fontSize = 13.sp, color = Rackoon.colors.textSecondary, modifier = Modifier.weight(1f))
-                androidx.compose.material3.TextButton(onReboot, enabled = !rebootDisabled) { Text("Reboot…", color = if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger, fontWeight = FontWeight.SemiBold) }
+                // A compact pill (not a 48 dp text button, which stretched the header and floated above the title).
+                Text(
+                    "Reboot…", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger,
+                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background((if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger).copy(alpha = 0.12f))
+                        .clickable(enabled = !rebootDisabled, onClick = onReboot).padding(horizontal = 12.dp, vertical = 6.dp),
+                )
             }
             val rows = buildList {
                 if (o.modelName.isNotEmpty()) add("Model" to o.modelName)
