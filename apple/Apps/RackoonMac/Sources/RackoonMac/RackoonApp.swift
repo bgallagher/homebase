@@ -317,10 +317,12 @@ struct ContentView: View {
                     onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
                     onAddServer: { showingAdd = true })
             Divider()
-            detail
+            // The pane takes all the room that is left, whatever it shows. Without this an empty state shrank the whole row to
+            // its own size and floated it in the middle of a wider window, with the window background showing at both sides.
+            detail.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(minWidth: 1080, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
         .background(Theme.background)
-        .frame(minWidth: 1080, minHeight: 600)
         // The theme drives the whole window: accent for controls, light/dark for system-drawn parts, and
         // every open terminal is recoloured when the resolved theme changes.
         .tint(Theme.accent)
@@ -330,7 +332,7 @@ struct ContentView: View {
         .onAppear {
             appearance.applyWindowAppearance()
             model.start()
-            if model.servers.isEmpty { showingAdd = true }
+            // With no server saved the window shows the welcome page, whose Add Server button opens the sheet.
             // The app was started by the checkout's redirect: this view did not exist yet when the link arrived.
             if LicenceStore.shared.purchaseReturned { openWindow(id: LicenceSheetWindow.id) }
         }
@@ -338,7 +340,7 @@ struct ContentView: View {
         .focusedSceneValue(\.terminalActions, terminalActions)
         .focusedSceneValue(\.appActions, appActions)
         .sheet(isPresented: $showingAdd) {
-            AddServerSheet(existing: model.servers, canCancel: !model.servers.isEmpty) { server in
+            AddServerSheet(existing: model.servers, canCancel: true) { server in
                 showingAdd = false
                 selection = .overview
                 model.add(server)
@@ -442,9 +444,39 @@ struct ContentView: View {
                 }
             }
         } else {
-            ContentUnavailableView("No server yet", systemImage: "server.rack",
-                                   description: Text("Add a host or a ~/.ssh/config alias to get started."))
-                .foregroundStyle(Theme.textMuted)
+            Welcome(addServer: { showingAdd = true })
         }
+    }
+}
+
+/// The first screen, before any server is saved.
+private struct Welcome: View {
+    let addServer: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Group {
+                if let icon = AppIcon.artwork {
+                    Image(nsImage: icon).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: "server.rack").resizable().scaledToFit().padding(24).foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(width: 96, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+            VStack(spacing: 6) {
+                Text("Add your first server").font(.system(size: 24, weight: .bold)).foregroundStyle(Theme.textPrimary)
+                Text("Rackoon connects over SSH and runs standard commands. Nothing is installed on the server.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center).frame(maxWidth: 380)
+            }
+            Button(action: addServer) { Text("Add Server").fontWeight(.semibold).padding(.horizontal, 10) }
+                .buttonStyle(.borderedProminent).controlSize(.large).handCursor()
+                .padding(.top, 4)
+            Text("Pick a host from ~/.ssh/config or type one in.").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
