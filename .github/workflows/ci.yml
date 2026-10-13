@@ -97,3 +97,56 @@ jobs:
             --title "Rackoon for Mac ${GITHUB_REF_NAME#mac-v}" \
             --generate-notes \
             --notes "**Platform: macOS (Apple silicon, macOS 14 or later).** Developed by Brian Gallagher (https://github.com/bgallagher). It is ad-hoc signed and not notarized, so the first time macOS will say it is from an unidentified developer: right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine Rackoon.app\` once. Verify the download with the .sha256 file."
+
+  # An android-v* tag builds, signs and publishes the Android APK as its own release (the Mac has mac-v*). The signing key comes
+  # from repository secrets and exists only on the runner for this job.
+  android-release:
+    needs: [spec, android-core]
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the version code is the commit count, so it only ever goes up
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and sign the APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#android-v}"
+          export ANDROID_VERSION_NAME="$VERSION"
+          export ANDROID_VERSION_CODE="$(git rev-list --count HEAD)"
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          ./gradlew :app:assembleRelease
+          rm -f "$ANDROID_KEYSTORE_FILE"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          NAME="Rackoon-${VERSION}-android.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/dist/$NAME"
+          cd "$GITHUB_WORKSPACE/dist" && sha256sum "$NAME" > "$NAME.sha256" && ls -l
+      - name: Check the APK is signed
+        run: |
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose dist/Rackoon-*-android.apk
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#android-v}"
+          PRE=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* $PRE \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Rackoon for Android ${VERSION}" \
+            --generate-notes \
+            --notes "**Platform: Android (APK, Android 8.0 or later).** Developed by Brian Gallagher (https://github.com/bgallagher). One universal APK, signed with the Rackoon release key; it is not on Google Play, so open the file on your phone and allow \"Install unknown apps\" for your browser or file manager when Android asks. Updates install over the top as long as they come from this release series. Verify the download with the .sha256 file. Looking for the Mac app? See the releases named \"Rackoon for Mac\"."

@@ -12,8 +12,33 @@ android {
         applicationId = "com.bgallagher.rackoon"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-alpha.1"
+        // CI sets these from the tag (android-v0.1.0-alpha.1 -> 0.1.0-alpha.1) and the commit count (it only ever goes up);
+        // a local build uses the defaults.
+        versionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("ANDROID_VERSION_NAME") ?: "0.1.0-alpha.1"
+    }
+
+    // The release key is never in the repo: CI writes it from a secret and points these variables at it. Without them (a local
+    // build) the release APK is simply left unsigned.
+    val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures { compose = true }
