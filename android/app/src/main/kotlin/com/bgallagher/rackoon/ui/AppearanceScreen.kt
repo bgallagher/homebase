@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.bgallagher.rackoon.ui.theme.color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,8 +85,10 @@ private fun Swatch(theme: TerminalTheme?) {
     val shape = RoundedCornerShape(8.dp)
     if (theme == null) {
         Row(Modifier.size(width = 64.dp, height = 40.dp).clip(shape).border(1.dp, Rackoon.colors.border, shape)) {
-            Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFF14161C)))
-            Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFFF5F5F7)))
+            // The two halves are the bundled Rackoon Dark and Light themselves, so the swatch can never drift from them.
+            val bundled = remember { com.bgallagher.rackoon.core.ThemeCatalog.bundled() }
+            Box(Modifier.weight(1f).fillMaxSize().background(bundled.first { it.id == "rackoon-dark" }.backgroundRGB.color()))
+            Box(Modifier.weight(1f).fillMaxSize().background(bundled.first { it.id == "rackoon-light" }.backgroundRGB.color()))
         }
         return
     }

@@ -79,6 +79,9 @@ object LetterTile {
         name.codePoints().forEach { h = (h * 33 + it) }
         return (h % 360).toInt().let { if (it < 0) it + 360 else it }
     }
+
+    /** Which of [count] palette colours this name gets: stable for the same name, so a stack keeps its colour. */
+    fun slot(name: String, count: Int): Int = hue(name) % count
 }
 
 /** A container's usage text on a card: "6% · 147 MB", or its state when it is not running. */

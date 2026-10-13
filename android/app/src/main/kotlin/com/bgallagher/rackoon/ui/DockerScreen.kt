@@ -191,15 +191,18 @@ internal fun LinkRow(stack: DockerStack, big: Boolean = false) {
     }
 }
 
+/** The theme colour family for a link's scope: Local, Tailscale and Public each have their own, and none of them is a status colour. */
+@Composable
+internal fun scopeRole(scope: LinkScope): com.bgallagher.rackoon.ui.theme.ColorRole = when (scope) {
+    LinkScope.LOCAL -> Rackoon.colors.scopeLocal
+    LinkScope.TAILSCALE -> Rackoon.colors.scopeTailscale
+    LinkScope.PUBLIC -> Rackoon.colors.scopePublic
+}
+
 @Composable
 private fun ScopeTag(href: String) {
     val scope = LinkScope.of(href)
-    val color = when (scope) {
-        LinkScope.LOCAL -> Color(0xFF8DB4F0)
-        LinkScope.TAILSCALE -> Color(0xFF6FD3A8)
-        LinkScope.PUBLIC -> Color(0xFFF0A27A)
-    }
-    Text(scope.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
+    Text(scope.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = scopeRole(scope).label)
 }
 
 @Composable
@@ -210,14 +213,13 @@ internal fun severityColor(s: StackSeverity, dot: Boolean = false): Color = when
     StackSeverity.IDLE -> if (dot) Rackoon.colors.idle else Rackoon.colors.textMuted
 }
 
-/** A tinted letter standing in for a site icon, coloured from the name like the Mac app's. */
+/** A tinted letter standing in for a site icon: one of the theme's six series colours, picked from the name so a stack keeps it. */
 @Composable
 fun LetterBadge(name: String, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val hue = LetterTile.hue(name).toFloat()
-    val bg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.45f, 0.28f)))
-    val fg = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.35f, 0.9f)))
-    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(bg), contentAlignment = Alignment.Center) {
-        Text(LetterTile.letter(name), color = fg, fontSize = (size.value * 0.5f).sp, fontWeight = FontWeight.Bold)
+    val series = Rackoon.colors.series
+    val role = series[LetterTile.slot(name, series.size)]
+    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.27f)).background(role.fill), contentAlignment = Alignment.Center) {
+        Text(LetterTile.letter(name), color = role.onFill, fontSize = (size.value * 0.5f).sp, fontWeight = FontWeight.Bold)
     }
 }
 

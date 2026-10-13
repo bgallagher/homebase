@@ -136,6 +136,39 @@ class AppPaletteTests {
         }
     }
 
+    @Test fun everyRoleFamilyReadsOnEveryTheme() {
+        for (t in themes) {
+            val p = AppPalette.derive(t)
+            fun atLeast(name: String, c: RGB, against: RGB, floor: Double) {
+                val need = minOf(floor, against.bestPossibleContrast)
+                assertTrue(c.contrastRatio(against) >= need - 0.01, "${t.id}: $name ${c.hex} on ${against.hex} is ${"%.2f".format(c.contrastRatio(against))}, needs $need")
+            }
+            atLeast("textDim", p.textDim, p.background, AppPalette.Contrast.MUTED)
+            val roles = listOf(
+                "ok" to p.okRole, "warn" to p.warnRole, "danger" to p.dangerRole, "info" to p.info, "scopeLocal" to p.scopeLocal,
+                "scopeTailscale" to p.scopeTailscale, "scopePublic" to p.scopePublic,
+            ) + p.series.mapIndexed { i, r -> "series$i" to r }
+            for ((name, r) in roles) {
+                atLeast("$name mark", r.mark, p.background, AppPalette.Contrast.STATUS)
+                atLeast("$name mark on card", r.mark, p.card, AppPalette.Contrast.STATUS)
+                atLeast("$name label", r.label, p.background, AppPalette.Contrast.LABEL)
+                atLeast("$name label on card", r.label, p.card, AppPalette.Contrast.LABEL)
+                atLeast("$name onFill", r.onFill, r.fill, AppPalette.Contrast.LABEL)
+            }
+            assertEquals(6, p.series.size)
+        }
+    }
+
+    @Test fun seriesColoursAreDistinctAndStable() {
+        for (t in themes) {
+            val p = AppPalette.derive(t)
+            val marks = p.series.map { it.mark }
+            // No two container colours are the same, so two containers are never confused.
+            assertEquals(marks.size, marks.toSet().size, "${t.id}: series colours must differ")
+            assertEquals(p.series, AppPalette.derive(t).series, "${t.id}: deterministic")
+        }
+    }
+
     @Test fun surfacesAreDistinguishableFromTheBackground() {
         for (t in themes) {
             val p = AppPalette.derive(t)

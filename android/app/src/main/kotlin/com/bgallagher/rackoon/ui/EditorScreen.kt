@@ -237,7 +237,7 @@ fun CodeEditor(
             Box(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()).drawBehind {
                     val h = with(density) { LINE_SP.sp.toPx() }
-                    for (n in changedLines) drawRect(Color(0xFF3FB950).copy(alpha = 0.13f), Offset(0f, (n - 1) * h), Size(size.width.coerceAtLeast(2000f), h))
+                    for (n in changedLines) drawRect(c.ok.copy(alpha = 0.13f), Offset(0f, (n - 1) * h), Size(size.width.coerceAtLeast(2000f), h))
                     for (n in errorLines) drawRect(c.danger.copy(alpha = 0.22f), Offset(0f, (n - 1) * h), Size(size.width.coerceAtLeast(2000f), h))
                 },
             ) {

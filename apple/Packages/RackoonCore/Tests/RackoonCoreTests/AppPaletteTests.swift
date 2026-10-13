@@ -105,6 +105,31 @@ final class AppPaletteTests: XCTestCase {
         }
     }
 
+    func testEveryRoleFamilyReadsOnEveryTheme() throws {
+        for t in try bundledThemes() {
+            let p = AppPalette.derive(from: t)
+            func atLeast(_ name: String, _ c: RGB, _ against: RGB, _ floor: Double) {
+                let need = min(floor, against.bestPossibleContrast)
+                XCTAssertGreaterThanOrEqual(c.contrastRatio(with: against), need - 0.01,
+                    "\(t.id): \(name) \(c.hex) on \(against.hex) is \(String(format: "%.2f", c.contrastRatio(with: against))), needs \(need)")
+            }
+            atLeast("textDim", p.textDim, p.background, AppPalette.Contrast.muted)
+            let roles: [(String, AppPalette.PaletteRole)] = [
+                ("ok", p.okRole), ("warn", p.warnRole), ("danger", p.dangerRole), ("info", p.info), ("scopeLocal", p.scopeLocal),
+                ("scopeTailscale", p.scopeTailscale), ("scopePublic", p.scopePublic),
+            ] + p.series.enumerated().map { ("series\($0.offset)", $0.element) }
+            for (name, r) in roles {
+                atLeast("\(name) mark", r.mark, p.background, AppPalette.Contrast.status)
+                atLeast("\(name) mark on card", r.mark, p.card, AppPalette.Contrast.status)
+                atLeast("\(name) label", r.label, p.background, AppPalette.Contrast.label)
+                atLeast("\(name) label on card", r.label, p.card, AppPalette.Contrast.label)
+                atLeast("\(name) onFill", r.onFill, r.fill, AppPalette.Contrast.label)
+            }
+            XCTAssertEqual(p.series.count, 6)
+            XCTAssertEqual(Set(p.series.map(\.mark.hex)).count, 6, "\(t.id): series colours must differ")
+        }
+    }
+
     func testSurfacesAreDistinguishableFromTheBackground() throws {
         for t in try bundledThemes() {
             let p = AppPalette.derive(from: t)

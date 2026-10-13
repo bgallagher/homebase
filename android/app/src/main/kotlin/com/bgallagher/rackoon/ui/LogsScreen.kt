@@ -61,10 +61,6 @@ import com.bgallagher.rackoon.ui.theme.RackoonIcons
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 
-private val sourceColors = listOf(
-    Color(0xFF8DB4F0), Color(0xFFC792EA), Color(0xFF6FD3A8), Color(0xFFF0A27A), Color(0xFFF2C76B), Color(0xFF7FD1D9), Color(0xFFE88DB0), Color(0xFFA8C97F),
-)
-
 /** The stack's Logs tab (the design's Logs and LogsFiltered boards): every container merged, filterable, followable. */
 @Composable
 fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
@@ -109,7 +105,7 @@ fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
         // Which container
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (names.size > 1) Chip("All containers", effectiveFocus == null, c.textSecondary) { focus = null }
-            names.forEachIndexed { i, n -> Chip(n, effectiveFocus == n || names.size == 1, sourceColors[i % sourceColors.size], dot = true) { focus = if (names.size == 1) null else n } }
+            names.forEachIndexed { i, n -> Chip(n, effectiveFocus == n || names.size == 1, c.series[i % c.series.size].label, dot = true) { focus = if (names.size == 1) null else n } }
         }
         // Which level
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,7 +159,7 @@ fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
                 )
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
                     items(shown, key = { it.id }) { entry ->
-                        LogRow(entry, sourceColors[names.indexOf(entry.source).coerceAtLeast(0) % sourceColors.size], showSource, expanded[entry.id] == true) { expanded[entry.id] = expanded[entry.id] != true }
+                        LogRow(entry, c.series[names.indexOf(entry.source).coerceAtLeast(0) % c.series.size].label, showSource, expanded[entry.id] == true) { expanded[entry.id] = expanded[entry.id] != true }
                         HorizontalDivider(color = c.border.copy(alpha = 0.5f))
                     }
                 }
@@ -212,11 +208,11 @@ private fun LevelChip(label: String, count: Int, on: Boolean, onClick: () -> Uni
 private fun LogRow(entry: LogEntry, sourceColor: Color, showSource: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     val c = Rackoon.colors
     val p = entry.parts
-    val levelColor = when (p.level) { LogLevel.ERROR -> c.danger; LogLevel.WARN -> c.warn; LogLevel.INFO -> Color(0xFF8DB4F0); LogLevel.DEBUG -> c.textMuted; null -> c.textMuted }
+    val levelColor = when (p.level) { LogLevel.ERROR -> c.dangerRole.label; LogLevel.WARN -> c.warnRole.label; LogLevel.INFO -> c.info.label; LogLevel.DEBUG -> c.textDim; null -> c.textDim }
     Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                p.time?.let { Text(shortTime(it), fontFamily = MonoFamily, fontSize = 11.sp, color = c.textMuted) }
+                p.time?.let { Text(shortTime(it), fontFamily = MonoFamily, fontSize = 11.sp, color = c.textDim) }
                 if (showSource) Text(entry.source, fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = sourceColor)
                 p.level?.let { Text(it.name, fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = levelColor) }
             }

@@ -25,8 +25,27 @@ data class AppPalette(
     val warnBorder: RGB,
     val warnChip: RGB,
     val warnText: RGB,
+    /** Timestamps and captions: the faintest text that still reads (4.5:1). */
+    val textDim: RGB,
+    /** Status colours as families: `mark` for dots and bars, `label` for words, `fill`/`onFill` for tinted chips and tiles. */
+    val okRole: PaletteRole,
+    val warnRole: PaletteRole,
+    val dangerRole: PaletteRole,
+    /** The INFO level word and the Local scope. */
+    val info: PaletteRole,
+    val scopeLocal: PaletteRole,
+    val scopeTailscale: PaletteRole,
+    val scopePublic: PaletteRole,
+    /** Six distinguishable colours for container names and letter tiles. Never red, yellow, green or blue, which mean something. */
+    val series: List<PaletteRole>,
     val isDark: Boolean,
 ) {
+    /**
+     * One colour as a family, so a screen never hard-codes a shade: [mark] (3:1) is for dots, bars and icons, [label] (4.5:1)
+     * for words, [fill] is a quiet tint over a card and [onFill] reads on it (4.5:1).
+     */
+    data class PaletteRole(val mark: RGB, val label: RGB, val fill: RGB, val onFill: RGB)
+
     /** Contrast floors (WCAG ratios). */
     object Contrast {
         const val PRIMARY = 7.0
@@ -36,6 +55,11 @@ data class AppPalette(
         const val STATUS = 3.0
         const val ON_ACCENT = 4.5
         const val CHIP_TEXT = 4.5
+        /** Words and tinted fills built from the palette roles. */
+        const val LABEL = 4.5
+        const val FILL_ALPHA = 0.18
+        /** Series colours closer than this (sum of channel differences) count as the same. */
+        const val SERIES_MIN_DISTANCE = 40
     }
 
     companion object {
@@ -75,6 +99,44 @@ data class AppPalette(
             val chip = bg.mixed(warn, 0.18)
             val warnText = textPrimary.mixed(warn, 0.30).ensuringContrast(chip, Contrast.CHIP_TEXT)
 
+            fun role(base: RGB): PaletteRole {
+                // Each pair is nudged against both the page and the card, so a role reads on either.
+                val mark = base.ensuringContrast(card, Contrast.STATUS).ensuringContrast(bg, Contrast.STATUS)
+                val label = base.ensuringContrast(card, Contrast.LABEL).ensuringContrast(bg, Contrast.LABEL)
+                val fill = card.mixed(mark, Contrast.FILL_ALPHA)
+                return PaletteRole(mark, label, fill, label.ensuringContrast(fill, Contrast.LABEL))
+            }
+            // The unclamped base for a status or accent hue: normal or bright, whichever reads better on this background.
+            fun base(normal: Int, bright: Int): RGB = if (ansi[normal].contrastRatio(bg) >= ansi[bright].contrastRatio(bg)) ansi[normal] else ansi[bright]
+            val red = base(1, 9)
+            val green = base(2, 10)
+            val yellow = base(3, 11)
+            val blue = base(4, 12)
+            val magenta = base(5, 13)
+            val cyan = base(6, 14)
+            val orange = red.mixed(yellow, 0.5)
+            val candidates = listOf(
+                cyan, orange, magenta,
+                blue.mixed(magenta, 0.5).mixed(fg, 0.2),   // lavender
+                green.mixed(cyan, 0.5),                    // teal
+                blue.mixed(fg, 0.45),                      // grey-blue
+            )
+            // Some themes reuse one hue for two slots (cyan equal to green, say): a colour too close to an earlier one is nudged
+            // lighter or darker, keeping its hue, so two containers are never the same colour.
+            fun far(a: RGB, b: RGB) = Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) >= Contrast.SERIES_MIN_DISTANCE
+            val series = mutableListOf<PaletteRole>()
+            for (candidate in candidates) {
+                var c = candidate
+                var r = role(c)
+                var tries = 0
+                while (tries < 10 && series.any { !far(it.mark, r.mark) }) {
+                    c = c.mixed(if (tries % 2 == 0) fg else bg, 0.22)
+                    r = role(c)
+                    tries++
+                }
+                series += r
+            }
+
             return AppPalette(
                 background = bg, sidebar = sidebar, card = card, selection = selection, border = border,
                 textPrimary = textPrimary, textSecondary = textSecondary, textMuted = textMuted,
@@ -82,7 +144,11 @@ data class AppPalette(
                 ok = pick(2, 10), warn = warn, danger = pick(1, 9),
                 idle = ansi[8].ensuringContrast(bg, Contrast.STATUS),
                 warnBackground = bg.mixed(warn, 0.10), warnBorder = bg.mixed(warn, 0.30),
-                warnChip = chip, warnText = warnText, isDark = dark,
+                warnChip = chip, warnText = warnText,
+                textDim = fg.mixed(bg, 0.45).ensuringContrast(card, Contrast.MUTED).ensuringContrast(bg, Contrast.MUTED),
+                okRole = role(green), warnRole = role(yellow), dangerRole = role(red),
+                info = role(blue), scopeLocal = role(blue), scopeTailscale = role(magenta), scopePublic = role(orange),
+                series = series, isDark = dark,
             )
         }
     }

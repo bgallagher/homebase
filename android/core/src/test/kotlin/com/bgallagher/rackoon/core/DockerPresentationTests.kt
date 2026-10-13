@@ -2,6 +2,7 @@ package com.bgallagher.rackoon.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DockerPresentationTests {
     private fun c(name: String, state: String = "running", health: String = "none", project: String? = "p") =
@@ -39,6 +40,8 @@ class DockerPresentationTests {
         assertEquals("D", LetterTile.letter("dockge"))
         assertEquals("?", LetterTile.letter(""))
         assertEquals(LetterTile.hue("immich"), LetterTile.hue("immich"))
+        assertEquals(LetterTile.slot("immich", 6), LetterTile.slot("immich", 6), "a stack keeps its colour")
+        assertTrue(listOf("immich", "dockge", "grafana", "Ünï", "").all { LetterTile.slot(it, 6) in 0..5 })
         for (n in listOf("a", "monitoring", "cloudflared", "watchtower", "ü")) assert(LetterTile.hue(n) in 0 until 360)
         // djb2: "a" = 5381*33 + 97 = 177670; 177670 % 360 = 190
         assertEquals(190, LetterTile.hue("a"))
