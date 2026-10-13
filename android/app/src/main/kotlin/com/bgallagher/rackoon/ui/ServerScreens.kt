@@ -103,7 +103,7 @@ fun Field(label: String, value: String, placeholder: String, mono: Boolean = fal
         if (label.isNotEmpty()) Text(label, color = Rackoon.colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
         OutlinedTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(placeholder, color = Rackoon.colors.textMuted) },
+            placeholder = { Text(placeholder, color = Rackoon.colors.textDim) },
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontFamily = if (mono) MonoFamily else null, color = Rackoon.colors.textPrimary),
             keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
             visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

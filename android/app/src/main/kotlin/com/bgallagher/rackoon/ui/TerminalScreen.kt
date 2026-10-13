@@ -31,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -91,7 +94,7 @@ fun TerminalScreen(vm: AppViewModel, server: Server, readOnly: Boolean, onTurnOf
             val state by current.state.collectAsStateWithLifecycle()
             Box(Modifier.weight(1f).fillMaxWidth().background(Color(theme.backgroundRGB.r, theme.backgroundRGB.g, theme.backgroundRGB.b))) {
                 Terminal(
-                    current.emulator, Modifier.fillMaxSize(), keyboardEnabled = state is TabState.Live,
+                    current.emulator, Modifier.fillMaxSize().padding(horizontal = 12.dp), keyboardEnabled = state is TabState.Live,
                     initialFontSize = fontSize.sp,
                     backgroundColor = Color(theme.backgroundRGB.r, theme.backgroundRGB.g, theme.backgroundRGB.b),
                     foregroundColor = Color(theme.foregroundRGB.r, theme.foregroundRGB.g, theme.foregroundRGB.b),
@@ -167,40 +170,54 @@ private fun StateOverlay(state: TabState, tab: TerminalTab, onCloseTab: () -> Un
     }
 }
 
-/** Keys a phone keyboard lacks. Ctrl and Alt are sticky: they apply to the next key and release. */
+/**
+ * Keys a phone keyboard lacks, the ones used most first: Esc, Tab, Ctrl, then the shell symbols (| ~ / -), then Alt and the arrows as a
+ * compact cluster. Ctrl and Alt are sticky: they apply to the next key and release (an armed key gets an outline).
+ */
 @Composable
 private fun ExtraKeys(tab: TerminalTab) {
     val c = Rackoon.colors
     val ctrl by tab.ctrl.collectAsStateWithLifecycle()
     val alt by tab.alt.collectAsStateWithLifecycle()
-    Row(
-        Modifier.fillMaxWidth().background(c.sidebar).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Key("Esc") { tab.sendText("\u001B") }
-        Key("Tab") { tab.sendText("\t") }
-        Key("Ctrl", active = ctrl) { tab.toggleCtrl() }
-        Key("Alt", active = alt) { tab.toggleAlt() }
-        Key("↑") { tab.sendText("\u001B[A") }
-        Key("↓") { tab.sendText("\u001B[B") }
-        Key("←") { tab.sendText("\u001B[D") }
-        Key("→") { tab.sendText("\u001B[C") }
-        Key("|") { tab.sendText("|") }
-        Key("~") { tab.sendText("~") }
-        Key("/") { tab.sendText("/") }
-        Key("-") { tab.sendText("-") }
-        Key("^C") { tab.sendText("\u0003") }
-        Key("^D") { tab.sendText("\u0004") }
+    Box(Modifier.fillMaxWidth().background(c.sidebar)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 8.dp, end = 24.dp, top = 6.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Key("Esc", "Escape") { tab.sendText("\u001B") }
+            Key("Tab", "Tab") { tab.sendText("\t") }
+            Key("Ctrl", "Control (sticky)", active = ctrl) { tab.toggleCtrl() }
+            Key("|", "Pipe") { tab.sendText("|") }
+            Key("~", "Tilde") { tab.sendText("~") }
+            Key("/", "Slash") { tab.sendText("/") }
+            Key("-", "Dash") { tab.sendText("-") }
+            Key("Alt", "Alt (sticky)", active = alt) { tab.toggleAlt() }
+            Key("←", "Left arrow", small = true) { tab.sendText("\u001B[D") }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Key("↑", "Up arrow", small = true, compact = true) { tab.sendText("\u001B[A") }
+                Key("↓", "Down arrow", small = true, compact = true) { tab.sendText("\u001B[B") }
+            }
+            Key("→", "Right arrow", small = true) { tab.sendText("\u001B[C") }
+            Key("^C", "Control C: interrupt") { tab.sendText("\u0003") }
+            Key("^D", "Control D: end of input") { tab.sendText("\u0004") }
+        }
+        // A fade at the right edge says there is more to scroll to.
+        Box(
+            Modifier.align(Alignment.CenterEnd).width(24.dp).height(56.dp).background(
+                androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, c.sidebar)),
+            ),
+        )
     }
 }
 
 @Composable
-private fun Key(label: String, active: Boolean = false, onClick: () -> Unit) {
+private fun Key(label: String, description: String, active: Boolean = false, small: Boolean = false, compact: Boolean = false, onClick: () -> Unit) {
     val c = Rackoon.colors
     val shape = RoundedCornerShape(8.dp)
     Box(
-        Modifier.height(40.dp).widthIn(min = 44.dp).clip(shape).background(if (active) c.accent else c.card).border(1.dp, c.border, shape)
-            .clickable(onClick = onClick).padding(horizontal = 10.dp),
+        Modifier.height(if (compact) 21.dp else 44.dp).widthIn(min = if (small) 36.dp else 40.dp).clip(shape).background(c.card)
+            .border(if (active) 2.dp else 1.dp, if (active) c.accent else c.border, shape)
+            .clickable(onClick = onClick).semantics { contentDescription = description }.padding(horizontal = if (small) 6.dp else 8.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(label, fontSize = 14.sp, fontFamily = FontFamily.Monospace, color = if (active) c.accentText else c.textPrimary) }
+    ) { Text(label, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 14.sp, fontFamily = FontFamily.Monospace, color = c.textPrimary) }
 }

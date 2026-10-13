@@ -2,6 +2,9 @@ package com.bgallagher.rackoon.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,7 +63,10 @@ fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, serverName: String, onBac
     Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding()) {
         Row(Modifier.height(64.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTap(RackoonIcons.ChevronLeft, "Back to More", c.textPrimary, onBack)
-            Text("Updates", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("Updates", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+                if (serverName.isNotEmpty()) Text(serverName, fontSize = 12.sp, color = c.textMuted)
+            }
             if (loading) Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.accent) }
             else IconTap(RackoonIcons.Refresh, "Read the update list again", if (working == null) c.textPrimary else c.textMuted, { vm.loadUpdates() })
         }
@@ -69,7 +75,7 @@ fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, serverName: String, onBac
         if (run != null) {
             // Apt's own progress, in a terminal, like the stack Output tab. The list below comes back when it is closed.
             Box(Modifier.weight(1f)) { ActionOutputPanel(run, onCancel = vm::cancelUpdatesOutput, onClose = vm::closeUpdatesOutput) }
-        } else LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        } else LazyColumn(Modifier.weight(1f).fillMaxWidth().navigationBarsPadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 if (snapshot != null) {
                     Text(UpdatesPresentation.subtitle(snapshot), fontSize = 14.sp, color = if (snapshot.securityCount > 0) c.warn else c.textSecondary)
@@ -85,9 +91,21 @@ fun UpdatesScreen(vm: AppViewModel, readOnly: Boolean, serverName: String, onBac
             if (snapshot != null) {
                 reboot?.let { r -> item { RebootBanner(r, serverName, vm::dismissReboot) } }
                 if (snapshot.rebootRequired && reboot?.isActive != true) item {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.warn.copy(alpha = 0.12f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("A reboot is needed to finish applying earlier updates.", color = c.warn, fontSize = 13.sp, lineHeight = 19.sp)
-                        SecondaryButton("Reboot…", vm::requestReboot, enabled = !readOnly)
+                    val shape = RoundedCornerShape(14.dp)
+                    Row(
+                        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, c.border, shape).padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        StatusDot(c.warn)
+                        Column(Modifier.weight(1f)) {
+                            Text("Reboot required", color = c.textPrimary, fontWeight = FontWeight.Medium)
+                            Text("Needed to finish applying earlier updates", color = c.textMuted, fontSize = 12.sp, lineHeight = 16.sp)
+                        }
+                        Text(
+                            "Reboot…", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (readOnly) c.textMuted else c.textPrimary,
+                            modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp)).background(c.selection).clickable(enabled = !readOnly, onClick = vm::requestReboot)
+                                .padding(horizontal = 18.dp).wrapContentHeight(Alignment.CenterVertically),
+                        )
                     }
                 }
                 item { Summary(snapshot, now) }
@@ -159,9 +177,11 @@ private fun Actions(vm: AppViewModel, packages: List<PendingUpdate>, readOnly: B
             Text(working, color = c.textSecondary, fontSize = 13.sp)
         }
         PrimaryButton("Install Security Updates", { security?.let(vm::requestApt) }, Modifier.fillMaxWidth(), enabled = blocked == null && security != null)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SecondaryButton("Install All", { vm.requestApt(AptAction.UpgradeAll) }, Modifier.weight(1f), enabled = blocked == null && packages.isNotEmpty())
-            SecondaryButton("Refresh Lists", { vm.requestApt(AptAction.Refresh) }, Modifier.weight(1f), enabled = blocked == null)
+        SecondaryButton("Install All", { vm.requestApt(AptAction.UpgradeAll) }, Modifier.fillMaxWidth(), enabled = blocked == null && packages.isNotEmpty())
+        // apt-get update changes the server's package lists, unlike the reload icon above, which only reads them again.
+        Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            SecondaryButton("Update package lists", { vm.requestApt(AptAction.Refresh) }, Modifier.fillMaxWidth(), enabled = blocked == null)
+            Text("Runs apt-get update on the server", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
         }
         // The reason a button is off, once, instead of leaving it greyed out unexplained.
         (blocked ?: UpdatesPresentation.installSecurityHint(packages, readOnly).takeIf { security == null && packages.any { it.isSecurity } })?.let {
@@ -196,7 +216,6 @@ private fun PackageRow(pkg: PendingUpdate) {
                 Text(pkg.name, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (pkg.isSecurity) Text("Security", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.warn, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(c.warn.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 2.dp))
             }
-            Text(pkg.suite, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 (pkg.oldVersion?.let { "$it → " } ?: "") + pkg.newVersion, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textSecondary,
                 maxLines = 1, overflow = TextOverflow.MiddleEllipsis,
