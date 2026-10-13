@@ -135,35 +135,44 @@ private fun StackCard(stack: DockerStack, favicons: com.bgallagher.rackoon.data.
     val unhealthy = stack.unhealthyCount > 0
     val shape = RoundedCornerShape(14.dp)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, if (unhealthy) c.danger.copy(alpha = 0.5f) else c.border, shape)
+        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, if (unhealthy) c.danger.copy(alpha = 0.6f) else c.border, shape)
             .clickable(onClick = onClick).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // The stack's name has the whole header: only the tile, the name, a status dot and (without a link) the bookmark button share it.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Name and file share the space left of the status, so the status and its dot always end at the right edge.
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 28.dp, favicons)
-                Text(stack.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                stack.configFileName?.let { Text(it, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
+            SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 28.dp, favicons)
+            Column(Modifier.weight(1f)) {
+                Text(stack.name, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // The usual file name says nothing; only an unusual one is worth showing.
+                stack.configFileName?.takeIf { it != "compose.yaml" }?.let { Text(it, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
-            if (status.text.isNotEmpty()) Text(status.text, fontSize = 13.sp, color = severityColor(status.severity))
             StatusDot(severityColor(status.severity, dot = true))
-            if (onBookmark != null) {
-                // Its own button, so tapping it never also opens the stack.
-                Box(Modifier.size(40.dp).padding(start = 0.dp).clip(CircleShape).clickable(onClick = onBookmark), contentAlignment = Alignment.Center) {
-                    Icon(
-                        if (stack.hasBookmark) RackoonIcons.BookmarkFilled else RackoonIcons.Bookmark,
-                        if (stack.hasBookmark) "Edit bookmark for ${stack.name}" else "Add bookmark for ${stack.name}",
-                        tint = if (stack.hasBookmark) c.accent else c.textMuted, modifier = Modifier.size(20.dp),
-                    )
+            // A stack that already shows its link needs no icon (the link row is the signal; Edit bookmark is in the stack menu).
+            if (onBookmark != null && !stack.hasBookmark) {
+                Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBookmark), contentAlignment = Alignment.Center) {
+                    Icon(RackoonIcons.Bookmark, "Add bookmark for ${stack.name}", tint = c.textMuted, modifier = Modifier.size(20.dp))
                 }
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             stack.containers.forEach { ct ->
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(ct.service ?: ct.name, color = if (ct.isUnhealthy) c.danger else c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(ct.usageText(Format::bytes), fontFamily = MonoFamily, fontSize = 12.sp, color = if (ct.isUnhealthy) c.danger else c.textSecondary)
+                // A dot only where it says something: healthy running containers have none, the stack's dot covers them.
+                val (dot, note, noteColor) = when {
+                    ct.isUnhealthy -> Triple(c.danger, "unhealthy", c.dangerRole.label)
+                    ct.state == "restarting" -> Triple(c.warn, "restarting", c.warnRole.label)
+                    ct.state == "paused" -> Triple(c.warn, "paused", c.warnRole.label)
+                    !ct.isRunning -> Triple(c.idle, "stopped", c.textMuted)
+                    else -> Triple(null, null, c.textSecondary)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dot?.let { StatusDot(it) }
+                    Text(
+                        ct.service ?: ct.name, fontSize = 15.sp, color = if (ct.isUnhealthy) c.dangerRole.label else if (!ct.isRunning) c.textMuted else c.textPrimary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    )
+                    if (note != null) Text(note, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = noteColor)
+                    else Text(ct.usageText(Format::bytes), fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted)
                 }
             }
         }

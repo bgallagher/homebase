@@ -53,20 +53,21 @@ fun DockerStack.status(): StackStatus = when {
     else -> StackStatus("", StackSeverity.OK)
 }
 
-/** The line under the page title: "12 stacks · 20 containers · 19 running, 1 unhealthy". */
+/** The line under the page title: "9 stacks · 20 containers · 19 healthy, 1 unhealthy, 1 stopped". The three counts add up to the containers. */
 fun DockerSnapshot.summary(): String {
     val stackCount = stacks.count { !it.isStandalone }
-    val running = containers.count { it.isRunning }
     val unhealthy = containers.count { it.isUnhealthy }
+    val healthy = containers.count { it.isRunning && !it.isUnhealthy }
+    val stopped = containers.size - healthy - unhealthy
     val parts = mutableListOf<String>()
     if (stackCount > 0) parts += "$stackCount ${if (stackCount == 1) "stack" else "stacks"}"
     parts += "${containers.size} ${if (containers.size == 1) "container" else "containers"}"
     val state = buildList {
-        add("$running running")
-        if (containers.size - running > 0) add("${containers.size - running} stopped")
+        if (healthy > 0) add("$healthy healthy")
         if (unhealthy > 0) add("$unhealthy unhealthy")
+        if (stopped > 0) add("$stopped stopped")
     }.joinToString(", ")
-    return (parts + state).joinToString(" · ")
+    return (parts + state.takeIf { it.isNotEmpty() }.let { listOfNotNull(it) }).joinToString(" · ")
 }
 
 /** The one-letter tile that stands in for a site icon: a hue from the name, so a stack keeps its colour. Same hash as the Mac app. */

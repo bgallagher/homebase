@@ -32,8 +32,8 @@ class DockerPresentationTests {
 
     @Test fun `summary counts stacks and containers`() {
         val snap = DockerSnapshot(listOf(c("a"), c("b", health = "unhealthy"), c("c", project = null), c("d", state = "exited")))
-        assertEquals("1 stack · 4 containers · 3 running, 1 stopped, 1 unhealthy", snap.summary())
-        assertEquals("1 container · 1 running", DockerSnapshot(listOf(c("x", project = null))).summary())
+        assertEquals("1 stack · 4 containers · 2 healthy, 1 unhealthy, 1 stopped", snap.summary())
+        assertEquals("1 container · 1 healthy", DockerSnapshot(listOf(c("x", project = null))).summary())
     }
 
     @Test fun `letter tile hue is stable and in range`() {
