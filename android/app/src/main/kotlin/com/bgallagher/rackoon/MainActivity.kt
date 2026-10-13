@@ -13,6 +13,17 @@ import com.bgallagher.rackoon.ui.theme.RackoonTheme
 class MainActivity : ComponentActivity() {
     private val viewModel: AppViewModel by viewModels()
 
+    /** Every touch counts as activity, so "idle" for Read-only auto re-enable means nobody has touched the app. */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        viewModel.noteTouch()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.onBackgrounded()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // `am start --ez demo true` on a debug build: the app runs against made-up servers (see demo/). Ignored in release builds.
