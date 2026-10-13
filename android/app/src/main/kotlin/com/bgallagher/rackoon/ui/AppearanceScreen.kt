@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.bgallagher.rackoon.ui.theme.color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,12 +50,25 @@ fun AppearanceScreen(selectedId: String, onPick: (String) -> Unit, onBack: () ->
             IconTap(RackoonIcons.ChevronLeft, "Back", c.textPrimary, onBack)
             Text("Appearance", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
         }
+        // Automatic first, then Rackoon's own, then one section per family with several themes, then everything else.
+        val sections = remember(themes) {
+            val byFamily = themes.groupBy { it.family }
+            val own = byFamily["Rackoon"].orEmpty().sortedByDescending { it.isDark }
+            val families = byFamily.filterKeys { it != "Rackoon" && (byFamily[it]?.size ?: 0) >= 2 }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
+            val others = byFamily.filterKeys { it != "Rackoon" && (byFamily[it]?.size ?: 0) < 2 }.values.flatten().sortedBy { it.name.lowercase() }
+            buildList {
+                if (own.isNotEmpty()) add("RACKOON" to own)
+                families.forEach { (family, list) -> add(family.uppercase() to list.sortedBy { it.name.lowercase() }) }
+                if (others.isNotEmpty()) add("OTHER" to others)
+            }
+        }
         LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 ThemeRow("Automatic", "Rackoon Dark or Light, following the system", selectedId == ThemeCatalog.AUTOMATIC_ID, null) { onPick(ThemeCatalog.AUTOMATIC_ID) }
             }
-            items(themes, key = { it.id }) { t ->
-                ThemeRow(t.name, t.family.takeIf { it.isNotBlank() && it != t.name } ?: if (t.isDark) "Dark" else "Light", selectedId == t.id, t) { onPick(t.id) }
+            sections.forEach { (title, list) ->
+                item(key = "h-$title") { Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp, color = c.textMuted, modifier = Modifier.padding(start = 4.dp, top = 14.dp)) }
+                items(list, key = { it.id }) { t -> ThemeRow(t.name, "", selectedId == t.id, t) { onPick(t.id) } }
             }
             item { Box(Modifier.navigationBarsPadding().height(16.dp)) }
         }
@@ -65,16 +80,16 @@ private fun ThemeRow(name: String, note: String, selected: Boolean, theme: Termi
     val c = Rackoon.colors
     val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(c.card).border(if (selected) 2.dp else 1.dp, if (selected) c.accent else c.border, shape)
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).clip(shape).background(c.card).border(if (selected) 2.dp else 1.dp, if (selected) c.accent else c.border, shape)
             .clickable(onClick = onClick).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Swatch(theme)
         Column(Modifier.weight(1f)) {
             Text(name, fontWeight = FontWeight.Medium, color = c.textPrimary)
-            Text(note, fontSize = 12.sp, color = c.textMuted)
+            if (note.isNotEmpty()) Text(note, fontSize = 12.sp, color = c.textMuted)
         }
-        if (selected) Text("✓", color = c.accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        if (selected) androidx.compose.material3.Icon(RackoonIcons.Check, "Selected", tint = c.accent, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -84,8 +99,10 @@ private fun Swatch(theme: TerminalTheme?) {
     val shape = RoundedCornerShape(8.dp)
     if (theme == null) {
         Row(Modifier.size(width = 64.dp, height = 40.dp).clip(shape).border(1.dp, Rackoon.colors.border, shape)) {
-            Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFF14161C)))
-            Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFFF5F5F7)))
+            // The two halves are the bundled Rackoon Dark and Light themselves, so the swatch can never drift from them.
+            val bundled = remember { com.bgallagher.rackoon.core.ThemeCatalog.bundled() }
+            Box(Modifier.weight(1f).fillMaxSize().background(bundled.first { it.id == "rackoon-dark" }.backgroundRGB.color()))
+            Box(Modifier.weight(1f).fillMaxSize().background(bundled.first { it.id == "rackoon-light" }.backgroundRGB.color()))
         }
         return
     }

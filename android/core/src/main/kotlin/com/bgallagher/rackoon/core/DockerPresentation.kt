@@ -53,20 +53,21 @@ fun DockerStack.status(): StackStatus = when {
     else -> StackStatus("", StackSeverity.OK)
 }
 
-/** The line under the page title: "12 stacks · 20 containers · 19 running, 1 unhealthy". */
+/** The line under the page title: "9 stacks · 20 containers · 19 healthy, 1 unhealthy, 1 stopped". The three counts add up to the containers. */
 fun DockerSnapshot.summary(): String {
     val stackCount = stacks.count { !it.isStandalone }
-    val running = containers.count { it.isRunning }
     val unhealthy = containers.count { it.isUnhealthy }
+    val healthy = containers.count { it.isRunning && !it.isUnhealthy }
+    val stopped = containers.size - healthy - unhealthy
     val parts = mutableListOf<String>()
     if (stackCount > 0) parts += "$stackCount ${if (stackCount == 1) "stack" else "stacks"}"
     parts += "${containers.size} ${if (containers.size == 1) "container" else "containers"}"
     val state = buildList {
-        add("$running running")
-        if (containers.size - running > 0) add("${containers.size - running} stopped")
+        if (healthy > 0) add("$healthy healthy")
         if (unhealthy > 0) add("$unhealthy unhealthy")
+        if (stopped > 0) add("$stopped stopped")
     }.joinToString(", ")
-    return (parts + state).joinToString(" · ")
+    return (parts + state.takeIf { it.isNotEmpty() }.let { listOfNotNull(it) }).joinToString(" · ")
 }
 
 /** The one-letter tile that stands in for a site icon: a hue from the name, so a stack keeps its colour. Same hash as the Mac app. */
@@ -79,6 +80,9 @@ object LetterTile {
         name.codePoints().forEach { h = (h * 33 + it) }
         return (h % 360).toInt().let { if (it < 0) it + 360 else it }
     }
+
+    /** Which of [count] palette colours this name gets: stable for the same name, so a stack keeps its colour. */
+    fun slot(name: String, count: Int): Int = hue(name) % count
 }
 
 /** A container's usage text on a card: "6% · 147 MB", or its state when it is not running. */
@@ -87,4 +91,20 @@ fun DockerContainer.usageText(formatBytes: (Long) -> String): String {
     val cpu = cpuPercent
     val mem = memoryUsedBytes
     return if (cpu == null || mem == null) "—" else "${"%.0f".format(cpu)}% · ${formatBytes(mem)}"
+}
+
+/** A container image split for display: the repository (which may be shortened in the middle) and the tag, which is never cut. */
+data class ImageName(val repository: String, val tag: String?) {
+    companion object {
+        fun parse(image: String): ImageName {
+            val at = image.indexOf('@')
+            if (at >= 0) {
+                val digest = image.substring(at + 1)
+                return ImageName(image.substring(0, at), "@" + digest.take(19))
+            }
+            val colon = image.lastIndexOf(':')
+            // A colon before the last slash belongs to a registry port (localhost:5000/app), not to a tag.
+            return if (colon > image.lastIndexOf('/') && colon >= 0) ImageName(image.substring(0, colon), image.substring(colon)) else ImageName(image, null)
+        }
+    }
 }

@@ -22,6 +22,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.bgallagher.rackoon.core.AttentionPresentation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,26 +129,22 @@ private fun Ready(state: ServerState, wide: Boolean, reboot: RebootUi?, serverNa
             } else if (state.isStale) {
                 Text("Last reading${ago?.let { " $it" } ?: ""}. Refreshing…", color = Rackoon.colors.textMuted, fontSize = 12.sp)
             }
-            if (state.attention.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.attention.forEach { AttentionChip(it, onClick = if (it.fix == "terminal" || it.fix == "docker" || it.fix == "updates") ({ onOpenFix(it.fix) }) else null) }
-                }
-            }
+            if (state.attention.isNotEmpty()) AttentionCard(state.attention, onOpenFix)
             val usage: @Composable (Modifier) -> Unit = { m ->
                 Column(m, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val cpu = state.cpuPercent
                         StatCard(
-                            "CPU", cpu?.let { "${it.toInt()}%" } ?: "—", "${o.cores} cores · load ${"%.2f".format(o.load1)}",
-                            cpu?.div(100), Modifier.weight(1f),
+                            "CPU", cpu?.let { "${it.toInt()}%" } ?: "Measuring…", "${o.cores} cores · load ${"%.2f".format(o.load1)}",
+                            cpu?.div(100), Modifier.weight(1f), measuring = cpu == null,
                         )
-                        StatCard("Memory", Format.bytes(o.memory.usedBytes), "of ${Format.bytes(o.memory.totalBytes)} · ${Format.percent(o.memory.usedFraction)}", o.memory.usedFraction, Modifier.weight(1f))
+                        StatCard("Memory", Format.bytes(o.memory.usedBytes), "of ${Format.bytes(o.memory.totalBytes)} · ${Format.percent(o.memory.usedFraction)}", o.memory.usedFraction, Modifier.weight(1f), thresholds = true)
                     }
                     val root = o.disks.firstOrNull { it.mount == "/" } ?: o.disks.firstOrNull()
                     if (root != null) {
                         StatCard(
-                            "Disk", Format.bytes(root.usedBytes), "of ${Format.bytes(root.totalBytes)} · ${root.usePercent}%  ${root.mount}",
-                            root.usePercent / 100.0, Modifier.fillMaxWidth(), warn = root.usePercent > 85,
+                            "Disk", Format.bytes(root.usedBytes), "of ${Format.bytes(root.totalBytes)} · ${root.usePercent}% used on ${root.mount}",
+                            root.usePercent / 100.0, Modifier.fillMaxWidth(), thresholds = true,
                         )
                     }
                 }
@@ -165,34 +164,60 @@ private fun Ready(state: ServerState, wide: Boolean, reboot: RebootUi?, serverNa
     }
 }
 
+/** Everything that needs attention in one card: a 48dp row each (red before amber), tapping goes to the screen that helps. */
 @Composable
-private fun AttentionChip(item: AttentionItem, onClick: (() -> Unit)?) {
-    val dot = if (item.severity == AttentionItem.Severity.CRITICAL) Rackoon.colors.danger else Rackoon.colors.warn
-    Row(
-        Modifier.height(40.dp).clip(RoundedCornerShape(10.dp)).background(Rackoon.colors.card)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        StatusDot(dot)
-        Text(item.message.removeSuffix("."), color = Rackoon.colors.textPrimary, fontSize = 13.sp)
-        if (onClick != null) androidx.compose.material3.Icon(com.bgallagher.rackoon.ui.theme.RackoonIcons.ChevronRight, null, tint = Rackoon.colors.textMuted, modifier = Modifier.size(14.dp))
+private fun AttentionCard(items: List<AttentionItem>, onOpenFix: (String) -> Unit) {
+    val c = Rackoon.colors
+    val sorted = remember(items) { AttentionPresentation.sorted(items) }
+    var showAll by rememberSaveable { mutableStateOf(false) }
+    val shown = if (showAll || sorted.size <= MAX_ATTENTION_ROWS) sorted else sorted.take(MAX_ATTENTION_ROWS - 1)
+    RCard(Modifier.fillMaxWidth()) {
+        Column {
+            shown.forEachIndexed { i, item ->
+                if (i > 0) HorizontalDivider(color = c.border)
+                val red = AttentionPresentation.isRed(item)
+                val tappable = item.fix == "terminal" || item.fix == "docker" || item.fix == "updates"
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).then(if (tappable) Modifier.clickable { onOpenFix(item.fix) } else Modifier).padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    StatusDot(if (red) c.danger else c.warn)
+                    Text(AttentionPresentation.shortMessage(item), color = if (red) c.dangerRole.label else c.textPrimary, fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (tappable) androidx.compose.material3.Icon(com.bgallagher.rackoon.ui.theme.RackoonIcons.ChevronRight, null, tint = c.textMuted, modifier = Modifier.size(16.dp))
+                }
+            }
+            if (!showAll && sorted.size > MAX_ATTENTION_ROWS) {
+                HorizontalDivider(color = c.border)
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { showAll = true }.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${sorted.size - (MAX_ATTENTION_ROWS - 1)} more", color = c.textSecondary, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Icon(com.bgallagher.rackoon.ui.theme.RackoonIcons.ChevronDown, null, tint = c.textMuted, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
     }
 }
 
+private const val MAX_ATTENTION_ROWS = 4
+
+/** The cards in a row share one minimum height, so nothing jumps when a value arrives; the bar warns at 85% and fails at 95%. */
 @Composable
-private fun StatCard(label: String, value: String, sub: String, fraction: Double?, modifier: Modifier, warn: Boolean = false) {
+private fun StatCard(label: String, value: String, sub: String, fraction: Double?, modifier: Modifier, thresholds: Boolean = false, measuring: Boolean = false) {
+    val c = Rackoon.colors
     RCard(modifier) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.heightIn(min = 112.dp).padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             SectionLabel(label)
-            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
-            Text(sub, fontSize = 12.sp, color = Rackoon.colors.textSecondary)
-            if (fraction != null) {
-                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Rackoon.colors.border)) {
-                    Box(
-                        Modifier.fillMaxWidth(fraction.toFloat().coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp))
-                            .background(if (warn) Rackoon.colors.warn else Rackoon.colors.ok.copy(alpha = 0.8f)),
-                    )
+            Text(value, fontSize = if (measuring) 18.sp else 24.sp, fontWeight = FontWeight.Medium, color = if (measuring) c.textMuted else c.textPrimary, modifier = Modifier.heightIn(min = 32.dp))
+            Text(sub, fontSize = 12.sp, color = c.textSecondary)
+            if (measuring) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = c.okRole.mark, trackColor = c.border)
+            } else if (fraction != null) {
+                val bar = when {
+                    thresholds && fraction >= 0.95 -> c.dangerRole.mark
+                    thresholds && fraction >= 0.85 -> c.warnRole.mark
+                    else -> c.okRole.mark
+                }
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(c.border)) {
+                    Box(Modifier.fillMaxWidth(fraction.toFloat().coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(bar))
                 }
             }
         }
@@ -201,6 +226,7 @@ private fun StatCard(label: String, value: String, sub: String, fraction: Double
 
 @Composable
 private fun SystemCard(o: Overview, rebootDisabled: Boolean, onReboot: () -> Unit) {
+    val required = o.rebootRequired
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     fun copy(label: String, value: String) { scope.launch { clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(ClipData.newPlainText(label, value))) } }
@@ -210,9 +236,11 @@ private fun SystemCard(o: Overview, rebootDisabled: Boolean, onReboot: () -> Uni
                 Text("System", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
                 Text(o.os.prettyName, fontSize = 13.sp, color = Rackoon.colors.textSecondary, modifier = Modifier.weight(1f))
                 // A compact pill (not a 48 dp text button, which stretched the header and floated above the title).
+                // Always available (the Mac has it too), but only loud when a reboot is actually needed.
+                val tint = if (rebootDisabled) Rackoon.colors.textMuted else if (required) Rackoon.colors.dangerRole.label else Rackoon.colors.textSecondary
                 Text(
-                    "Reboot…", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger,
-                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background((if (rebootDisabled) Rackoon.colors.textMuted else Rackoon.colors.danger).copy(alpha = 0.12f))
+                    "Reboot…", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = tint,
+                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background((if (required && !rebootDisabled) Rackoon.colors.dangerRole.mark else Rackoon.colors.textMuted).copy(alpha = 0.14f))
                         .clickable(enabled = !rebootDisabled, onClick = onReboot).padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
@@ -226,7 +254,7 @@ private fun SystemCard(o: Overview, rebootDisabled: Boolean, onReboot: () -> Uni
             }
             rows.forEach { (label, value) ->
                 HorizontalDivider(color = Rackoon.colors.border)
-                InfoRow(label, value, onCopy = if (label.endsWith("IP") || label == "IP address" || label == "Hostname") ({ copy(label, value) }) else null)
+                InfoRow(label, value, onCopy = { copy(label, value) })
             }
         }
     }

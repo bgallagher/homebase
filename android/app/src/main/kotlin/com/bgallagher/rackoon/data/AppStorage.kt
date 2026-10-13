@@ -42,6 +42,16 @@ class Prefs(context: Context, name: String = "rackoon") {
         get() = prefs.getBoolean("read_only", true)
         set(value) = prefs.edit().putBoolean("read_only", value).apply()
 
+    /** Start every launch in Read-only, whatever it was when the app was last closed. */
+    var startReadOnly: Boolean
+        get() = prefs.getBoolean("start_read_only", true)
+        set(value) = prefs.edit().putBoolean("start_read_only", value).apply()
+
+    /** When Read-only turns itself back on (an [com.bgallagher.rackoon.core.AutoReadOnly] key). */
+    var autoReadOnly: String
+        get() = prefs.getString("auto_read_only", com.bgallagher.rackoon.core.AutoReadOnly.DEFAULT.key) ?: com.bgallagher.rackoon.core.AutoReadOnly.DEFAULT.key
+        set(value) = prefs.edit().putString("auto_read_only", value).apply()
+
     /** Colour error words, IP addresses and high percentages in terminal output (core TerminalOutputFilter). */
     var highlightOutput: Boolean
         get() = prefs.getBoolean("highlight_output", true)

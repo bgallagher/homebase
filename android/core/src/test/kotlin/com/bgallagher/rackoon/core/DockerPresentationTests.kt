@@ -2,6 +2,7 @@ package com.bgallagher.rackoon.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DockerPresentationTests {
     private fun c(name: String, state: String = "running", health: String = "none", project: String? = "p") =
@@ -31,14 +32,16 @@ class DockerPresentationTests {
 
     @Test fun `summary counts stacks and containers`() {
         val snap = DockerSnapshot(listOf(c("a"), c("b", health = "unhealthy"), c("c", project = null), c("d", state = "exited")))
-        assertEquals("1 stack · 4 containers · 3 running, 1 stopped, 1 unhealthy", snap.summary())
-        assertEquals("1 container · 1 running", DockerSnapshot(listOf(c("x", project = null))).summary())
+        assertEquals("1 stack · 4 containers · 2 healthy, 1 unhealthy, 1 stopped", snap.summary())
+        assertEquals("1 container · 1 healthy", DockerSnapshot(listOf(c("x", project = null))).summary())
     }
 
     @Test fun `letter tile hue is stable and in range`() {
         assertEquals("D", LetterTile.letter("dockge"))
         assertEquals("?", LetterTile.letter(""))
         assertEquals(LetterTile.hue("immich"), LetterTile.hue("immich"))
+        assertEquals(LetterTile.slot("immich", 6), LetterTile.slot("immich", 6), "a stack keeps its colour")
+        assertTrue(listOf("immich", "dockge", "grafana", "Ünï", "").all { LetterTile.slot(it, 6) in 0..5 })
         for (n in listOf("a", "monitoring", "cloudflared", "watchtower", "ü")) assert(LetterTile.hue(n) in 0 until 360)
         // djb2: "a" = 5381*33 + 97 = 177670; 177670 % 360 = 190
         assertEquals(190, LetterTile.hue("a"))
@@ -49,5 +52,14 @@ class DockerPresentationTests {
         assertEquals("6% · 147 B", c("a").copy(cpuPercent = 5.6, memoryUsedBytes = 147).usageText(fmt))
         assertEquals("—", c("a").usageText(fmt))
         assertEquals("exited", c("a", state = "exited").usageText(fmt))
+    }
+
+    @Test fun `an image splits into repository and tag`() {
+        assertEquals(ImageName("ghcr.io/immich-app/immich-machine-learning", ":release"), ImageName.parse("ghcr.io/immich-app/immich-machine-learning:release"))
+        assertEquals(ImageName("redis", ":7"), ImageName.parse("redis:7"))
+        assertEquals(ImageName("redis", null), ImageName.parse("redis"))
+        assertEquals(ImageName("localhost:5000/app", null), ImageName.parse("localhost:5000/app"))
+        assertEquals(ImageName("localhost:5000/app", ":2"), ImageName.parse("localhost:5000/app:2"))
+        assertEquals(ImageName("nginx", "@sha256:0123456789ab"), ImageName.parse("nginx@sha256:0123456789abcdef0123"))
     }
 }

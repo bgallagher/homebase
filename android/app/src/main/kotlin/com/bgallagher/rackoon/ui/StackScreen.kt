@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.Spacer
+import com.bgallagher.rackoon.core.ImageName
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,102 +58,163 @@ import com.bgallagher.rackoon.ui.theme.Rackoon
 import com.bgallagher.rackoon.ui.theme.RackoonIcons
 import org.connectbot.terminal.Terminal
 
-/** The stack page: header, stack actions, and the Containers and Output tabs (the design's StackDetail board). */
+/**
+ * The stack page: its own app bar (back, name and status, server, Read-only chip, menu), then tabs. On the Containers tab the header
+ * (tile, path, link) scrolls away and the tabs pin under the bar; Logs and Output use the whole height, and Logs can go full screen.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: DockerUi.Ready, readOnly: Boolean, onBack: () -> Unit) {
     val c = Rackoon.colors
     val tab by vm.stackTab.collectAsStateWithLifecycle()
     val output by vm.output.collectAsStateWithLifecycle()
     val working by vm.working.collectAsStateWithLifecycle()
-    val status = stack.status()
-    val statusText = status.text.ifEmpty { if (stack.containers.size == 1) "Running" else "All ${stack.containers.size} running" }
     val blocked = vm.stackBlockedReason(stack)
     val ownOutput = output?.takeIf { it.scope == stack.name }
-    var menu by remember { mutableStateOf(false) }
+    var logsFull by rememberSaveable { mutableStateOf(false) }
+    val fullScreen = logsFull && tab == AppViewModel.StackTab.Logs
+    androidx.activity.compose.BackHandler(enabled = fullScreen) { logsFull = false }
+    val tabs = listOf(
+        AppViewModel.StackTab.Containers to "Containers", AppViewModel.StackTab.Logs to "Logs",
+        AppViewModel.StackTab.Output to if (ownOutput?.isRunning == true) "Output ●" else "Output",
+    )
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(start = 0.dp, end = 4.dp).height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(24.dp)).clickable(onClick = onBack).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconTap(RackoonIcons.ChevronLeft, "Back to Docker", c.textPrimary, onBack)
-                Text("Docker", color = c.textSecondary, fontSize = 15.sp)
-            }
-            Box {
-                IconTap(RackoonIcons.More, "Stack actions", c.textPrimary, { menu = true })
-                DropdownMenu(menu, { menu = false }, containerColor = c.selection) {
-                    val entries = listOf(
-                        ComposeAction.PULL to "Pull images", ComposeAction.UP to "Update", ComposeAction.RESTART to "Restart all",
-                        ComposeAction.REBUILD to "Rebuild", ComposeAction.RECREATE to "Recreate…",
-                    )
-                    entries.forEach { (action, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label, color = if (blocked != null) c.textMuted else if (action == ComposeAction.RECREATE) c.danger else c.textPrimary) },
-                            enabled = blocked == null, onClick = { menu = false; vm.requestStackAction(stack, action) },
-                        )
-                    }
-                    androidx.compose.material3.HorizontalDivider(color = c.border)
-                    DropdownMenuItem(
-                        text = { Text("Delete stack…", color = if (blocked != null) c.textMuted else c.danger, fontWeight = FontWeight.Medium) },
-                        enabled = blocked == null, onClick = { menu = false; vm.requestDelete(stack) },
-                    )
+        if (!fullScreen) {
+            StackAppBar(vm, server, stack, readOnly, blocked, onBack)
+            // What is happening right now stays in view on every tab.
+            working?.takeIf { tab != AppViewModel.StackTab.Output }?.let { w ->
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.accent)
+                    Text(w, color = c.textSecondary, fontSize = 13.sp)
                 }
             }
+            ui.actionError?.let { Text(it, color = c.dangerRole.label, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
+            if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = c.warnRole.label, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
         }
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 44.dp, vm.favicons)
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stack.name, fontSize = 22.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    StatusDot(severityColor(status.severity, dot = true))
-                    Text(statusText, fontSize = 13.sp, color = if (status.severity == StackSeverity.OK) c.textSecondary else severityColor(status.severity))
-                }
-                stack.workingDir?.let { Text(it, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-        }
-        Box(Modifier.padding(horizontal = 16.dp)) { LinkRow(stack, big = true) }
-        if (readOnly) ReadOnlyBanner(onTurnOff = vm::toggleReadOnly)
-        else if (blocked != null && working == null && tab == AppViewModel.StackTab.Containers) Text(blocked, color = c.textMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
-        // On the Output tab the panel itself says "Running…", and a row appearing here would push Cancel out from under the finger.
-        working?.takeIf { tab != AppViewModel.StackTab.Output }?.let { w ->
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.accent)
-                Text(w, color = c.textSecondary, fontSize = 13.sp)
-            }
-        }
-        ui.actionError?.let { Text(it, color = c.danger, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
-        if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = c.warn, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp))
-
-        TabStrip(
-            listOf(
-                AppViewModel.StackTab.Containers to "Containers", AppViewModel.StackTab.Logs to "Logs",
-                AppViewModel.StackTab.Output to if (ownOutput?.isRunning == true) "Output ●" else "Output",
-            ),
-            tab, vm::showStackTab,
-        )
-        when (tab) {
-            AppViewModel.StackTab.Containers -> LazyColumn(
-                Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+        when {
+            fullScreen -> LogsPanel(vm, stack, fullScreen = true, onToggleFullScreen = { logsFull = false })
+            tab == AppViewModel.StackTab.Containers -> LazyColumn(
+                Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item(key = "header") { StackHeader(vm, stack) }
+                if (readOnly) item(key = "readonly") { ReadOnlyBanner(onTurnOff = vm::toggleReadOnly) }
+                else if (blocked != null && working == null) item(key = "blocked") { Text(blocked, color = c.textMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
+                stickyHeader(key = "tabs") { Box(Modifier.background(c.background)) { TabStrip(tabs, tab, vm::showStackTab) } }
                 items(stack.containers, key = { it.id }) { ct ->
-                    ContainerCard(
-                        ct, stack, busy = ct.id in ui.busy || stack.name in ui.busyStacks, readOnly = readOnly, anyRunning = working != null,
-                        blocked = blocked, vm = vm,
-                    )
+                    Box(Modifier.padding(horizontal = 16.dp)) {
+                        ContainerCard(
+                            ct, stack, busy = ct.id in ui.busy || stack.name in ui.busyStacks, readOnly = readOnly, anyRunning = working != null,
+                            blocked = blocked, vm = vm,
+                        )
+                    }
                 }
                 val editable = com.bgallagher.rackoon.core.StackFiles.editable(stack)
-                if (editable != null) item(key = "files") { FilesSection(editable) { vm.openEditor(stack, it) } }
+                if (editable != null) item(key = "files") { Box(Modifier.padding(horizontal = 16.dp)) { FilesSection(editable) { vm.openEditor(stack, it) } } }
             }
-            AppViewModel.StackTab.Logs -> LogsPanel(vm, stack)
-            AppViewModel.StackTab.Output -> if (ownOutput != null) ActionOutputPanel(ownOutput, onCancel = vm::cancelOutput, onClose = vm::closeOutput)
-            else Text("Nothing has run for this stack yet. The output of Pull, Update, Restart and the container actions appears here.", color = c.textMuted, lineHeight = 20.sp, modifier = Modifier.padding(20.dp))
+            else -> Column(Modifier.fillMaxSize()) {
+                TabStrip(tabs, tab, vm::showStackTab)
+                when (tab) {
+                    AppViewModel.StackTab.Logs -> LogsPanel(vm, stack, fullScreen = false, onToggleFullScreen = { logsFull = true })
+                    else -> if (ownOutput != null) ActionOutputPanel(ownOutput, onCancel = vm::cancelOutput, onClose = vm::closeOutput)
+                    else Text("Nothing has run for this stack yet. The output of Pull, Update, Restart and the container actions appears here.", color = c.textMuted, lineHeight = 20.sp, modifier = Modifier.padding(20.dp))
+                }
+            }
         }
+    }
+}
+
+/** Back, the stack's name with its status dot, the server it is on (tap to switch), the Read-only chip and the stack menu. */
+@Composable
+private fun StackAppBar(vm: AppViewModel, server: Server, stack: DockerStack, readOnly: Boolean, blocked: String?, onBack: () -> Unit) {
+    val c = Rackoon.colors
+    val status = stack.status()
+    val statusText = status.text.ifEmpty { if (stack.containers.size == 1) "Running" else "All ${stack.containers.size} running" }
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().height(64.dp).padding(start = 4.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconTap(RackoonIcons.ChevronLeft, "Back to Docker", c.textPrimary, onBack)
+        Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { vm.showSwitcher(true) }.padding(horizontal = 6.dp, vertical = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stack.name, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                StatusDot(severityColor(status.severity, dot = true))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(statusText, fontSize = 12.sp, color = if (status.severity == StackSeverity.OK) c.textSecondary else severityLabel(status.severity), maxLines = 1)
+                Text("· ${server.name}", fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            }
+        }
+        ReadOnlyChip(readOnly, vm::toggleReadOnly, small = true)
+        Box {
+            IconTap(RackoonIcons.More, "Stack actions", c.textPrimary, { menu = true })
+            StackMenu(menu, { menu = false }, vm, stack, blocked)
+        }
+    }
+}
+
+@Composable
+internal fun severityLabel(s: StackSeverity): androidx.compose.ui.graphics.Color = when (s) {
+    StackSeverity.OK -> Rackoon.colors.okRole.label
+    StackSeverity.WARNING -> Rackoon.colors.warnRole.label
+    StackSeverity.DANGER -> Rackoon.colors.dangerRole.label
+    StackSeverity.IDLE -> Rackoon.colors.textMuted
+}
+
+/** The stack's actions. Same commands as the Mac's menu; each opens the confirm sheet with the exact command. Only Delete is red. */
+@Composable
+private fun StackMenu(open: Boolean, onDismiss: () -> Unit, vm: AppViewModel, stack: DockerStack, blocked: String?) {
+    val c = Rackoon.colors
+    val entries = listOf(
+        Triple(ComposeAction.PULL, "Pull images", "Download newer images only"),
+        Triple(ComposeAction.UP, "Update", "Recreate what changed"),
+        Triple(ComposeAction.RESTART, "Restart all", "Stop and start, same images"),
+        Triple(ComposeAction.REBUILD, "Rebuild", "Rebuild images, then recreate"),
+        Triple(ComposeAction.RECREATE, "Recreate…", "Fresh containers; volumes stay"),
+    )
+    DropdownMenu(open, onDismiss, modifier = Modifier.width(280.dp), offset = androidx.compose.ui.unit.DpOffset((-8).dp, 0.dp), containerColor = c.selection) {
+        entries.forEach { (action, label, subtitle) ->
+            DropdownMenuItem(
+                text = { MenuText(label, subtitle, if (blocked != null) c.textMuted else c.textPrimary) },
+                modifier = Modifier.heightIn(min = 56.dp), enabled = blocked == null, onClick = { onDismiss(); vm.requestStackAction(stack, action) },
+            )
+        }
+        if (stack.hasBookmark) DropdownMenuItem(
+            text = { MenuText("Edit bookmark", "Change the link on Bookmarks", c.textPrimary) },
+            modifier = Modifier.heightIn(min = 56.dp), onClick = { onDismiss(); vm.openBookmarkSheet(stack.name) },
+        )
+        androidx.compose.material3.HorizontalDivider(color = c.border)
+        DropdownMenuItem(
+            text = { MenuText("Delete stack…", "Containers and networks; volumes optional", if (blocked != null) c.textMuted else c.danger) },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = blocked == null, onClick = { onDismiss(); vm.requestDelete(stack) },
+        )
+    }
+}
+
+@Composable
+private fun MenuText(title: String, subtitle: String, color: androidx.compose.ui.graphics.Color) {
+    Column {
+        Text(title, color = color, fontWeight = FontWeight.Medium)
+        Text(subtitle, color = Rackoon.colors.textMuted, fontSize = 12.sp, lineHeight = 16.sp)
+    }
+}
+
+/** The part of the page that scrolls away: the stack's tile, where it lives, and its link. */
+@Composable
+private fun StackHeader(vm: AppViewModel, stack: DockerStack) {
+    val c = Rackoon.colors
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 40.dp, vm.favicons)
+            stack.workingDir?.let { Text(it, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)) }
+        }
+        LinkRow(stack, big = true)
     }
 }
 
 @Composable
 private fun TabStrip(tabs: List<Pair<AppViewModel.StackTab, String>>, selected: AppViewModel.StackTab, onSelect: (AppViewModel.StackTab) -> Unit) {
     val c = Rackoon.colors
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+    Row(Modifier.fillMaxWidth()) {
         tabs.forEach { (tab, label) ->
             val on = tab == selected
             Box(Modifier.weight(1f).height(48.dp).clickable { onSelect(tab) }, contentAlignment = Alignment.Center) {
@@ -165,36 +230,47 @@ private fun ContainerCard(ct: DockerContainer, stack: DockerStack, busy: Boolean
     val c = Rackoon.colors
     val theme = LocalTerminalTheme.current
     var menu by remember { mutableStateOf(false) }
+    // A dot only says something when it is not the usual state: healthy running containers have none (the stack's dot covers them).
     val dot = when {
         ct.isUnhealthy -> c.danger
         ct.state == "restarting" || ct.state == "paused" -> c.warn
-        ct.isRunning -> c.ok
+        ct.isRunning -> null
         else -> c.idle
     }
     val canAct = !readOnly && !anyRunning
     val canRebuild = ActionPrompts.canRebuild(ct, stack)
     val shape = RoundedCornerShape(14.dp)
+    val image = ImageName.parse(ct.image)
+    val portsText = ct.ports.take(2).joinToString(", ") { "${it.hostPort}→${it.containerPort}" + if (it.proto != "tcp") "/${it.proto}" else "" } +
+        if (ct.ports.size > 2) " +${ct.ports.size - 2}" else ""
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, if (ct.isUnhealthy) c.danger.copy(alpha = 0.5f) else c.border, shape).padding(start = 14.dp, end = 4.dp, top = 12.dp),
+        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, if (ct.isUnhealthy) c.danger.copy(alpha = 0.6f) else c.border, shape).padding(start = 14.dp, end = 4.dp, top = 12.dp),
     ) {
         Row(Modifier.padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (busy) CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = c.accent) else StatusDot(dot)
-            Text(ct.service ?: ct.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(ct.usageText(Format::bytes), fontFamily = MonoFamily, fontSize = 12.sp, color = if (ct.isUnhealthy) c.danger else c.textSecondary)
+            if (busy) CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = c.accent) else dot?.let { StatusDot(it) }
+            Text(ct.service ?: ct.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (ct.isUnhealthy) c.dangerRole.label else c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (ct.isUnhealthy) Text("unhealthy", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = c.dangerRole.label)
+            else Text(ct.usageText(Format::bytes), fontFamily = MonoFamily, fontSize = 12.sp, color = c.textSecondary)
         }
-        Text(ct.image, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))
-        val ports = ct.ports.joinToString("  ") { "${it.hostPort}→${it.containerPort}" + if (it.proto != "tcp") "/${it.proto}" else "" }
-        if (ports.isNotEmpty()) Text(ports, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(start = 16.dp))
-        Text(ct.status, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp, top = 2.dp))
-        Row(Modifier.padding(start = 0.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).alpha(if (canAct) 1f else 0.38f)) {
+        // The tag is the useful part of an image name, so only the repository is ever shortened.
+        Row(Modifier.padding(top = 2.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(image.repository, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.MiddleEllipsis, modifier = Modifier.weight(1f, fill = false))
+            image.tag?.let { Text(it, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textPrimary, maxLines = 1, softWrap = false) }
+        }
+        Text(
+            ct.status + if (portsText.isNotEmpty()) " · $portsText" else "", fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).alpha(if (canAct) 1f else 0.38f), verticalAlignment = Alignment.CenterVertically) {
                 if (ct.isRunning) {
                     ActionLink("Shell", canAct && !readOnly) { vm.openContainerShell(ct, theme) }
                     ActionLink("Restart", canAct) { vm.requestContainerAction(stack, ct, DockerAction.RESTART) }
                 } else {
                     ActionLink("Start", canAct) { vm.requestContainerAction(stack, ct, DockerAction.START) }
                 }
-                if (canRebuild) ActionLink("Rebuild", canAct && blocked == null) { vm.requestRebuild(stack, ct) }
+                // Rebuild is the heavier action: a little room keeps it from being tapped by accident next to Restart.
+                if (canRebuild) { Spacer(Modifier.width(8.dp)); ActionLink("Rebuild", canAct && blocked == null) { vm.requestRebuild(stack, ct) } }
             }
             Box {
                 IconTap(RackoonIcons.More, "More actions for ${ct.service ?: ct.name}", c.textSecondary, { menu = true })
@@ -209,15 +285,16 @@ private fun ContainerCard(ct: DockerContainer, stack: DockerStack, busy: Boolean
                 }
             }
         }
-        if (readOnly) Text("Disabled: Read-only mode is on", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(start = 16.dp, bottom = 10.dp))
+        if (readOnly) Text("Disabled: Read-only mode is on", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(bottom = 10.dp))
         else Box(Modifier.height(2.dp))
     }
 }
 
+/** Container actions are plain text buttons: accent is kept for the one primary action on a screen. */
 @Composable
 private fun ActionLink(label: String, enabled: Boolean, onClick: () -> Unit) {
     TextButton(onClick, enabled = enabled, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) {
-        Text(label, color = if (enabled) Rackoon.colors.accent else Rackoon.colors.textMuted, fontWeight = FontWeight.Medium)
+        Text(label, color = if (enabled) Rackoon.colors.textPrimary else Rackoon.colors.textMuted, fontWeight = FontWeight.Medium, fontSize = 14.sp)
     }
 }
 

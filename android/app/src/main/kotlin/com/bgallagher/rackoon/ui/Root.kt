@@ -42,7 +42,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,6 +80,7 @@ fun RackoonRoot(vm: AppViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val bookmarksOpen by vm.bookmarksOpen.collectAsStateWithLifecycle()
     val updatesOpen by vm.updatesOpen.collectAsStateWithLifecycle()
+    val morePage by vm.morePage.collectAsStateWithLifecycle()
     val reboot by vm.reboot.collectAsStateWithLifecycle()
     val editorFile by vm.editorFile.collectAsStateWithLifecycle()
     val addOpen by vm.addOpen.collectAsStateWithLifecycle()
@@ -82,12 +89,15 @@ fun RackoonRoot(vm: AppViewModel) {
     val deleting by vm.deleting.collectAsStateWithLifecycle()
     val themeId by vm.themeId.collectAsStateWithLifecycle()
 
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
             settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings)
             addOpen -> AddContainerScreen(vm, readOnly)
             editorFile != null -> EditorScreen(vm, editorFile!!, readOnly)
             bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
+            morePage != null -> MorePageScreen(vm, morePage!!)
             updatesOpen -> UpdatesScreen(vm, readOnly, selected?.name.orEmpty(), onBack = { vm.showUpdates(false) })
             appearance -> AppearanceScreen(themeId, onPick = vm::setTheme, onBack = { vm.showAppearance(false) })
             add != null -> AddServerScreen(add!!, vm::editAdd, vm::submitAdd, vm::cancelAdd, vm::trustAndConnect, vm::declineTrust)
@@ -98,7 +108,13 @@ fun RackoonRoot(vm: AppViewModel) {
         bookmarkForm?.let { BookmarkSheet(vm, it, readOnly) }
         deleting?.let { stack -> DeleteStackSheet(stack, selected?.name.orEmpty(), selected?.user?.takeIf { it.isNotEmpty() } ?: "root", onCancel = vm::cancelDelete, onRun = { vm.deleteStack(stack, it) }) }
         pending?.let { ConfirmSheet(it, onCancel = vm::cancelPending, onConfirm = vm::confirmPending) }
-        if (switcher) ServerSwitcher(servers, selected, overview, onPick = vm::select, onAdd = vm::startAdd, onRemove = vm::remove, onDismiss = { vm.showSwitcher(false) })
+        if (switcher) ServerSwitcher(
+            servers, selected, overview, onPick = vm::select, onAdd = vm::startAdd, onRemove = vm::remove,
+            onEdit = { vm.showSwitcher(false); vm.editServer(it) }, onDismiss = { vm.showSwitcher(false) },
+        )
+        androidx.compose.material3.SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp)) { data ->
+            androidx.compose.material3.Snackbar(data, containerColor = Rackoon.colors.selection, contentColor = Rackoon.colors.textPrimary)
+        }
     }
 }
 
@@ -122,10 +138,18 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
     val keyboardOpen = WindowInsets.isImeVisible
     // Tablets, unfolded foldables and landscape phones get a rail on the left instead of a bar at the bottom.
     val wide = LocalConfiguration.current.screenWidthDp >= 840
+    // The More tab carries a dot when something needs attention there (Updates lives in More), from the Overview's own counts.
+    val moreAlert = moreAlertText((overview as? OverviewUi.Ready)?.state?.overview)
+    // Back from any other tab goes to Overview; only from Overview does it leave the app. This is registered before the screens inside,
+    // so their own handlers (an open stack, full-screen logs) still get the first back press.
+    androidx.activity.compose.BackHandler(enabled = tab != Tab.Overview) { vm.showTab(Tab.Overview) }
+    // An open stack has its own app bar (name, status, server, Read-only chip), so the shared one steps aside.
+    val openStack by vm.openStack.collectAsStateWithLifecycle()
+    val stackOpen = tab == Tab.Docker && openStack != null
     Row(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        if (wide) NavRail(tab, vm::showTab)
+        if (wide) NavRail(tab, vm::showTab, moreAlert)
         Column(Modifier.weight(1f).fillMaxSize()) {
-            TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
+            if (!stackOpen) TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
             Box(Modifier.weight(1f)) {
                 when (tab) {
                     Tab.Overview -> {
@@ -140,10 +164,10 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         DockerScreen(vm, server, wide, readOnly)
                     }
                     Tab.Terminal -> TerminalScreen(vm, server, readOnly, onTurnOffReadOnly = vm::toggleReadOnly)
-                    Tab.More -> MoreScreen(onServers = { vm.showSwitcher(true) }, onAdd = vm::startAdd, highlight = vm.highlightOutput.collectAsStateWithLifecycle().value, onHighlight = vm::setHighlight, themeName = themeLabel(vm.themeId.collectAsStateWithLifecycle().value), onAppearance = { vm.showAppearance(true) }, onSettings = vm::openSettings, serverName = server.name, onBookmarks = { vm.showBookmarks(true) }, updatesNote = updatesNote(overview), onUpdates = { vm.showUpdates(true) })
+                    Tab.More -> MoreScreen(vm, server.name, updatesNote(overview), themeLabel(vm.themeId.collectAsStateWithLifecycle().value), serversNote = vm.servers.collectAsStateWithLifecycle().value.size)
                 }
             }
-            if (!wide && !(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab)
+            if (!wide && !(tab == Tab.Terminal && keyboardOpen)) BottomBar(tab, vm::showTab, moreAlert)
         }
     }
 }
@@ -151,13 +175,13 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
 private val tabItems get() = listOf(Tab.Overview to ("Overview" to RackoonIcons.Overview), Tab.Docker to ("Docker" to RackoonIcons.Docker), Tab.Terminal to ("Terminal" to RackoonIcons.Terminal), Tab.More to ("More" to RackoonIcons.More))
 
 @Composable
-private fun NavRail(tab: Tab, onTab: (Tab) -> Unit) {
+private fun NavRail(tab: Tab, onTab: (Tab) -> Unit, moreAlert: String?) {
     val c = Rackoon.colors
     androidx.compose.material3.NavigationRail(containerColor = c.sidebar) {
         Spacer(Modifier.weight(1f))
         tabItems.forEach { (t, label) ->
             androidx.compose.material3.NavigationRailItem(
-                selected = tab == t, onClick = { onTab(t) }, icon = { Icon(label.second, null) }, label = { Text(label.first) },
+                selected = tab == t, onClick = { onTab(t) }, icon = { TabIcon(t, label.second, moreAlert) }, label = { Text(label.first) },
                 colors = androidx.compose.material3.NavigationRailItemDefaults.colors(
                     selectedIconColor = c.accent, selectedTextColor = c.textPrimary, unselectedIconColor = c.textSecondary,
                     unselectedTextColor = c.textSecondary, indicatorColor = c.accent.copy(alpha = 0.2f),
@@ -191,34 +215,59 @@ private fun TopBar(name: String, dot: androidx.compose.ui.graphics.Color, readOn
     }
 }
 
+/**
+ * The Read-only chip. Same label and width in both states, so nothing around it moves: ON is the accent fill with a closed lock,
+ * OFF is a stronger outline with an open lock (changes are allowed, which is the state to notice).
+ */
 @Composable
 fun ReadOnlyChip(on: Boolean, onClick: () -> Unit, small: Boolean = false) {
     val c = Rackoon.colors
     val shape = RoundedCornerShape(if (small) 8.dp else 10.dp)
+    val state = if (on) "Read-only on. Tap to allow changes." else "Read-only off. Tap to turn on."
     Row(
-        Modifier.height(if (small) 28.dp else 36.dp).clip(shape)
-            .then(if (on) Modifier.background(c.accent) else Modifier.border(BorderStroke(1.dp, c.border), shape))
-            .clickable(onClick = onClick).padding(horizontal = if (small) 10.dp else 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.width(if (small) 96.dp else 112.dp).height(if (small) 28.dp else 36.dp).clip(shape)
+            .then(if (on) Modifier.background(c.accent) else Modifier.border(BorderStroke(1.dp, c.textMuted.copy(alpha = 0.6f)), shape))
+            .clickable(onClick = onClick).semantics { contentDescription = state },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
     ) {
-        Icon(RackoonIcons.Lock, null, tint = if (on) c.accentText else c.textSecondary, modifier = Modifier.size(if (small) 12.dp else 14.dp))
-        Text(if (on) "Read-only" else "Read-only off", color = if (on) c.accentText else c.textSecondary, fontSize = if (small) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold)
+        Icon(if (on) RackoonIcons.Lock else RackoonIcons.LockOpen, null, tint = if (on) c.accentText else c.textSecondary, modifier = Modifier.size(if (small) 12.dp else 14.dp))
+        Text("Read-only", color = if (on) c.accentText else c.textPrimary, fontSize = if (small) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
-private fun BottomBar(tab: Tab, onTab: (Tab) -> Unit) {
+private fun BottomBar(tab: Tab, onTab: (Tab) -> Unit, moreAlert: String?) {
     val c = Rackoon.colors
     NavigationBar(containerColor = c.sidebar, modifier = Modifier.navigationBarsPaddingFix()) {
         tabItems.forEach { (t, label) ->
             NavigationBarItem(
-                selected = tab == t, onClick = { onTab(t) }, icon = { Icon(label.second, null) }, label = { Text(label.first) },
+                selected = tab == t, onClick = { onTab(t) }, icon = { TabIcon(t, label.second, moreAlert) }, label = { Text(label.first) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = c.accent, selectedTextColor = c.textPrimary, unselectedIconColor = c.textSecondary,
                     unselectedTextColor = c.textSecondary, indicatorColor = c.accent.copy(alpha = 0.2f),
                 ),
             )
         }
+    }
+}
+
+/** A tab icon; More gets an amber dot (and a spoken description) when [moreAlert] says something there needs attention. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TabIcon(tab: Tab, icon: androidx.compose.ui.graphics.vector.ImageVector, moreAlert: String?) {
+    if (tab == Tab.More && moreAlert != null) {
+        androidx.compose.material3.BadgedBox(badge = { androidx.compose.material3.Badge(containerColor = Rackoon.colors.warnRole.mark) }) {
+            Icon(icon, "More, $moreAlert")
+        }
+    } else Icon(icon, null)
+}
+
+private fun moreAlertText(o: com.bgallagher.rackoon.core.Overview?): String? {
+    o ?: return null
+    return when {
+        o.securityUpdates > 0 -> "${o.securityUpdates} security update${if (o.securityUpdates == 1) "" else "s"}"
+        o.rebootRequired -> "reboot required"
+        else -> null
     }
 }
 
@@ -235,34 +284,47 @@ private fun Placeholder(title: String, body: String) {
 }
 
 @Composable
-private fun MoreScreen(onServers: () -> Unit, onAdd: () -> Unit, highlight: Boolean, onHighlight: (Boolean) -> Unit, themeName: String, onAppearance: () -> Unit, onSettings: () -> Unit, serverName: String, onBookmarks: () -> Unit, updatesNote: String, onUpdates: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        RCard(Modifier.fillMaxWidth()) {
-            Column {
-                MoreRow("Servers", "Switch, add or remove", onServers)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Bookmarks", "Links to your services", onBookmarks)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Updates", updatesNote, onUpdates)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Server settings", serverName, onSettings)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Add server", "Connect to another machine", onAdd)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                MoreRow("Appearance", themeName, onAppearance)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Highlight terminal output", fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
-                        Text("Colour errors, warnings, IP addresses and high percentages", fontSize = 12.sp, color = Rackoon.colors.textMuted)
-                    }
-                    androidx.compose.material3.Switch(highlight, onHighlight)
-                }
-            }
+private fun MoreScreen(vm: AppViewModel, serverName: String, updatesNote: String, themeName: String, serversNote: Int) {
+    val c = Rackoon.colors
+    val auto = vm.autoReadOnly.collectAsStateWithLifecycle().value
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        MoreSection("SERVER · ${serverName.uppercase()}") {
+            MoreRow("Updates", updatesNote) { vm.showUpdates(true) }
+            MoreDivider()
+            MoreRow("Bookmarks", "Links to your services") { vm.showBookmarks(true) }
+            MoreDivider()
+            MoreRow("Server settings", "Name and sign-in for $serverName") { vm.openSettings() }
         }
-        Text("Rackoon 0.1.0-alpha.1 · developed by Brian Gallagher", color = Rackoon.colors.textMuted, fontSize = 12.sp)
+        MoreSection("SERVERS") {
+            MoreRow("Servers", "$serversNote saved · switch, add or remove") { vm.showSwitcher(true) }
+        }
+        MoreSection("APP") {
+            MoreRow("Appearance", themeName) { vm.showAppearance(true) }
+            MoreDivider()
+            MoreRow("Terminal", "Font size, output highlighting") { vm.showMorePage(AppViewModel.MorePage.Terminal) }
+            MoreDivider()
+            MoreRow("Safety", "Read-only: ${auto.label.replaceFirstChar { it.lowercase() }}") { vm.showMorePage(AppViewModel.MorePage.Safety) }
+            MoreDivider()
+            MoreRow("About", "Version, credits") { vm.showMorePage(AppViewModel.MorePage.About) }
+        }
+        Text("Rackoon ${appVersion()}", color = c.textMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 16.dp))
     }
 }
+
+@Composable
+private fun appVersion(): String {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "" }.orEmpty()
+}
+
+@Composable
+private fun MoreSection(title: String, content: @Composable () -> Unit) {
+    Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp, color = Rackoon.colors.textMuted, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+    RCard(Modifier.fillMaxWidth()) { Column { content() } }
+}
+
+@Composable
+private fun MoreDivider() { Box(Modifier.fillMaxWidth().height(1.dp).background(Rackoon.colors.border)) }
 
 @Composable
 private fun MoreRow(title: String, subtitle: String, onClick: (() -> Unit)?) {
@@ -277,51 +339,67 @@ private fun MoreRow(title: String, subtitle: String, onClick: (() -> Unit)?) {
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ServerSwitcher(servers: List<Server>, selected: Server?, overview: OverviewUi, onPick: (Server) -> Unit, onAdd: () -> Unit, onRemove: (Server) -> Unit, onDismiss: () -> Unit) {
+private fun ServerSwitcher(servers: List<Server>, selected: Server?, overview: OverviewUi, onPick: (Server) -> Unit, onAdd: () -> Unit, onRemove: (Server) -> Unit, onEdit: (Server) -> Unit, onDismiss: () -> Unit) {
     var removing by remember { mutableStateOf<Server?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = Rackoon.colors.sidebar, scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f)) {
+    val c = Rackoon.colors
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = c.sidebar, scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f)) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Servers", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary, modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp))
+            Text("Servers", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp))
             servers.forEach { s ->
                 val isSel = s.id == selected?.id
-                val (dot, note, noteColor) = if (isSel) when (overview) {
-                    OverviewUi.Connecting -> Triple(Rackoon.colors.warn, "Connecting…", Rackoon.colors.warn)
-                    is OverviewUi.Ready -> Triple(Rackoon.colors.ok, "Connected · ${overview.state.overview?.os?.prettyName ?: ""}", Rackoon.colors.textSecondary)
-                    is OverviewUi.Failed -> Triple(Rackoon.colors.danger, failureNote(overview.issue), Rackoon.colors.danger)
-                } else Triple(Rackoon.colors.idle, "${s.user ?: "root"}@${s.host}", Rackoon.colors.textMuted)
+                // Only the selected server has a live connection, so only it can say more than "Not connected".
+                val host = "${s.user ?: "root"}@${s.host}"
+                val (dot, status, statusColor, detail) = if (isSel) when (overview) {
+                    OverviewUi.Connecting -> Quad(c.warn, "Connecting…", c.warnRole.label, host)
+                    is OverviewUi.Ready -> Quad(c.ok, "Connected", c.okRole.label, overview.state.overview?.os?.prettyName ?: host)
+                    is OverviewUi.Failed -> Quad(c.danger, failureNote(overview.issue), c.dangerRole.label, host)
+                } else Quad(c.idle, "Not connected", c.textMuted, host)
+                var menu by remember { mutableStateOf(false) }
                 Row(
-                    Modifier.fillMaxWidth().heightMin(64).clip(RoundedCornerShape(14.dp)).background(if (isSel) Rackoon.colors.selection else androidx.compose.ui.graphics.Color.Transparent)
-                        .combinedClickable(onClick = { onPick(s) }, onLongClick = { removing = s }).padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().heightMin(64).clip(RoundedCornerShape(14.dp)).background(if (isSel) c.selection else androidx.compose.ui.graphics.Color.Transparent)
+                        .combinedClickable(onClick = { onPick(s) }, onLongClick = { removing = s }).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     StatusDot(dot, 10)
                     Column(Modifier.weight(1f)) {
-                        Text(s.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
-                        Text(note, fontSize = 13.sp, color = noteColor)
+                        Text(s.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(status, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = statusColor)
+                            Text("· $detail", fontSize = 13.sp, color = c.textMuted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        }
                     }
-                    if (isSel) Text("Current", fontSize = 13.sp, color = Rackoon.colors.textMuted)
+                    if (isSel) Icon(RackoonIcons.Check, "Current server", tint = c.accent, modifier = Modifier.padding(end = 12.dp).size(20.dp))
+                    else Box {
+                        IconTap(RackoonIcons.More, "Actions for ${s.name}", c.textSecondary, { menu = true })
+                        DropdownMenu(menu, { menu = false }, containerColor = c.selection) {
+                            DropdownMenuItem(text = { Text("Connect", color = c.textPrimary) }, onClick = { menu = false; onPick(s) })
+                            DropdownMenuItem(text = { Text("Edit", color = c.textPrimary) }, onClick = { menu = false; onEdit(s) })
+                            DropdownMenuItem(text = { Text("Remove…", color = c.danger) }, onClick = { menu = false; removing = s })
+                        }
+                    }
                 }
             }
             Row(
-                Modifier.fillMaxWidth().heightMin(56).padding(top = 4.dp).clip(RoundedCornerShape(14.dp)).border(BorderStroke(1.dp, Rackoon.colors.border), RoundedCornerShape(14.dp))
+                Modifier.fillMaxWidth().heightMin(56).padding(top = 4.dp).clip(RoundedCornerShape(14.dp)).border(BorderStroke(1.dp, c.border), RoundedCornerShape(14.dp))
                     .clickable(onClick = onAdd).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Icon(RackoonIcons.Plus, null, tint = Rackoon.colors.accent, modifier = Modifier.size(20.dp))
-                Text("Add server", color = Rackoon.colors.accent, fontWeight = FontWeight.Medium)
+                Icon(RackoonIcons.Plus, null, tint = c.accent, modifier = Modifier.size(20.dp))
+                Text("Add server", color = c.accent, fontWeight = FontWeight.Medium)
             }
-            Text("Touch and hold a server to remove it.", fontSize = 12.sp, color = Rackoon.colors.textMuted, modifier = Modifier.padding(start = 8.dp, top = 6.dp))
         }
     }
     removing?.let { s ->
         AlertDialog(
-            onDismissRequest = { removing = null }, containerColor = Rackoon.colors.sidebar,
-            title = { Text("Remove ${s.name}?", color = Rackoon.colors.textPrimary) },
-            text = { Text("It is removed from this phone, along with its trusted host key. Nothing changes on the server.", color = Rackoon.colors.textSecondary) },
-            confirmButton = { TextButton(onClick = { onRemove(s); removing = null }) { Text("Remove", color = Rackoon.colors.danger) } },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel", color = Rackoon.colors.textPrimary) } },
+            onDismissRequest = { removing = null }, containerColor = c.sidebar,
+            title = { Text("Remove ${s.name}?", color = c.textPrimary) },
+            text = { Text("It is removed from this phone, along with its trusted host key. Nothing changes on the server.", color = c.textSecondary) },
+            confirmButton = { TextButton(onClick = { onRemove(s); removing = null }) { Text("Remove", color = c.danger) } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel", color = c.textPrimary) } },
         )
     }
 }
+
+private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
 private fun Modifier.heightMin(dp: Int): Modifier = this.then(Modifier.defaultMinSize(minHeight = dp.dp))
 

@@ -33,6 +33,8 @@ object RackoonIcons {
     val Search = stroke("search", 1.6f, "M7,2.5 a4.5,4.5 0 1,0 0,9 a4.5,4.5 0 1,0 0,-9 z", "M10.5,10.5 L14,14")
     val External = stroke("external", 1.6f, "M9 3h4v4M13 3L7 9M12 10v3H3V4h3")
     val Terminal = stroke("terminal", 1.4f, rr(2f, 3f, 12f, 10f, 2f), "M5 7l2 1.5L5 10M8.5 10.5H11")
+    val LockOpen = stroke("lockOpen", 1.8f, rr(3f, 7f, 10f, 7f, 1.5f), "M5.5 7V5a2.5 2.5 0 014.8-.9")
+    val Check = stroke("check", 1.8f, "M3 8.5l3.2 3.2L13 5")
     val Lock = stroke("lock", 1.8f, rr(3f, 7f, 10f, 7f, 1.5f), "M5.5 7V5a2.5 2.5 0 015 0v2")
     val Copy = stroke("copy", 1.4f, rr(5.5f, 5.5f, 8f, 8f, 1.5f), "M10.5 5.5v-2a1.5 1.5 0 00-1.5-1.5H4a1.5 1.5 0 00-1.5 1.5V9A1.5 1.5 0 004 10.5h1.5")
     val ChevronDown = stroke("chevronDown", 1.8f, "M4 6l4 4 4-4")

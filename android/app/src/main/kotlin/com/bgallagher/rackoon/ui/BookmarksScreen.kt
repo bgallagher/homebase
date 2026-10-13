@@ -73,11 +73,8 @@ import com.bgallagher.rackoon.ui.theme.Rackoon
 import com.bgallagher.rackoon.ui.theme.RackoonIcons
 import kotlinx.coroutines.launch
 
-private fun scopeColor(scope: LinkScope) = when (scope) {
-    LinkScope.LOCAL -> Color(0xFF8DB4F0)
-    LinkScope.TAILSCALE -> Color(0xFF6FD3A8)
-    LinkScope.PUBLIC -> Color(0xFFF0A27A)
-}
+@Composable
+private fun scopeColor(scope: LinkScope): Color = scopeRole(scope).mark
 
 private fun scopeHint(scope: LinkScope) = when (scope) {
     LinkScope.LOCAL -> "Reachable on your home network only"

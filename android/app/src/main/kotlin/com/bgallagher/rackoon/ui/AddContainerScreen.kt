@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -83,11 +84,16 @@ fun AddContainerScreen(vm: AppViewModel, readOnly: Boolean) {
             }
 
             if (s.target == AddTarget.NEW_STACK) {
-                Field("Stack name", s.stackName, "media", mono = true) { draft.setStackName(it) }
-                draft.newStackNameProblem(s)?.let { Text(it, color = c.danger, fontSize = 12.sp) }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Field("Stack name", s.stackName, "media", mono = true) { draft.setStackName(it) }
+                    draft.newStackNameProblem(s)?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) } ?: if (s.stackName.isBlank()) Text("Required", color = c.textMuted, fontSize = 12.sp) else Unit
+                }
                 Field("Folder on the server", s.folder, "/opt/stacks", mono = true) { draft.setFolder(it) }
                 s.stackName.takeIf { it.isNotEmpty() }?.let { Text("Creates ${draft.plan(s).directory ?: "${s.folder}/$it"}", color = c.textMuted, fontSize = 12.sp, fontFamily = MonoFamily) }
-                Segmented(listOf("Form" to !pasted, "Paste compose.yaml" to pasted)) { draft.setPaste(it == 1) }
+                // The form is the main path; pasting a file is the alternative, so it is a quiet text button, not a second tab bar.
+                androidx.compose.material3.TextButton({ draft.setPaste(!pasted) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
+                    Text(if (pasted) "Use the form instead" else "Paste compose.yaml instead", color = c.accent, fontWeight = FontWeight.Medium)
+                }
             } else {
                 if (existingNames.isEmpty()) Text("No stack on this server has a compose file Rackoon can edit.", color = c.textMuted)
                 else Picker("Stack", s.existingName ?: "Choose a stack", existingNames, enabled = !s.working) { draft.chooseExisting(it) }
@@ -116,7 +122,8 @@ fun AddContainerScreen(vm: AppViewModel, readOnly: Boolean) {
 
             s.notice?.let { Text(it, color = c.danger, fontSize = 13.sp, lineHeight = 19.sp) }
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        Column(Modifier.fillMaxWidth().background(c.sidebar).padding(horizontal = 16.dp, vertical = 8.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(blocked ?: "Checked on the server before anything is written.", color = c.textMuted, fontSize = 12.sp, lineHeight = 17.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (s.working) CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.CenterVertically), strokeWidth = 2.dp, color = c.accent)
@@ -139,41 +146,45 @@ fun AddContainerScreen(vm: AppViewModel, readOnly: Boolean) {
 private fun Form(spec: ContainerSpec, draft: AddContainerDraft) {
     val c = Rackoon.colors
     fun update(new: ContainerSpec) = draft.setSpec(new)
-    Field("Container name", spec.name, "uptime-kuma", mono = true) { update(spec.copy(name = it)) }
-    spec.nameProblem?.let { Text(it, color = c.danger, fontSize = 12.sp) }
-    Field("Image", spec.image, "louislam/uptime-kuma:1", mono = true, keyboard = KeyboardType.Uri) { update(spec.copy(image = it)) }
-    spec.imageProblem?.let { Text(it, color = c.danger, fontSize = 12.sp) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Field("Container name", spec.name, "uptime-kuma", mono = true) { update(spec.copy(name = it)) }
+        spec.nameProblem?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) } ?: if (spec.name.isBlank()) Text("Required", color = c.textMuted, fontSize = 12.sp) else Unit
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Field("Image", spec.image, "louislam/uptime-kuma:1", mono = true, keyboard = KeyboardType.Uri) { update(spec.copy(image = it)) }
+        spec.imageProblem?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) } ?: if (spec.image.isBlank()) Text("Required", color = c.textMuted, fontSize = 12.sp) else Unit
+    }
 
-    Section("Ports", "host : container") {
+    Section("Ports", "host : container", "Host port" to "Container port") {
         spec.ports.forEachIndexed { i, row ->
             RowLine(
                 { Field("", row.host, "3001", mono = true, keyboard = KeyboardType.Ascii) { update(spec.copy(ports = spec.ports.replace(i, row.copy(host = it)))) } },
                 { Field("", row.container, "3001", mono = true, keyboard = KeyboardType.Number) { update(spec.copy(ports = spec.ports.replace(i, row.copy(container = it)))) } },
-                onRemove = if (spec.ports.size > 1 || !row.isBlank) ({ update(spec.copy(ports = spec.ports.without(i).ifEmpty { listOf(PortRow()) })) }) else null,
+                onRemove = { update(spec.copy(ports = spec.ports.without(i).ifEmpty { listOf(PortRow()) })) },
             )
-            ContainerSpec.portProblem(row)?.let { Text(it, color = c.danger, fontSize = 12.sp) }
+            ContainerSpec.portProblem(row)?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) }
         }
         AddRow("Add port") { update(spec.copy(ports = spec.ports + PortRow())) }
     }
-    Section("Volumes", "source : container path") {
+    Section("Volumes", "source : container path", "Source" to "Path in container") {
         spec.volumes.forEachIndexed { i, row ->
             RowLine(
                 { Field("", row.source, "./data", mono = true) { update(spec.copy(volumes = spec.volumes.replace(i, row.copy(source = it)))) } },
                 { Field("", row.target, "/app/data", mono = true) { update(spec.copy(volumes = spec.volumes.replace(i, row.copy(target = it)))) } },
-                onRemove = if (spec.volumes.size > 1 || !row.isBlank) ({ update(spec.copy(volumes = spec.volumes.without(i).ifEmpty { listOf(VolumeRow()) })) }) else null,
+                onRemove = { update(spec.copy(volumes = spec.volumes.without(i).ifEmpty { listOf(VolumeRow()) })) },
             )
-            ContainerSpec.volumeProblem(row)?.let { Text(it, color = c.danger, fontSize = 12.sp) }
+            ContainerSpec.volumeProblem(row)?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) }
         }
         AddRow("Add volume") { update(spec.copy(volumes = spec.volumes + VolumeRow())) }
     }
-    Section("Environment", "name = value, saved in .env") {
+    Section("Environment", "name = value, saved in .env", "Name" to "Value") {
         spec.env.forEachIndexed { i, row ->
             RowLine(
                 { Field("", row.key, "TZ", mono = true) { update(spec.copy(env = spec.env.replace(i, row.copy(key = it)))) } },
                 { Field("", row.value, "Europe/Dublin", mono = true) { update(spec.copy(env = spec.env.replace(i, row.copy(value = it)))) } },
-                onRemove = if (spec.env.size > 1 || !row.isBlank) ({ update(spec.copy(env = spec.env.without(i).ifEmpty { listOf(EnvRow()) })) }) else null,
+                onRemove = { update(spec.copy(env = spec.env.without(i).ifEmpty { listOf(EnvRow()) })) },
             )
-            ContainerSpec.envProblem(row)?.let { Text(it, color = c.danger, fontSize = 12.sp) }
+            ContainerSpec.envProblem(row)?.let { Text(it, color = c.dangerRole.label, fontSize = 12.sp) }
         }
         AddRow("Add variable") { update(spec.copy(env = spec.env + EnvRow())) }
     }
@@ -187,12 +198,18 @@ private fun <T> List<T>.replace(i: Int, item: T) = mapIndexed { index, old -> if
 private fun <T> List<T>.without(i: Int) = filterIndexed { index, _ -> index != i }
 
 @Composable
-private fun Section(title: String, hint: String, content: @Composable () -> Unit) {
+private fun Section(title: String, hint: String, columns: Pair<String, String>, content: @Composable () -> Unit) {
     val c = Rackoon.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, color = c.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(hint, color = c.textMuted, fontSize = 12.sp)
+        }
+        // Visible labels over the two columns, so a filled-in row is never a bare pair of boxes.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(columns.first, color = c.textSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 2.dp))
+            Text(columns.second, color = c.textSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 2.dp))
+            Spacer(Modifier.width(48.dp))
         }
         content()
     }
@@ -260,9 +277,9 @@ private fun Checks(rows: List<EditorCheckRow>) {
                         Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                             when (row.state) {
                                 EditorCheckRow.State.RUNNING -> CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = c.accent)
-                                EditorCheckRow.State.PASS -> Text("✓", color = c.ok, fontWeight = FontWeight.Bold)
-                                EditorCheckRow.State.FAIL -> Text("✕", color = c.danger, fontWeight = FontWeight.Bold)
-                                EditorCheckRow.State.WARN -> Text("!", color = c.warn, fontWeight = FontWeight.Bold)
+                                EditorCheckRow.State.PASS -> Text("✓", color = c.okRole.label, fontWeight = FontWeight.Bold)
+                                EditorCheckRow.State.FAIL -> Text("✕", color = c.dangerRole.label, fontWeight = FontWeight.Bold)
+                                EditorCheckRow.State.WARN -> Text("!", color = c.warnRole.label, fontWeight = FontWeight.Bold)
                                 EditorCheckRow.State.SKIPPED -> Text("–", color = c.textMuted)
                             }
                         }

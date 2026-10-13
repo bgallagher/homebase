@@ -21,11 +21,19 @@ import com.bgallagher.rackoon.core.ThemeCatalog
 
 fun RGB.color(): Color = Color(red = r, green = g, blue = b)
 
+/** One colour as a family (see core `AppPalette.PaletteRole`): [mark] for dots and bars, [label] for words, [fill] a quiet tint, [onFill] text on it. */
+class ColorRole(val mark: Color, val label: Color, val fill: Color, val onFill: Color)
+
 /** The extra colours Material 3 has no slot for (cards, status, muted text), taken from the palette derived from the theme. */
 class RackoonColors(
     val background: Color, val sidebar: Color, val card: Color, val selection: Color, val border: Color,
     val textPrimary: Color, val textSecondary: Color, val textMuted: Color,
     val accent: Color, val accentText: Color, val ok: Color, val warn: Color, val danger: Color, val idle: Color,
+    val textDim: Color,
+    val okRole: ColorRole, val warnRole: ColorRole, val dangerRole: ColorRole,
+    val info: ColorRole, val scopeLocal: ColorRole, val scopeTailscale: ColorRole, val scopePublic: ColorRole,
+    /** Six colours for container names and letter tiles; none of them is red, yellow, green or blue. */
+    val series: List<ColorRole>,
 )
 
 val LocalRackoon = staticCompositionLocalOf<RackoonColors> { error("RackoonTheme is missing") }
@@ -35,10 +43,14 @@ object Rackoon {
         @Composable @ReadOnlyComposable get() = LocalRackoon.current
 }
 
+private fun AppPalette.PaletteRole.toRole() = ColorRole(mark.color(), label.color(), fill.color(), onFill.color())
+
 private fun AppPalette.toColors() = RackoonColors(
     background.color(), sidebar.color(), card.color(), selection.color(), border.color(),
     textPrimary.color(), textSecondary.color(), textMuted.color(), accent.color(), accentText.color(),
     ok.color(), warn.color(), danger.color(), idle.color(),
+    textDim.color(), okRole.toRole(), warnRole.toRole(), dangerRole.toRole(),
+    info.toRole(), scopeLocal.toRole(), scopeTailscale.toRole(), scopePublic.toRole(), series.map { it.toRole() },
 )
 
 private fun AppPalette.toColorScheme() = (if (isDark) darkColorScheme() else lightColorScheme()).copy(

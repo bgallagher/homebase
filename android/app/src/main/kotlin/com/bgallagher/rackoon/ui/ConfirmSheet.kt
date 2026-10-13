@@ -42,6 +42,7 @@ data class PendingAction(
     /** A readable diff of what a save changes (lines start with `+`, `-` or a space). */
     val preview: String? = null,
     val confirmLabel: String = "Run Command",
+    val cancelLabel: String = "Cancel",
     val destructive: Boolean = false,
     val run: () -> Unit,
 )
@@ -65,7 +66,7 @@ fun ConfirmSheet(action: PendingAction, onCancel: () -> Unit, onConfirm: () -> U
                 if (action.command.isNotEmpty()) Block("Command, run as ${action.user}", AnnotatedString(action.command))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
-                SecondaryButton("Cancel", onCancel, Modifier.weight(1f))
+                SecondaryButton(action.cancelLabel, onCancel, Modifier.weight(1f))
                 PrimaryButton(action.confirmLabel, onConfirm, Modifier.weight(1f))
             }
         }

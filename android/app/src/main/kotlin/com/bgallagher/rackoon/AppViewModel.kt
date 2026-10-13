@@ -7,6 +7,7 @@ import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.data.StoredAuth
 import com.bgallagher.rackoon.core.ActionPolicy
 import com.bgallagher.rackoon.core.AptAction
+import com.bgallagher.rackoon.core.AutoReadOnly
 import com.bgallagher.rackoon.core.RebootError
 import com.bgallagher.rackoon.core.RebootOutcome
 import com.bgallagher.rackoon.core.RebootSession
@@ -56,7 +57,10 @@ import com.bgallagher.rackoon.ssh.TrustedHostKey
 import com.bgallagher.rackoon.ssh.scanHostKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -230,9 +234,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, current())
 
     /** The one gate every state-changing command goes through. Read-only is kept in step with the chip. */
-    val policy = ActionPolicy(readOnly = c.prefs.readOnly)
+    // Every launch starts in Read-only unless the user turned that off in Safety settings.
+    private val initialReadOnly = if (c.prefs.startReadOnly) true else c.prefs.readOnly
+    val policy = ActionPolicy(readOnly = initialReadOnly)
 
-    private val _readOnly = MutableStateFlow(c.prefs.readOnly)
+    private val _readOnly = MutableStateFlow(initialReadOnly)
     val readOnly: StateFlow<Boolean> = _readOnly.asStateFlow()
 
     private val _firstRun = MutableStateFlow(!c.prefs.firstRunDone)
@@ -305,7 +311,71 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // MARK: first run, read-only, tabs
 
     fun dismissFirstRun() { c.prefs.firstRunDone = true; _firstRun.value = false }
-    fun toggleReadOnly() { _readOnly.update { !it }; c.prefs.readOnly = _readOnly.value; policy.isReadOnly = _readOnly.value }
+    private fun setReadOnly(on: Boolean) { _readOnly.value = on; c.prefs.readOnly = on; policy.isReadOnly = on }
+
+    /** The Read-only chip and every "Turn off" button. Turning it ON is immediate; turning it OFF asks once. */
+    fun toggleReadOnly() {
+        if (!_readOnly.value) { setReadOnly(true); return }
+        val server = current()
+        _pending.value = PendingAction(
+            "Allow changes on ${server?.name ?: "this server"}?",
+            "Rackoon will be able to change the server: run actions, edit files and open a shell. Every change still shows the exact command and asks first.",
+            user = "", command = "", confirmLabel = "Allow changes", cancelLabel = "Keep read-only",
+            run = { setReadOnly(false) },
+        )
+    }
+
+    // MARK: Safety settings and Read-only turning itself back on
+
+    private val _startReadOnly = MutableStateFlow(c.prefs.startReadOnly)
+    val startReadOnly: StateFlow<Boolean> = _startReadOnly.asStateFlow()
+    fun setStartReadOnly(on: Boolean) { _startReadOnly.value = on; c.prefs.startReadOnly = on }
+
+    private val _autoReadOnly = MutableStateFlow(AutoReadOnly.fromKey(c.prefs.autoReadOnly))
+    val autoReadOnly: StateFlow<AutoReadOnly> = _autoReadOnly.asStateFlow()
+    fun setAutoReadOnly(mode: AutoReadOnly) { _autoReadOnly.value = mode; c.prefs.autoReadOnly = mode.key }
+
+    /** One-off messages for the snackbar ("Read-only turned back on"). */
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
+    @Volatile private var lastTouchMillis = System.currentTimeMillis()
+    /** Called for every touch in the app, so "idle" means no one has touched it. */
+    fun noteTouch() { lastTouchMillis = System.currentTimeMillis() }
+
+    /** An action is running: Read-only must not flip under it. */
+    private fun actionRunning() = _working.value != null || _updatesWorking.value != null || _reboot.value?.isActive == true || _bookmarkBusy.value != null
+
+    private fun reenableReadOnly() {
+        if (_readOnly.value) return
+        setReadOnly(true)
+        _pending.value = null
+        _messages.tryEmit("Read-only turned back on")
+    }
+
+    private fun watchIdle() {
+        viewModelScope.launch {
+            while (true) {
+                delay(5_000)
+                if (AutoReadOnly.shouldReenable(_autoReadOnly.value, _readOnly.value, lastTouchMillis, System.currentTimeMillis(), actionRunning())) reenableReadOnly()
+            }
+        }
+    }
+
+    /** The app left the screen. */
+    fun onBackgrounded() {
+        if (AutoReadOnly.shouldReenableOnBackground(_autoReadOnly.value, _readOnly.value, actionRunning())) reenableReadOnly()
+    }
+
+    // MARK: More pages (Terminal settings, Safety, About)
+
+    enum class MorePage { Terminal, Safety, About }
+    private val _morePage = MutableStateFlow<MorePage?>(null)
+    val morePage: StateFlow<MorePage?> = _morePage.asStateFlow()
+    fun showMorePage(page: MorePage?) { _morePage.value = page }
+
+    /** Edit a server from the switcher: select it, then open its settings. */
+    fun editServer(server: Server) { select(server); openSettings() }
     fun showTab(tab: Tab) { _tab.value = tab }
     fun showSwitcher(show: Boolean) { _switcher.value = show }
 
@@ -1198,7 +1268,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Last on purpose: openLive() sets state flows declared above, and property initialisers run in order.
-    init { current()?.let(::openLive) }
+    init { current()?.let(::openLive); watchIdle() }
 
     override fun onCleared() {
         live?.transport?.close()
