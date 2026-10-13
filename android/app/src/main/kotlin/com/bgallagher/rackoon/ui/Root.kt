@@ -140,6 +140,9 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
     val wide = LocalConfiguration.current.screenWidthDp >= 840
     // The More tab carries a dot when something needs attention there (Updates lives in More), from the Overview's own counts.
     val moreAlert = moreAlertText((overview as? OverviewUi.Ready)?.state?.overview)
+    // Back from any other tab goes to Overview; only from Overview does it leave the app. This is registered before the screens inside,
+    // so their own handlers (an open stack, full-screen logs) still get the first back press.
+    androidx.activity.compose.BackHandler(enabled = tab != Tab.Overview) { vm.showTab(Tab.Overview) }
     // An open stack has its own app bar (name, status, server, Read-only chip), so the shared one steps aside.
     val openStack by vm.openStack.collectAsStateWithLifecycle()
     val stackOpen = tab == Tab.Docker && openStack != null
