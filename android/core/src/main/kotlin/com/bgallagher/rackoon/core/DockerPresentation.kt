@@ -91,3 +91,19 @@ fun DockerContainer.usageText(formatBytes: (Long) -> String): String {
     val mem = memoryUsedBytes
     return if (cpu == null || mem == null) "—" else "${"%.0f".format(cpu)}% · ${formatBytes(mem)}"
 }
+
+/** A container image split for display: the repository (which may be shortened in the middle) and the tag, which is never cut. */
+data class ImageName(val repository: String, val tag: String?) {
+    companion object {
+        fun parse(image: String): ImageName {
+            val at = image.indexOf('@')
+            if (at >= 0) {
+                val digest = image.substring(at + 1)
+                return ImageName(image.substring(0, at), "@" + digest.take(19))
+            }
+            val colon = image.lastIndexOf(':')
+            // A colon before the last slash belongs to a registry port (localhost:5000/app), not to a tag.
+            return if (colon > image.lastIndexOf('/') && colon >= 0) ImageName(image.substring(0, colon), image.substring(colon)) else ImageName(image, null)
+        }
+    }
+}

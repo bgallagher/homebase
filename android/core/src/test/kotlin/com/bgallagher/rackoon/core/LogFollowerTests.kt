@@ -115,12 +115,14 @@ class LogViewTests {
         assertEquals(listOf(2), LogView.filtered(e, focus = "db", level = LogLevel.WARN, search = "slow").map { it.id })
     }
 
-    @Test fun `prose is not a level and counts follow the focus`() {
+    @Test fun `prose is not a level but counts as info so the chips add up`() {
         val counts = LogView.counts(entries())
         assertEquals(4, counts[null])
         assertEquals(1, counts[LogLevel.ERROR])
         assertEquals(1, counts[LogLevel.WARN])
-        assertEquals(1, counts[LogLevel.INFO])
+        assertEquals(2, counts[LogLevel.INFO], "the INFO line and the prose line")
+        assertEquals(counts[null], LogLevel.entries.sumOf { counts[it] ?: 0 }, "level chips sum to All")
+        assertEquals(listOf(0, 3), LogView.filtered(entries(), level = LogLevel.INFO).map { it.id })
         val web = LogView.counts(entries(), focus = "web")
         assertEquals(2, web[null])
         assertNull(web[LogLevel.WARN])

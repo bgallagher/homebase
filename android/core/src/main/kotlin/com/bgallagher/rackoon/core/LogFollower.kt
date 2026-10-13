@@ -129,10 +129,13 @@ class LogFollower(
 
 /** Filtering for the log view: which container, which level, which text. Pure, so it is tested without a screen. */
 object LogView {
+    /** A line with no recognised level counts as Info, so the level chips always add up to All. */
+    private val LogEntry.chipLevel: LogLevel get() = level ?: LogLevel.INFO
+
     fun filtered(entries: List<LogEntry>, focus: String? = null, level: LogLevel? = null, search: String = ""): List<LogEntry> {
         val needle = search.trim()
         return entries.filter { e ->
-            (focus == null || e.source == focus) && (level == null || e.level == level) &&
+            (focus == null || e.source == focus) && (level == null || e.chipLevel == level) &&
                 (needle.isEmpty() || e.line.contains(needle, ignoreCase = true))
         }
     }
@@ -140,7 +143,7 @@ object LogView {
     /** Counts for the level chips, from the lines of the focused container (before the level and search filters). */
     fun counts(entries: List<LogEntry>, focus: String? = null): Map<LogLevel?, Int> {
         val scoped = if (focus == null) entries else entries.filter { it.source == focus }
-        return scoped.groupingBy { it.level }.eachCount() + (null to scoped.size)   // null = All
+        return scoped.groupingBy<LogEntry, LogLevel?> { it.chipLevel }.eachCount() + (null to scoped.size)   // null = All
     }
 
     /** What Copy puts on the clipboard: the visible lines, tagged with their container when several are mixed. */

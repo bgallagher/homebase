@@ -53,4 +53,13 @@ class DockerPresentationTests {
         assertEquals("—", c("a").usageText(fmt))
         assertEquals("exited", c("a", state = "exited").usageText(fmt))
     }
+
+    @Test fun `an image splits into repository and tag`() {
+        assertEquals(ImageName("ghcr.io/immich-app/immich-machine-learning", ":release"), ImageName.parse("ghcr.io/immich-app/immich-machine-learning:release"))
+        assertEquals(ImageName("redis", ":7"), ImageName.parse("redis:7"))
+        assertEquals(ImageName("redis", null), ImageName.parse("redis"))
+        assertEquals(ImageName("localhost:5000/app", null), ImageName.parse("localhost:5000/app"))
+        assertEquals(ImageName("localhost:5000/app", ":2"), ImageName.parse("localhost:5000/app:2"))
+        assertEquals(ImageName("nginx", "@sha256:0123456789ab"), ImageName.parse("nginx@sha256:0123456789abcdef0123"))
+    }
 }

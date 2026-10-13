@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -63,7 +66,7 @@ import kotlinx.coroutines.launch
 
 /** The stack's Logs tab (the design's Logs and LogsFiltered boards): every container merged, filterable, followable. */
 @Composable
-fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
+fun LogsPanel(vm: AppViewModel, stack: DockerStack, fullScreen: Boolean = false, onToggleFullScreen: () -> Unit = {}) {
     val c = Rackoon.colors
     val logs by vm.logs.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -101,43 +104,19 @@ fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
     LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1500); copied = false } }
     val expanded = remember { mutableStateMapOf<Int, Boolean>() }
 
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var compact by rememberSaveable { mutableStateOf(false) }
+    var overflow by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        // Which container
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (names.size > 1) Chip("All containers", effectiveFocus == null, c.textSecondary) { focus = null }
-            names.forEachIndexed { i, n -> Chip(n, effectiveFocus == n || names.size == 1, c.series[i % c.series.size].label, dot = true) { focus = if (names.size == 1) null else n } }
-        }
-        // Which level
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LevelChip("All", counts[null] ?: 0, level == null) { level = null }
-            LevelChip("Error", counts[LogLevel.ERROR] ?: 0, level == LogLevel.ERROR) { level = LogLevel.ERROR }
-            LevelChip("Warn", counts[LogLevel.WARN] ?: 0, level == LogLevel.WARN) { level = LogLevel.WARN }
-            LevelChip("Info", counts[LogLevel.INFO] ?: 0, level == LogLevel.INFO) { level = LogLevel.INFO }
-        }
-        // Search, follow state, copy
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(c.card).padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(RackoonIcons.Search, null, tint = c.textMuted, modifier = Modifier.size(16.dp))
-                Box(Modifier.weight(1f)) {
-                    if (search.isEmpty()) Text("Search logs", color = c.textMuted, fontSize = 14.sp)
-                    BasicTextField(
-                        search, { search = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        textStyle = androidx.compose.ui.text.TextStyle(color = c.textPrimary, fontSize = 14.sp), cursorBrush = SolidColor(c.textPrimary),
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                    )
-                }
-                if (search.isNotEmpty()) Icon(RackoonIcons.Close, "Clear search", tint = c.textMuted, modifier = Modifier.size(16.dp).clickable { search = "" })
-            }
+        // Row 1: whether the log is following, then which container.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val (label, color) = when {
                 !logs.live && logs.entries.isNotEmpty() -> "Ended" to c.textMuted
-                following -> "Following" to c.ok
-                else -> "Paused" to c.warn
+                following -> "Following" to c.okRole.mark
+                else -> "Paused" to c.warnRole.mark
             }
             Row(
-                Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).border(1.dp, c.border, RoundedCornerShape(22.dp))
+                Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, c.border, RoundedCornerShape(20.dp))
                     .clickable { if (!following) { following = true; scope.launch { if (shown.isNotEmpty()) listState.scrollToItem(shown.lastIndex) } } else { following = false; pausedAt = logs.received } }
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -145,9 +124,55 @@ fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(color))
                 Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
             }
-            IconTap(RackoonIcons.Copy, if (copied) "Copied" else "Copy visible logs", if (copied) c.ok else c.textSecondary, {
-                scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Logs", LogView.text(shown, showSource)))); copied = true }
-            })
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(end = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (names.size > 1) Chip("All containers", effectiveFocus == null, c.textSecondary) { focus = null }
+                names.forEachIndexed { i, n -> Chip(n, effectiveFocus == n || names.size == 1, c.series[i % c.series.size].label, dot = true) { focus = if (names.size == 1) null else n } }
+            }
+        }
+        // Row 2: which level, with search and the rest behind icons. Search opens in place of the chips.
+        if (searching) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(c.card).padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(RackoonIcons.Search, null, tint = c.textMuted, modifier = Modifier.size(16.dp))
+                    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+                    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                    Box(Modifier.weight(1f)) {
+                        if (search.isEmpty()) Text("Search logs", color = c.textMuted, fontSize = 14.sp)
+                        BasicTextField(
+                            search, { search = it }, singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = c.textPrimary, fontSize = 14.sp), cursorBrush = SolidColor(c.textPrimary),
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                        )
+                    }
+                    if (search.isNotEmpty()) Icon(RackoonIcons.Close, "Clear search", tint = c.textMuted, modifier = Modifier.size(16.dp).clickable { search = "" })
+                }
+                IconTap(RackoonIcons.Close, "Close search", c.textSecondary, { searching = false; search = "" })
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LevelChip("All", counts[null] ?: 0, level == null) { level = null }
+                    LevelChip("Error", counts[LogLevel.ERROR] ?: 0, level == LogLevel.ERROR) { level = LogLevel.ERROR }
+                    LevelChip("Warn", counts[LogLevel.WARN] ?: 0, level == LogLevel.WARN) { level = LogLevel.WARN }
+                    LevelChip("Info", counts[LogLevel.INFO] ?: 0, level == LogLevel.INFO) { level = LogLevel.INFO }
+                    if ((counts[LogLevel.DEBUG] ?: 0) > 0 || level == LogLevel.DEBUG) LevelChip("Debug", counts[LogLevel.DEBUG] ?: 0, level == LogLevel.DEBUG) { level = LogLevel.DEBUG }
+                }
+                IconTap(RackoonIcons.Search, if (search.isNotEmpty()) "Search logs (filter on)" else "Search logs", if (search.isNotEmpty()) c.accent else c.textSecondary, { searching = true })
+                Box {
+                    IconTap(RackoonIcons.More, "Logs options", c.textSecondary, { overflow = true })
+                    DropdownMenu(overflow, { overflow = false }, containerColor = c.selection) {
+                        DropdownMenuItem(text = { Text(if (copied) "Copied" else "Copy visible logs", color = c.textPrimary) }, onClick = {
+                            overflow = false
+                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Logs", LogView.text(shown, showSource)))); copied = true }
+                        })
+                        DropdownMenuItem(text = { Text(if (compact) "Two-line entries" else "Compact entries", color = c.textPrimary) }, onClick = { overflow = false; compact = !compact })
+                        DropdownMenuItem(text = { Text(if (fullScreen) "Exit full screen" else "Full screen", color = c.textPrimary) }, onClick = { overflow = false; onToggleFullScreen() })
+                    }
+                }
+            }
         }
         logs.error?.let { Text(it, color = c.danger, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
 
@@ -159,7 +184,7 @@ fun LogsPanel(vm: AppViewModel, stack: DockerStack) {
                 )
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
                     items(shown, key = { it.id }) { entry ->
-                        LogRow(entry, c.series[names.indexOf(entry.source).coerceAtLeast(0) % c.series.size].label, showSource, expanded[entry.id] == true) { expanded[entry.id] = expanded[entry.id] != true }
+                        LogRow(entry, c.series[names.indexOf(entry.source).coerceAtLeast(0) % c.series.size].label, showSource, compact, expanded[entry.id] == true) { expanded[entry.id] = expanded[entry.id] != true }
                         HorizontalDivider(color = c.border.copy(alpha = 0.5f))
                     }
                 }
@@ -205,23 +230,33 @@ private fun LevelChip(label: String, count: Int, on: Boolean, onClick: () -> Uni
 }
 
 @Composable
-private fun LogRow(entry: LogEntry, sourceColor: Color, showSource: Boolean, expanded: Boolean, onToggle: () -> Unit) {
+private fun LogRow(entry: LogEntry, sourceColor: Color, showSource: Boolean, compact: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     val c = Rackoon.colors
     val p = entry.parts
     val levelColor = when (p.level) { LogLevel.ERROR -> c.dangerRole.label; LogLevel.WARN -> c.warnRole.label; LogLevel.INFO -> c.info.label; LogLevel.DEBUG -> c.textDim; null -> c.textDim }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                p.time?.let { Text(shortTime(it), fontFamily = MonoFamily, fontSize = 11.sp, color = c.textDim) }
-                if (showSource) Text(entry.source, fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = sourceColor)
-                p.level?.let { Text(it.name, fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = levelColor) }
+    val message: @Composable (Modifier) -> Unit = { m ->
+        Text(
+            p.message, fontFamily = MonoFamily, fontSize = 12.sp, lineHeight = 17.sp, color = if (p.level == LogLevel.DEBUG) c.textDim else c.textPrimary,
+            maxLines = if (expanded) Int.MAX_VALUE else if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, modifier = m,
+        )
+    }
+    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = if (compact) 4.dp else 5.dp), verticalAlignment = Alignment.Top) {
+        if (compact && !expanded) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                p.time?.let { Text(shortTime(it), fontFamily = MonoFamily, fontSize = 11.sp, lineHeight = 14.sp, color = c.textDim) }
+                if (showSource) Text(entry.source, fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = sourceColor, maxLines = 1)
+                p.level?.let { Text(it.name.take(4), fontFamily = MonoFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = levelColor) }
+                message(Modifier.weight(1f))
             }
-            Text(
-                p.message, fontFamily = MonoFamily, fontSize = 12.sp, lineHeight = 17.sp, color = if (p.level == LogLevel.DEBUG) c.textMuted else c.textPrimary,
-                maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
-            )
+        } else Column(Modifier.weight(1f)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                p.time?.let { Text(shortTime(it), fontFamily = MonoFamily, fontSize = 11.sp, lineHeight = 14.sp, color = c.textDim) }
+                if (showSource) Text(entry.source, fontFamily = MonoFamily, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold, color = sourceColor)
+                p.level?.let { Text(it.name, fontFamily = MonoFamily, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = levelColor) }
+            }
+            message(Modifier.padding(top = 1.dp))
         }
-        // Long messages are cut to two lines; the arrow opens the whole thing.
+        // Long messages are cut; the arrow opens the whole thing.
         if (p.message.length > 70 || expanded) Icon(
             if (expanded) RackoonIcons.ChevronDown else RackoonIcons.ChevronRight, if (expanded) "Collapse entry" else "Expand entry",
             tint = c.textMuted, modifier = Modifier.padding(start = 6.dp, top = 2.dp).size(16.dp),

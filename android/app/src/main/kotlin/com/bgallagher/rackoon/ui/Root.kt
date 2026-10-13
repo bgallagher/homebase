@@ -140,10 +140,13 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
     val wide = LocalConfiguration.current.screenWidthDp >= 840
     // The More tab carries a dot when something needs attention there (Updates lives in More), from the Overview's own counts.
     val moreAlert = moreAlertText((overview as? OverviewUi.Ready)?.state?.overview)
+    // An open stack has its own app bar (name, status, server, Read-only chip), so the shared one steps aside.
+    val openStack by vm.openStack.collectAsStateWithLifecycle()
+    val stackOpen = tab == Tab.Docker && openStack != null
     Row(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         if (wide) NavRail(tab, vm::showTab, moreAlert)
         Column(Modifier.weight(1f).fillMaxSize()) {
-            TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
+            if (!stackOpen) TopBar(server.name, statusColor(overview), readOnly, onSwitcher = { vm.showSwitcher(true) }, onReadOnly = vm::toggleReadOnly)
             Box(Modifier.weight(1f)) {
                 when (tab) {
                     Tab.Overview -> {

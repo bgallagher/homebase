@@ -184,8 +184,8 @@ internal fun LinkRow(stack: DockerStack, big: Boolean = false) {
             Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(8.dp)).clickable { runCatching { uri.openUri(first.href) } },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(RackoonIcons.External, "Open", tint = c.accent, modifier = Modifier.size(14.dp))
-            Text(first.shortAddress() + if (more > 0) "  +$more more" else "", color = c.accent, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Icon(RackoonIcons.External, "Open", tint = c.textMuted, modifier = Modifier.size(14.dp))
+            Text(first.shortAddress() + if (more > 0) "  +$more more" else "", color = c.textPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             ScopeTag(first.href)
         }
     }
