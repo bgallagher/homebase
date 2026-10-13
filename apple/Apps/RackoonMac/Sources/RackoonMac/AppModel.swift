@@ -97,6 +97,9 @@ final class AppModel {
     private(set) var reboots: [String: RebootFlow] = [:]
     /// A reboot waiting for the user's yes (shown as a sheet by the Overview screen).
     var pending: PendingAction?
+    /// What a verbose ssh attempt found after the server refused the login (which keys were offered, what it accepts),
+    /// for the Overview's explanation. Nil until a login fails; cleared when a poll succeeds or the server changes.
+    private(set) var authAttempt: SSHAttempt?
 
     private let store: ServerStore
     private let verifier = HostKeyVerifier()
@@ -142,6 +145,22 @@ final class AppModel {
         if selectedID == server.id, phase == .idle { connect(server) }
     }
 
+    /// Saves an edited server. Returns true when its connection details changed (host, user, port, key file or the ssh
+    /// config link), in which case the caller drops what it holds for the old address (terminal tabs, Docker models) and
+    /// the selected server reconnects. A rename alone changes nothing live.
+    @discardableResult
+    func update(_ server: Server) -> Bool {
+        guard let i = servers.firstIndex(where: { $0.id == server.id }) else { return false }
+        let before = servers[i]
+        servers[i] = server
+        persist()
+        guard !before.connectsLike(server) else { return false }
+        // A snapshot taken from another address would be painted as this server's past: drop it.
+        if before.host != server.host { store.deleteSnapshot(serverID: server.id) }
+        if server.id == selectedID { connect(server) }   // drops the old session and starts from the host-key check
+        return true
+    }
+
     func remove(_ server: Server) {
         servers.removeAll { $0.id == server.id }
         store.deleteSnapshot(serverID: server.id)
@@ -179,10 +198,20 @@ final class AppModel {
     private(set) var refreshing = false
 
     func refresh() {
-        guard let session, !refreshing else { return }
+        guard !refreshing else { return }
+        guard let session else {
+            // Nothing is polling (the host key was blocked, or the trust sheet was declined): start over from the check.
+            if let selected { connect(selected) }
+            return
+        }
         refreshing = true
+        let server = selected
         Task {
             await session.refresh()
+            // Still refused after a manual retry: look again at which keys ssh offers, in case the user changed them.
+            if let server, !Demo.isOn, let error = await session.state.error, ConnectionFailure.isAuthRefused(error) {
+                authAttempt = await AuthProbe.attempt(server)
+            }
             try? await Task.sleep(for: .milliseconds(500))   // long enough to be seen when the answer is instant
             refreshing = false
         }
@@ -212,6 +241,7 @@ final class AppModel {
         disconnect()
         // Paint the last known data straight away, marked stale until the first poll lands.
         state = ServerState()
+        authAttempt = nil
         if let cached = store.loadSnapshot(serverID: server.id) {
             state.overview = cached.overview
             state.attention = Attention.evaluate(cached.overview)
@@ -230,6 +260,13 @@ final class AppModel {
                 // Unreachable right now: keep polling so it recovers when the network returns.
                 state.error = message
                 startSession(for: server)
+            case .authFailed(let message):
+                // The host key is fine but the login was refused. Keep polling (it recovers once the key is sorted out)
+                // and find out, verbosely, which keys ssh offered, so the Overview can say what to do.
+                state.error = message
+                startSession(for: server)
+                let attempt = await AuthProbe.attempt(server)
+                if !Task.isCancelled { authAttempt = attempt }
             case .unknown(let offer):
                 phase = .needsTrust(offer)
             case .changed(let message):
@@ -249,7 +286,10 @@ final class AppModel {
         self.session = session
         phase = .polling
         listener = Task { [weak self] in
-            for await next in await session.updates() { self?.state = next }
+            for await next in await session.updates() {
+                self?.state = next
+                if next.error == nil { self?.authAttempt = nil }   // logged in: the diagnosis is history
+            }
         }
         Task { await session.start() }
     }

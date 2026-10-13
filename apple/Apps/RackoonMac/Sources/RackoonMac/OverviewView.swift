@@ -6,6 +6,7 @@ struct OverviewView: View {
     let server: Server
     let openTerminal: () -> Void
     let openScreen: (String) -> Void
+    let editServer: () -> Void
 
     var body: some View {
         let state = model.state
@@ -20,11 +21,15 @@ struct OverviewView: View {
                     }
                     if !state.attention.isEmpty { AttentionStrip(items: state.attention, open: openScreen) }
                     // While it reboots the failing polls are expected, not news.
-                    if let error = state.error, model.reboots[server.id]?.isActive != true { ErrorBanner(message: error) }
+                    if let error = state.error, model.reboots[server.id]?.isActive != true {
+                        ConnectionProblem(raw: error, attempt: model.authAttempt, edit: editServer)
+                    }
                     cards(o, cpu: state.cpuPercent)
                     SystemInfoCard(o: o, polledAt: state.updatedAt)
                 } else if let error = state.error {
-                    ErrorBanner(message: error)
+                    // Never connected (or nothing cached): the problem is the whole page, with the way out of it.
+                    Text(server.name).font(.system(size: 26, weight: .bold)).tracking(-0.4)
+                    ConnectionProblem(raw: error, attempt: model.authAttempt, retry: model.refresh, retrying: model.refreshing, edit: editServer)
                 } else {
                     HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Connecting to \(server.name)…") }
                         .foregroundStyle(Theme.textMuted)
@@ -277,6 +282,45 @@ struct ErrorBanner: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// The connection failed: ssh's own message, what it means and what to do (`ConnectionFailure`, Core), with the way to
+/// the Edit Connection sheet. With `retry` it also offers Try Again (the page with nothing else on it).
+struct ConnectionProblem: View {
+    let raw: String
+    var attempt: SSHAttempt?
+    var retry: (() -> Void)?
+    var retrying = false
+    let edit: () -> Void
+
+    var body: some View {
+        let failure = ConnectionFailure.explain(raw, attempt: attempt)
+        VStack(alignment: .leading, spacing: 10) {
+            Label(failure?.headline ?? "Not connected", systemImage: "wifi.exclamationmark")
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.danger)
+            Text(raw).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            if let advice = failure?.advice {
+                Text(advice).font(.system(size: 13)).foregroundStyle(Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Button("Edit Connection…", action: edit).buttonStyle(.borderedProminent).handCursor()
+                if let retry {
+                    Button(action: retry) {
+                        if retrying { Label { Text("Trying…") } icon: { ProgressView().controlSize(.small) } }
+                        else { Label("Try Again", systemImage: "arrow.clockwise") }
+                    }
+                    .buttonStyle(.bordered).handCursor().disabled(retrying)
+                }
+            }
+            .controlSize(.large).padding(.top, 2)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.danger.opacity(0.35)))
     }
 }
 

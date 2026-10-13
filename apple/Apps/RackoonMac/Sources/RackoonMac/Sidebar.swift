@@ -63,6 +63,7 @@ struct Sidebar: View {
     let status: ConnectionStatus
     var updates: UpdateBadge?
     let onSelect: (Server) -> Void
+    let onEdit: (Server) -> Void
     let onRemove: (Server) -> Void
     let onAddServer: () -> Void
 
@@ -88,7 +89,11 @@ struct Sidebar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.pointer)
-                        .contextMenu { Button("Remove \(server.name)", role: .destructive) { onRemove(server) } }
+                        .contextMenu {
+                            Button("Edit Connection…") { onEdit(server) }
+                            Divider()
+                            Button("Remove \(server.name)", role: .destructive) { onRemove(server) }
+                        }
                     }
                     Button(action: onAddServer) {
                         Label("Add server", systemImage: "plus")
