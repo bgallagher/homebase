@@ -39,6 +39,7 @@ final class SystemInfoParserTests: XCTestCase {
         func script(_ id: String) -> String? { commands.first { $0["id"] as? String == id }?["script"] as? String }
         XCTAssertEqual(RebootSession.bootIDCommand, script("boot_id"))
         XCTAssertEqual(RebootSession.rebootCommand, script("reboot"))
+        XCTAssertEqual(RebootSession.sudoRebootCommand, script("reboot_sudo"))
         XCTAssertEqual(ServerSession.overviewCommand, script("overview"))
     }
 }
@@ -84,6 +85,54 @@ final class RebootSessionTests: XCTestCase {
         guard case .back(let elapsed) = outcome else { return XCTFail("\(outcome)") }
         XCTAssertGreaterThan(elapsed, 0)
         XCTAssertEqual(t.commands.filter { $0 == RebootSession.bootIDCommand }.count, 5, "1 before + 4 polls")
+    }
+
+    func testPasswordRebootSendsThePasswordOnStdinAndNowhereElse() async throws {
+        let t = FakeTransport([ok("aaa-111\n"), ok("##rebooting\n"), ok("bbb-222\n")])
+        let session = RebootSession(transport: t)
+        try await session.reboot(sudoPassword: "hunter2", confirmation: try session.confirmSudo())
+        XCTAssertEqual(t.commands, [RebootSession.bootIDCommand, RebootSession.sudoRebootCommand])
+        XCTAssertEqual(t.inputs, ["hunter2\n"], "the password goes to sudo -S through stdin, with the newline sudo waits for")
+        XCTAssertFalse(t.commands.contains { $0.contains("hunter2") }, "never in a command line (ps on the server, logs, the confirm sheet)")
+        XCTAssertFalse(RebootSession.sudoIntent.command.contains("hunter2"))
+        // The reboot was scheduled, so the wait loop runs and sees the new boot id.
+        let outcome = await session.waitForReturn(timeout: 60, interval: 0, sleep: { _ in })
+        guard case .back = outcome else { return XCTFail("\(outcome)") }
+    }
+
+    func testPasswordRebootNeedsItsOwnConfirmation() async throws {
+        let t = FakeTransport([ok("aaa\n"), ok("##rebooting\n")])
+        let session = RebootSession(transport: t)
+        do { try await session.reboot(sudoPassword: "x", confirmation: try session.confirm()); XCTFail() }
+        catch { XCTAssertEqual(error as? PolicyError, .notConfirmed, "a yes to the plain reboot is not a yes to the sudo one") }
+        XCTAssertTrue(t.commands.isEmpty)
+        let ro = RebootSession(transport: t, policy: ActionPolicy(readOnly: true))
+        XCTAssertThrowsError(try ro.confirmSudo()) { XCTAssertEqual($0 as? PolicyError, .readOnly) }
+    }
+
+    func testWrongPasswordSchedulesNothingAndCanBeRetried() async throws {
+        let refused = CommandResult(stdout: "Sorry, try again.\nsudo: 1 incorrect password attempt\n##sudo-failed\n", exitCode: 6)
+        let t = FakeTransport([ok("aaa\n"), .success(refused), ok("aaa\n"), ok("##rebooting\n")])
+        let session = RebootSession(transport: t)
+        do { try await session.reboot(sudoPassword: "wrong", confirmation: try session.confirmSudo()); XCTFail() }
+        catch { XCTAssertEqual(error as? RebootError, .badPassword) }
+        let nothing = await session.waitForReturn(timeout: 5, interval: 0, sleep: { _ in })
+        XCTAssertEqual(nothing, .timedOut, "nothing to wait for")
+        try await session.reboot(sudoPassword: "right", confirmation: try session.confirmSudo())
+        XCTAssertEqual(t.inputs, ["wrong\n", "right\n"])
+    }
+
+    func testSudoRefusalsAreExplained() {
+        typealias R = RebootSession
+        XCTAssertEqual(R.classifySudoFailure("sudo: no password was provided\n##sudo-failed", exitCode: 6), .badPassword)
+        XCTAssertEqual(R.classifySudoFailure("\nsudo: Authentication failed, try again.\n\nsudo: Authentication required but not attempted\n##sudo-failed\n", exitCode: 6),
+                       .badPassword, "sudo 1.9.16+ wording, captured on Ubuntu 26.04")
+        guard case .sudoRefused(let tty) = R.classifySudoFailure("sudo: sorry, you must have a tty to run sudo\n##sudo-failed", exitCode: 6) else { return XCTFail() }
+        XCTAssertTrue(tty.contains("terminal"))
+        guard case .sudoRefused(let rights) = R.classifySudoFailure("lab is not in the sudoers file.  This incident will be reported.\n##sudo-failed", exitCode: 6) else { return XCTFail() }
+        XCTAssertTrue(rights.contains("not allowed to use sudo"))
+        XCTAssertEqual(R.classifySudoFailure("sh: 1: systemctl: not found\n##sudo-failed\n", exitCode: 6), .failed("sh: 1: systemctl: not found"))
+        XCTAssertEqual(R.classifySudoFailure("", exitCode: 255), .failed("The reboot command failed (exit 255)."))
     }
 
     func testTimesOutIfTheServerNeverComesBack() async throws {

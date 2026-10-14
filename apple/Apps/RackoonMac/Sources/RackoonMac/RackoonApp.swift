@@ -101,6 +101,8 @@ struct AppActions {
     var addServer: () -> Void
     /// Opens the Edit Connection sheet for the selected server.
     var editServer: () -> Void
+    /// Forgets the selected server's saved sudo password; nil when none is saved.
+    var forgetSudoPassword: (() -> Void)?
     var refresh: () -> Void
     var openTerminalHere: () -> Void
     var ipAddress: String?
@@ -253,6 +255,8 @@ struct ServerCommands: Commands {
             Button("Edit Connection…") { actions?.editServer() }
                 .keyboardShortcut("i")
                 .disabled(!hasServer)
+            Button("Forget Saved Sudo Password") { actions?.forgetSudoPassword?() }
+                .disabled(actions?.forgetSudoPassword == nil)
         }
     }
 }
@@ -396,6 +400,9 @@ struct ContentView: View {
             selectServer: { server in selection = .overview; model.select(server) },
             addServer: { showingAdd = true },
             editServer: { editing = model.selected },
+            forgetSudoPassword: model.selected.flatMap { server in
+                SudoVault.shared.remembered.contains(server.id) ? { SudoVault.shared.forget(server.id) } : nil
+            },
             refresh: { model.refresh() },
             openTerminalHere: {
                 guard let server = model.selected else { return }
@@ -453,7 +460,9 @@ struct ContentView: View {
                         selection = .terminal
                     }).id(server.id)
                 case .updates:
-                    UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.id)
+                    // Keyed by the connection, not just the id: after Edit Connection the model (and its transport)
+                    // must be rebuilt, or a sudo password would go to the old address.
+                    UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.connectionKey)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:

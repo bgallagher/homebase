@@ -195,6 +195,16 @@ struct EditServerSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit connection").font(.title2.bold())
             ServerForm(fields: $fields, original: server)
+            if SudoVault.shared.remembered.contains(server.id) {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill").foregroundStyle(Theme.accent)
+                    Text("A sudo password is saved on this Mac for this server. Changing the host, user, port or key file forgets it.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Forget") { SudoVault.shared.forget(server.id) }.handCursor()
+                }
+                .padding(10).card()
+            }
             if let problem = fields.problem {
                 Text(problem).font(.system(size: 12)).foregroundStyle(Theme.warn)
             }

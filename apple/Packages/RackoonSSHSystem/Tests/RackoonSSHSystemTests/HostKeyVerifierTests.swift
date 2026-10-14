@@ -42,3 +42,27 @@ final class OpenSSHArgumentsTests: XCTestCase {
         XCTAssertFalse(OpenSSHTransport.terminalArguments(for: Server(name: "x", host: "x")).contains("-i"))
     }
 }
+
+final class ControlDirectoryTests: XCTestCase {
+    func testOnlyAPrivateRealDirectoryOfOurOwnIsUsed() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("rk-ctl-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let good = base.appendingPathComponent("good").path, open = base.appendingPathComponent("open").path
+        let link = base.appendingPathComponent("link").path
+        XCTAssertEqual(mkdir(good, 0o700), 0)
+        XCTAssertEqual(mkdir(open, 0o700), 0)
+        XCTAssertEqual(chmod(open, 0o755), 0)
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: good)
+        XCTAssertTrue(OpenSSHTransport.isPrivateDirectory(good))
+        XCTAssertFalse(OpenSSHTransport.isPrivateDirectory(open), "others can enter it")
+        XCTAssertFalse(OpenSSHTransport.isPrivateDirectory(link), "a symlink, even to a good folder")
+        XCTAssertFalse(OpenSSHTransport.isPrivateDirectory(base.appendingPathComponent("missing").path))
+        XCTAssertTrue(OpenSSHTransport.isPrivateDirectory(OpenSSHTransport.controlDirectory()))
+        XCTAssertTrue(OpenSSHTransport.isPrivateDirectory(OpenSSHTransport.fallbackControlDirectory))
+        // ssh's socket path: folder + "/" + 40-char %C hash + 17-char temporary suffix, under the 104-byte limit.
+        for dir in [OpenSSHTransport.controlDirectory(), OpenSSHTransport.fallbackControlDirectory] {
+            XCTAssertLessThan(dir.utf8.count + 1 + 40 + 17, 104, dir)
+        }
+    }
+}

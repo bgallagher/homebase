@@ -41,6 +41,14 @@ public enum AptAction: Sendable, Equatable {
         return Intent(summary: summary, command: command, risk: .mutate)
     }
 
+    /// The same action for a user whose sudo wants a password (`SudoElevation`): a separate intent, so a yes to the
+    /// plain one never authorises it.
+    /// `nonce` must be the one the run will use (`SudoCredential`).
+    public func passwordIntent(nonce: String) -> Intent? {
+        guard let plain = intent, let command = SudoElevation.withPassword(plain.command, nonce: nonce) else { return nil }
+        return Intent(summary: plain.summary + " (with sudo password)", command: command, risk: .mutate)
+    }
+
     /// Debian policy: lowercase letters, digits, `+`, `-`, `.`; at least two characters, starting alphanumeric.
     static func isPackageName(_ name: String) -> Bool {
         guard name.count >= 2, let first = name.first, first.isASCII, first.isLowercase || first.isNumber else { return false }
@@ -52,7 +60,7 @@ public enum AptAction: Sendable, Equatable {
     public static func explain(stdout: String = "", stderr: String, exitCode: Int32) -> String {
         let lines = (stderr + "\n" + stdout).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         if lines.contains(where: { $0.hasPrefix("sudo:") }) {
-            return "This user can't run apt with sudo without a password. Use root, or allow passwordless sudo for apt-get."
+            return "This user can't run apt with sudo without a password. Enter the password when asked, use root, or allow passwordless sudo for apt-get."
         }
         if lines.contains(where: { $0.contains("Could not get lock") || $0.contains("Unable to acquire the dpkg") }) {
             return "Another package manager is running on the server (apt lock held). Try again in a minute."
