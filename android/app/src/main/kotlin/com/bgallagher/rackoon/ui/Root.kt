@@ -93,7 +93,7 @@ fun RackoonRoot(vm: AppViewModel) {
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     Box(Modifier.fillMaxSize().background(Rackoon.colors.background)) {
         when {
-            settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings)
+            settings != null -> ServerSettingsScreen(settings!!, vm::editSettings, vm::saveSettings, vm::closeSettings, vm::forgetHostKey, vm::removeFromSettings, vm::trustSettingsKey, vm::declineSettingsTrust)
             addOpen -> AddContainerScreen(vm, readOnly)
             editorFile != null -> EditorScreen(vm, editorFile!!, readOnly)
             bookmarksOpen -> BookmarksScreen(vm, readOnly, onBack = { vm.showBookmarks(false) })
@@ -156,7 +156,7 @@ private fun Shell(vm: AppViewModel, server: Server, overview: OverviewUi, tab: T
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
                         // Poll only while the screen is visible: no background work, no battery cost when the phone is in a pocket.
                         LaunchedEffect(server.id) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.pollWhileVisible() } }
-                        OverviewScreen(overview, wide, reboot, serverName = server.name, readOnly = readOnly, onReboot = vm::requestReboot, onDismissReboot = vm::dismissReboot, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }.also { if (fix == "updates") vm.showUpdates(true) }) })
+                        OverviewScreen(overview, wide, reboot, serverName = server.name, readOnly = readOnly, onReboot = vm::requestReboot, onDismissReboot = vm::dismissReboot, onRefresh = vm::refreshNow, onTrustFirstKey = vm::trustPresented, onEditConnection = vm::openSettings, signIn = remember(server.id, overview) { vm.signInOf(server) }, onBack = { vm.showSwitcher(true) }, onOpenFix = { fix -> vm.showTab(when (fix) { "docker" -> Tab.Docker; "terminal" -> Tab.Terminal; else -> Tab.Overview }.also { if (fix == "updates") vm.showUpdates(true) }) })
                     }
                     Tab.Docker -> {
                         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -293,7 +293,7 @@ private fun MoreScreen(vm: AppViewModel, serverName: String, updatesNote: String
             MoreDivider()
             MoreRow("Bookmarks", "Links to your services") { vm.showBookmarks(true) }
             MoreDivider()
-            MoreRow("Server settings", "Name and sign-in for $serverName") { vm.openSettings() }
+            MoreRow("Server settings", "Name, address and sign-in for $serverName") { vm.openSettings() }
         }
         MoreSection("SERVERS") {
             MoreRow("Servers", "$serversNote saved · switch, add or remove") { vm.showSwitcher(true) }

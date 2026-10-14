@@ -20,4 +20,12 @@ data class Server(
 ) {
     /** The `[user@]host` form. */
     val sshDestination: String get() = if (!user.isNullOrEmpty()) "$user@$host" else host
+
+    /**
+     * True when both describe the same connection: everything but the id and the display name. A saved edit that only
+     * renames a server must not reconnect it.
+     */
+    fun connectsLike(other: Server): Boolean =
+        host == other.host && user == other.user && port == other.port &&
+            sshConfigAlias == other.sshConfigAlias && identityFile == other.identityFile
 }

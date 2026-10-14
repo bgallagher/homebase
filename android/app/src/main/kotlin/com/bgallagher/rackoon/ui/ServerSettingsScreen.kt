@@ -3,6 +3,7 @@ package com.bgallagher.rackoon.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,20 +28,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bgallagher.rackoon.SettingsForm
+import com.bgallagher.rackoon.core.ServerInput
 import com.bgallagher.rackoon.data.AuthKind
 import com.bgallagher.rackoon.ui.theme.Rackoon
 import com.bgallagher.rackoon.ui.theme.RackoonIcons
 import java.text.DateFormat
 import java.util.Date
 
-/** More > Server settings: rename, change the sign-in, forget the trusted host key, remove the server. */
+/** More > Server settings: rename, change the address and the sign-in, forget the trusted host key, remove the server. */
 @Composable
 fun ServerSettingsScreen(
     form: SettingsForm, onChange: ((SettingsForm) -> SettingsForm) -> Unit, onSave: () -> Unit, onBack: () -> Unit,
-    onForgetKey: () -> Unit, onRemove: () -> Unit,
+    onForgetKey: () -> Unit, onRemove: () -> Unit, onTrust: () -> Unit, onDeclineTrust: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
     val c = Rackoon.colors
@@ -54,9 +57,15 @@ fun ServerSettingsScreen(
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Field("Name", form.name, server.host, enabled = !form.busy) { v -> onChange { it.copy(name = v, error = null) } }
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionLabel("Address")
-                Text("${server.sshDestination}${server.port?.let { ":$it" } ?: ""}", fontFamily = MonoFamily, color = c.textPrimary, modifier = Modifier.padding(top = 6.dp))
+                Field("Host", form.host, "example.com, 203.0.113.7 or a Tailscale name", mono = true, enabled = !form.busy, keyboard = KeyboardType.Uri) { v -> onChange { it.copy(host = v, error = null) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1f)) { Field("User", form.user, "root", mono = true, enabled = !form.busy) { v -> onChange { it.copy(user = v, error = null) } } }
+                    Box(Modifier.weight(0.6f)) { Field("Port", form.port, "22", mono = true, enabled = !form.busy, keyboard = KeyboardType.Number) { v -> onChange { it.copy(port = v, error = null) } } }
+                }
+                // Only once something is wrong: an untouched form is not yet wrong.
+                ServerInput.problem(form.host, form.user, form.port)?.let { Text(it, color = c.warn, fontSize = 12.sp) }
             }
             AuthSection(form.auth, enabled = !form.busy, savedKeyName = form.currentKeyName.takeIf { form.currentKind == AuthKind.Key }) { a ->
                 onChange { it.copy(auth = a, authChanged = true, error = null) }
@@ -82,16 +91,17 @@ fun ServerSettingsScreen(
             if (form.busy) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = c.accent)
-                    Text("Trying the new sign-in…", color = c.textSecondary, fontSize = 13.sp)
+                    Text("Trying the connection…", color = c.textSecondary, fontSize = 13.sp)
                 }
             }
             form.error?.let { Text(it, color = c.danger, fontSize = 13.sp, lineHeight = 19.sp) }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).navigationBarsPadding(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryButton("Cancel", onBack, Modifier.weight(1f))
-            PrimaryButton("Save", onSave, Modifier.weight(1f), enabled = !form.busy)
+            PrimaryButton("Save", onSave, Modifier.weight(1f), enabled = !form.busy && ServerInput.problem(form.host, form.user, form.port) == null)
         }
     }
+    form.trust?.let { TrustSheet(host = form.host.trim(), key = it, onTrust = onTrust, onCancel = onDeclineTrust) }
     if (confirmForget) {
         AlertDialog(
             onDismissRequest = { confirmForget = false }, containerColor = c.sidebar,

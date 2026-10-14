@@ -21,7 +21,10 @@ import kotlin.random.Random
  * Nothing leaves the phone.
  */
 class DemoConnection(private val world: DemoWorld) : ServerConnection {
-    private fun check() { if (world.unreachable) throw SshException.Unreachable("timed out after 10 s") }
+    private fun check() {
+        if (world.unreachable) throw SshException.Unreachable("timed out after 10 s")
+        if (world.refusesLogin) throw SshException.AuthFailed("Exhausted available authentication methods")
+    }
 
     override suspend fun connect() { delay(120); check() }
 
