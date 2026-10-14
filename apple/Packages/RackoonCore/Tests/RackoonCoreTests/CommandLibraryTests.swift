@@ -74,6 +74,23 @@ final class CommandLibraryTests: XCTestCase {
         for bad in ["", "-x.com", "a..b", "a b.com", "x.com;ls", "x.com/path", ".x.com", "x.com."] { XCTAssertNil(cert.fullScript(params: ["host": bad]), bad) }
     }
 
+    func testReadableScriptHidesGuardsAndShowsSudoAndParameters() throws {
+        let ports = try XCTUnwrap(CommandLibrary.all.first { $0.id == "listening_ports" })
+        XCTAssertEqual(ports.readableScript(), "sudo ss -tulpn")
+        let docker = try XCTUnwrap(CommandLibrary.all.first { $0.id == "docker_disk" })
+        XCTAssertEqual(docker.readableScript(), "docker system df")
+        let logs = try XCTUnwrap(CommandLibrary.all.first { $0.id == "container_logs" })
+        XCTAssertEqual(logs.readableScript(), "docker logs --tail 200 <container> 2>&1")
+        XCTAssertEqual(logs.readableScript(params: ["container": "x; reboot"]), "docker logs --tail 200 <container> 2>&1",
+                       "an invalid value is never shown as if it would run")
+        XCTAssertEqual(logs.readableScript(params: ["container": "web"]), "docker logs --tail 200 'web' 2>&1")
+        // Everything in the library reads without the guards, and no `$S` is left for a reader to decode.
+        for c in CommandLibrary.all {
+            XCTAssertFalse(c.readableScript().contains("PATH="), c.id)
+            XCTAssertFalse(c.readableScript().contains("$S"), c.id)
+        }
+    }
+
     /// A program that lives only in /usr/sbin (as ufw, swapon and fail2ban-client do on Debian) is found even when the ssh
     /// user's PATH has no sbin directory. `chown` is in /usr/sbin on a Mac, so a stripped PATH exercises exactly that.
     func testProgramsInSbinAreFoundWithAMinimalPath() throws {

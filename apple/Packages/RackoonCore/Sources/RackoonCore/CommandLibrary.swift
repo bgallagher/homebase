@@ -84,6 +84,19 @@ public struct LibraryCommand: Sendable, Equatable, Identifiable {
         return out + Template.fill(body ?? script, filled)
     }
 
+    /// The script as a person reads it, for the Commands tab's preview: no PATH and "not installed" guards, `$S` shown as
+    /// `sudo` (it is `sudo -n`, or nothing for root), and each parameter filled with its quoted value, or `<label>` while
+    /// it is missing or invalid. Never run this: `fullScript` is what runs.
+    public func readableScript(_ body: String? = nil, params values: [String: String] = [:]) -> String {
+        var filled: [String: String] = [:]
+        for p in params {
+            filled[p.id] = p.quoted(values[p.id] ?? "") ?? "<\(p.label.lowercased())>"
+        }
+        var text = body ?? script
+        if root { text = text.replacingOccurrences(of: "$S ", with: "sudo ") }
+        return Template.fill(text, filled)
+    }
+
     public var isMutating: Bool { risk == .mutate }
 }
 

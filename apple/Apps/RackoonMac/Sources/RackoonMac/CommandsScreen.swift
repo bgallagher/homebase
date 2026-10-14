@@ -128,6 +128,13 @@ struct CommandsScreen: View {
                 Label(warning, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Theme.warn)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            ScriptPreview(
+                heading: command.interactive ? "Opens a terminal tab on \(server.name) running" : "Runs on \(server.name)",
+                script: command.readableScript(params: model.params),
+                exact: command.fullScript(params: model.params),
+                dryRun: command.preview.map { command.readableScript($0, params: model.params) },
+                note: command.root ? "sudo runs without asking first (sudo -n). If the server wants a password, Rackoon asks for it." : nil,
+                theme: theme)
         }
     }
 
@@ -160,6 +167,12 @@ struct CommandsScreen: View {
         }
     }
 
+    private var emptyOutputText: String {
+        guard let command = model.selected else { return "The custom command's output appears here." }
+        if command.interactive { return "\(command.title) opens in a terminal tab." }
+        return "\(command.title): output appears here when it runs."
+    }
+
     @ViewBuilder private var output: some View {
         if let run = model.output {
             VStack(spacing: 0) {
@@ -178,11 +191,59 @@ struct CommandsScreen: View {
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "terminal").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
-                Text("Output appears here.").foregroundStyle(Theme.textMuted)
+                Text(emptyOutputText).foregroundStyle(Theme.textMuted)
             }
             .frame(maxWidth: .infinity, minHeight: 240, maxHeight: .infinity)
             .background(Color(nsColor: theme.backgroundRGB.nsColor), in: RoundedRectangle(cornerRadius: Theme.cardRadius))
             .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
+        }
+    }
+}
+
+/// What a library command will run, shown before it runs: the readable script (guards left out, `sudo` spelled out,
+/// parameters filled in), the dry run of a mutating command, and the exact script behind a disclosure.
+private struct ScriptPreview: View {
+    let heading: String
+    let script: String
+    /// The exact text that is sent, or nil while a parameter is missing or invalid.
+    let exact: String?
+    let dryRun: String?
+    let note: String?
+    let theme: TerminalTheme
+    @State private var showExact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            block(heading, script)
+            if let dryRun { block("Dry run first (read-only, shown before you confirm)", dryRun) }
+            HStack(spacing: 12) {
+                if let note { Text(note).font(.system(size: 11)).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true) }
+                Spacer(minLength: 0)
+                if exact != nil {
+                    Button(showExact ? "Hide exact script" : "Show exact script") { showExact.toggle() }
+                        .buttonStyle(.link).font(.system(size: 11)).handCursor()
+                }
+            }
+            if showExact, let exact { block("Exact script sent over SSH", exact) }
+        }
+    }
+
+    private func block(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+                Spacer()
+                CopyButton(text: text, what: "command")
+            }
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(nsColor: theme.foregroundRGB.nsColor))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Color(nsColor: theme.backgroundRGB.nsColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
         }
     }
 }
