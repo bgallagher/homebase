@@ -64,7 +64,7 @@ struct StackPanel: View {
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "terminal").font(.system(size: 22)).foregroundStyle(Theme.textMuted)
-                Text("Run Pull, Update, Restart or Rebuild to watch it here.").foregroundStyle(Theme.textMuted)
+                Text("Choose a stack action, or a container action from its ⋯ menu, to watch it here.").foregroundStyle(Theme.textMuted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: theme.backgroundRGB.nsColor))

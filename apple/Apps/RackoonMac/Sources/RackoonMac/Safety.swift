@@ -33,6 +33,8 @@ struct PendingAction: Identifiable {
     let serverName: String
     /// The exact command that will run on the server.
     let command: String
+    /// Stops, restarts, removes or otherwise interrupts something: the confirm button is red and Return does not press it,
+    /// so a key pressed out of habit can't confirm it (it takes a click).
     let destructive: Bool
     /// A readable description of what will change (a +/- diff for file saves), shown above the command.
     var preview: String? = nil
@@ -106,13 +108,23 @@ private struct ConfirmSheet: View {
                 Button("Cancel", action: close)
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(.bordered)
-                Button("Run Command") {
-                    close()
-                    action.run()
+                if action.destructive {
+                    Button("Run Command") {
+                        close()
+                        action.run()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.danger)
+                    .help("Click to confirm. Return does not run a command that interrupts something.")
+                } else {
+                    Button("Run Command") {
+                        close()
+                        action.run()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
                 }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .tint(action.destructive ? Theme.danger : Theme.accent)
             }
             .controlSize(.large)
             .handCursor()

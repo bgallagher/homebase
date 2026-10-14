@@ -91,6 +91,31 @@ public struct DockerStack: Sendable, Equatable, Identifiable {
     public var stoppedCount: Int { containers.count - runningCount }
     /// True when any container of the stack has a bookmark.
     public var hasBookmark: Bool { containers.contains { $0.bookmark != nil } }
+
+    /// How the stack is doing, for the Docker overview's filter (and its card colour).
+    public enum Health: String, Sendable, CaseIterable {
+        /// Every container is running and none is unhealthy.
+        case running
+        /// Some containers run, some don't, or one reports unhealthy.
+        case attention
+        /// Nothing runs (stopped, or never started).
+        case stopped
+    }
+
+    public var health: Health {
+        if unhealthyCount > 0 { return .attention }
+        if containers.isEmpty || runningCount == 0 { return .stopped }
+        return stoppedCount > 0 ? .attention : .running
+    }
+
+    /// True when every word of `query` appears (ignoring case) in the stack's name, its compose folder, or any
+    /// container's name, service or image. An empty query matches.
+    public func matches(_ query: String) -> Bool {
+        let words = query.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let fields = [name, workingDir ?? ""] + containers.flatMap { [$0.name, $0.service ?? "", $0.image] }
+        return words.allSatisfy { word in fields.contains { $0.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil } }
+    }
 }
 
 public enum DockerAccess {
