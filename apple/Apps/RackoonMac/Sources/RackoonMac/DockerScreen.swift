@@ -375,13 +375,16 @@ private struct StackTile: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    // The stack's name wins over the file name when the card is narrow.
+                    Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1).layoutPriority(1)
                     Text(stack.configFileName ?? "").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
                     Spacer(minLength: 4)
                     if busyStack || stack.containers.contains(where: { busy.contains($0.id) }) {
                         ProgressView().controlSize(.mini)
                     } else {
-                        if !status.text.isEmpty { Text(status.text).font(.system(size: 12)).foregroundStyle(status.color) }
+                        if !status.text.isEmpty {
+                            Text(status.text).font(.system(size: 12)).foregroundStyle(status.color).lineLimit(1).fixedSize()
+                        }
                         Circle().fill(status.dot).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
                     }
                 }
