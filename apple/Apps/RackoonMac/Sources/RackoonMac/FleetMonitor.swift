@@ -35,6 +35,8 @@ final class FleetMonitor {
     static let interval: TimeInterval = 60
 
     private(set) var entries: [String: FleetEntry] = [:]
+    /// The last hour of checks of every server, selected or not (the dashboard's heartbeat bars and sparklines). In memory only.
+    private(set) var histories: [String: HealthHistory] = [:]
 
     @ObservationIgnored private let store: ServerStore
     @ObservationIgnored private let verifier = HostKeyVerifier()
@@ -55,6 +57,7 @@ final class FleetMonitor {
         let wanted = Dictionary(servers.filter { $0.id != selectedID }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for id in Array(tasks.keys) where wanted[id] == nil { stop(id) }
         for id in Array(entries.keys) where !servers.contains(where: { $0.id == id }) { entries[id] = nil }
+        for id in Array(histories.keys) where !servers.contains(where: { $0.id == id }) { histories[id] = nil }
         for (id, server) in wanted where tasks[id] == nil { start(server) }
     }
 
@@ -63,6 +66,13 @@ final class FleetMonitor {
         stop(id)
         trusted.remove(id)
         entries[id] = nil
+        histories[id] = nil
+    }
+
+    /// Adds a poll's result to the server's history (the selected server's polls come from `AppModel`).
+    func record(_ id: String, _ state: ServerState) {
+        guard let sample = HealthSample(state: state, at: Date()) else { return }
+        histories[id, default: HealthHistory()].record(sample)
     }
 
     /// Hands over a server that stops being selected: its fresh reading is shown at once instead of the cached one.
@@ -120,6 +130,7 @@ final class FleetMonitor {
         for await next in await session.updates() {
             if Task.isCancelled { break }
             entries[id] = FleetEntry(state: next)
+            record(id, next)
         }
     }
 

@@ -236,7 +236,7 @@ extension DockerStack {
 }
 
 /// A bookmark's address as a short label: the host, plus a path when there is one ("app.example.com/tv").
-private func shortAddress(_ href: String) -> String {
+func shortAddress(_ href: String) -> String {
     guard let url = URL(string: href), let host = url.host else { return href }
     let path = url.path == "/" ? "" : url.path
     return host + (url.port.map { ":\($0)" } ?? "") + path

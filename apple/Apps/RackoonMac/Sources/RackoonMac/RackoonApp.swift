@@ -180,7 +180,7 @@ struct GoCommands: Commands {
     @FocusedValue(\.appActions) private var actions
 
     private static let screens: [(Screen, KeyEquivalent)] = [
-        (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"),
+        (.dashboard, "0"), (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"),
     ]
 
     var body: some Commands {
@@ -342,7 +342,10 @@ struct ContentView: View {
             if switcher.isOpen {
                 ServerSwitcherPanel(
                     switcher: switcher, servers: model.servers, selectedID: model.selectedID, light: light,
-                    onSelect: { server in if server.id != model.selectedID { selection = .overview }; model.select(server) },
+                    onSelect: { server in
+                        if server.id != model.selectedID || selection == .dashboard { selection = .overview }
+                        model.select(server)
+                    },
                     onEdit: { editing = $0 },
                     onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
                     onReorder: { model.reorder($0) },
@@ -467,7 +470,18 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if let server = model.selected {
+        if selection == .dashboard, !model.servers.isEmpty {
+            DashboardScreen(model: model, workspace: dockerWorkspace, theme: appearance.resolvedTheme,
+                            openServer: { server, screen in
+                                model.select(server)
+                                selection = screen
+                            },
+                            openStack: { server, stack in
+                                model.select(server)
+                                dockerWorkspace.openStack[server.id] = stack
+                                selection = .docker
+                            })
+        } else if let server = model.selected {
             ZStack {
                 switch selection {
                 case .overview:
