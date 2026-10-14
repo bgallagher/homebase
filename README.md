@@ -62,7 +62,7 @@ Unless a section says otherwise, the features below are on **both** the Mac and 
 - CPU, memory, disks and load at a glance, refreshed every few seconds, with the last snapshot shown instantly while it reconnects.
 - System information: model, OS, kernel, machine ID, uptime, the server's own clock, its **IP address and Tailscale IP** (only when Tailscale is up) with copy buttons.
 - A "needs attention" strip: pending and security updates, reboot required, unhealthy containers, each linking to the screen that fixes it.
-- Reboot with a confirmation that waits for the server to come back (it checks the boot ID, not just that SSH answers).
+- Reboot with a confirmation that waits for the server to come back (it checks the boot ID, not just that SSH answers). If the SSH user needs a password for sudo, the Mac app asks for it (for reboots, apt installs and the Commands library's root commands) and types it into sudo's own prompt over the connection, never into a command. Tick "Remember on this Mac" to keep it sealed by the Mac's Secure Enclave; each use then asks for Touch ID, your Apple Watch or your login password (Mac only for now).
 
 **Docker**
 - Compose stacks as cards (containers, CPU and memory), grouped by their compose project.

@@ -37,6 +37,7 @@ struct CommandsScreen: View {
         }
         .onDisappear { workspace.model(for: server).detach() }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+        .sudoPassword(Binding(get: { model.sudoRequest }, set: { model.sudoRequest = $0 }))
     }
 
     // MARK: list

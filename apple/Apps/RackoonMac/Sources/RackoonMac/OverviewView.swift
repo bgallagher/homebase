@@ -40,6 +40,25 @@ struct OverviewView: View {
         }
         .foregroundStyle(Theme.textPrimary)
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+        .sheet(isPresented: needsSudoPassword) {
+            if let flow = model.reboots[server.id], case .needsPassword(let problem) = flow.phase {
+                SudoPasswordSheet(request: SudoRequest(
+                    title: "Reboot \(server.name) with sudo", server: server, command: RebootSession.sudoRebootCommand,
+                    problem: problem, actionLabel: "Reboot", destructive: true, canRemember: SudoVault.shared.canRemember,
+                    submit: { flow.submitPassword($0, remember: $1) }),
+                                  close: { model.dismissReboot(server) }, closesItself: false)
+            }
+        }
+    }
+
+    /// The reboot sheet asking for the sudo password. Closing it any other way gives up on the reboot; a phase change
+    /// (the password was sent) just takes the sheet down.
+    private var needsSudoPassword: Binding<Bool> {
+        Binding(
+            get: { if case .needsPassword = model.reboots[server.id]?.phase { true } else { false } },
+            set: { shown in
+                if !shown, case .needsPassword = model.reboots[server.id]?.phase { model.dismissReboot(server) }
+            })
     }
 
     private func header(_ o: Overview, stale: Date?) -> some View {
@@ -155,6 +174,9 @@ struct RebootProgressBanner: View {
         switch flow.phase {
         case .requesting:
             box(color: Theme.accent, symbol: nil, title: "Asking \(name) to reboot…", detail: nil, dismissible: false)
+        case .needsPassword:
+            box(color: Theme.accent, symbol: "key.fill", title: "\(name) needs a password for sudo",
+                detail: "Enter it in the sheet to reboot, or dismiss this to leave the server running.", dismissible: true)
         case .waiting(let since):
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 box(color: Theme.accent, symbol: nil, title: "Rebooting \(name)…",

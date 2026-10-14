@@ -17,17 +17,21 @@ final class CommandsModel {
     private(set) var previewing = false
     var message: String?
     var pending: PendingAction?
+    /// A root entry was refused because sudo wants a password: asks for it, then runs the entry again with it.
+    var sudoRequest: SudoRequest?
     /// Custom commands run in this session. Kept in memory only: a typed command can contain a password or a token, and
     /// secrets are never written to disk by this app.
     private(set) var history: [String] = []
 
     let serverName: String
+    @ObservationIgnored private let server: Server
     @ObservationIgnored private let session: CommandLibrarySession
     @ObservationIgnored private var openInTerminal: (String, String) -> Void = { _, _ in }
     @ObservationIgnored private var containerNames: () -> [String] = { [] }
 
     /// Built once per server by `DockerWorkspace.commandsModel(for:)`, not by a view.
     init(server: Server) {
+        self.server = server
         serverName = server.name
         session = CommandLibrarySession(transport: makeTransport(for: server), policy: SafetyStore.shared.policy)
     }
@@ -90,24 +94,78 @@ final class CommandsModel {
             openInTerminal(command.title, script)
             return
         }
+        let params = params
+        let saved = command.root && SudoVault.shared.isRemembered(server)
         if !command.isMutating {
+            if saved {
+                // A root read with a saved password: Touch ID / Apple Watch / login password is the approval.
+                let nonce = SudoElevation.makeNonce()
+                if let elevated = session.passwordIntent(for: command, params: params, nonce: nonce) {
+                    unlockAndLaunch(elevated, entry: (command, params, nil), nonce: nonce)
+                    return
+                }
+            }
             guard let intent = session.intent(for: command, params: params) else { return }
-            launch(intent, title: command.title, confirm: false)
+            launch(intent, title: command.title, confirm: false, entry: (command, params, nil))
             return
         }
         // A change: show what it would do (a read-only dry run), then ask.
         previewing = true
-        let params = params
-        Task {
+        Task { [self] in
             let preview = await session.preview(for: command, params: params)
             previewing = false
-            guard let intent = session.intent(for: command, params: params, preview: preview.isEmpty ? nil : preview) else { return }
+            let shown = preview.isEmpty ? nil : preview
+            let nonce = SudoElevation.makeNonce()
+            if saved, let elevated = session.passwordIntent(for: command, params: params, preview: shown, nonce: nonce) {
+                // Confirm the exact command that will run (the password variant), then unlock the saved password.
+                pending = PendingAction(
+                    title: "\(command.title)?",
+                    message: ([command.summary, command.warning].compactMap { $0 } + [SudoVault.useNote(server)]).joined(separator: " "),
+                    serverName: serverName, command: elevated.command, destructive: true, preview: elevated.preview,
+                    run: { [weak self] in self?.unlockAndLaunch(elevated, entry: (command, params, shown), nonce: nonce) })
+                return
+            }
+            guard let intent = session.intent(for: command, params: params, preview: shown) else { return }
             pending = PendingAction(
                 title: "\(command.title)?",
                 message: [command.summary, command.warning].compactMap { $0 }.joined(separator: " "),
                 serverName: serverName, command: intent.command, destructive: true, preview: intent.preview,
-                run: { [weak self] in self?.launch(intent, title: command.title, confirm: true) })
+                run: { [weak self] in
+                    self?.launch(intent, title: command.title, confirm: true, entry: (command, params, intent.preview))
+                })
         }
+    }
+
+    /// Touch ID, the Apple Watch or the login password, then `elevated` (built with `nonce`) runs with the saved
+    /// password. Cancelled: nothing runs. Changed or unreadable: it was forgotten, and the password sheet opens.
+    private func unlockAndLaunch(_ elevated: Intent, entry: LibraryEntry, nonce: String) {
+        let server = server
+        Task {
+            switch await SudoVault.shared.unlock(server, reason: SudoVault.reason(server, doing: entry.command.title)) {
+            case .success(let password):
+                launch(elevated, title: entry.command.title, confirm: entry.command.isMutating, entry: entry,
+                       sudo: SudoCredential(password: password, nonce: nonce), source: .saved)
+            case .failure(.cancelled):
+                message = SudoSecretError.cancelled.errorDescription
+            case .failure(let error):
+                // Forgotten or unusable in the meantime: ask for it rather than dropping the confirmed command.
+                presentSudoSheet(entry, problem: error.sheetProblem)
+            }
+        }
+    }
+
+    /// Asks for the sudo password, then runs the entry's password variant with it (one nonce per attempt).
+    private func presentSudoSheet(_ entry: LibraryEntry, problem: String?) {
+        guard !(entry.command.isMutating && SafetyStore.shared.readOnly) else { return }
+        let nonce = SudoElevation.makeNonce()
+        guard let elevated = session.passwordIntent(for: entry.command, params: entry.params, preview: entry.preview, nonce: nonce) else { return }
+        sudoRequest = SudoRequest(
+            title: "\(entry.command.title) with sudo", server: server, command: elevated.command,
+            problem: problem, destructive: entry.command.isMutating, canRemember: SudoVault.shared.canRemember,
+            submit: { [weak self] password, remember in
+                self?.launch(elevated, title: entry.command.title, confirm: entry.command.isMutating, entry: entry,
+                             sudo: SudoCredential(password: password, nonce: nonce), source: .typed(remember: remember))
+            })
     }
 
     func runCustom() {
@@ -133,22 +191,45 @@ final class CommandsModel {
         history = Array(history.prefix(20))
     }
 
-    private func launch(_ intent: Intent, title: String, confirm: Bool) {
+    /// `entry` is the library entry behind the intent (custom commands have none): when sudo refuses it for want of a
+    /// password, the password variant of that entry is offered. With `sudo`, `intent` must be that variant built with
+    /// the same nonce, and sudo's one prompt is answered.
+    private func launch(_ intent: Intent, title: String, confirm: Bool, entry: LibraryEntry? = nil,
+                        sudo: SudoCredential? = nil, source: SudoPasswordSource? = nil) {
         guard output?.isRunning != true else {
             // Never swallow a confirmed command silently: say that nothing was started.
             message = "Another command is still running, so nothing was started. Try again when it has finished."
             return
         }
+        message = nil   // a new run: the last one's note no longer applies
         let session = session
+        let server = server
+        let result = RunResult()
         output = ActionOutput.launch(
             scope: "commands", title: title,
             intro: "\u{1B}[2m$ \(title)\u{1B}[0m\r\n",
             work: { cols, rows, onEvent in
                 // The policy checks again here, so turning on Read-only after confirming still stops it.
                 let confirmation = confirm ? (try? session.confirm(intent)) : nil
-                await session.run(intent, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
+                result.set(await session.run(intent, confirmation: confirmation, cols: cols, rows: rows,
+                                             sudo: sudo, onEvent: onEvent))
             },
-            completion: {})
+            completion: { [weak self] in
+                guard let run = result.value else { return }
+                // Saving and forgetting must not depend on the screen still being open.
+                if let sudo, run.sudo == .accepted, !run.sudoAsksEveryTime, source == .typed(remember: true) {
+                    Task { await SudoVault.shared.remember(sudo.password, for: server) }
+                }
+                if source == .saved, run.sudoRejected { SudoVault.shared.forget(server.id) }
+                guard let self, let entry else { return }
+                if let problem = run.sudoProblem { self.message = problem }
+                guard run.needsSudoPassword, !self.isRunning else { return }
+                if source == .saved {
+                    self.presentSudoSheet(entry, problem: "The saved sudo password was not accepted, so it was forgotten.")
+                } else {
+                    self.presentSudoSheet(entry, problem: run.sudoRejected ? "The server did not accept that password." : nil)
+                }
+            })
     }
 
     func cancelOutput() { output?.task?.cancel() }
@@ -160,4 +241,15 @@ final class CommandsModel {
 
     /// The output as plain text, for the Copy button.
     var outputText: String { ANSI.strip(output?.chunks.joined() ?? "") }
+}
+
+/// A library entry with the values it ran with (and the dry-run text the user saw, for mutating entries).
+typealias LibraryEntry = (command: LibraryCommand, params: [String: String], preview: String?)
+
+/// Carries a streamed run's result from the work closure to the completion.
+private final class RunResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: StreamedRun?
+    func set(_ run: StreamedRun?) { lock.withLock { stored = run } }
+    var value: StreamedRun? { lock.withLock { stored } }
 }

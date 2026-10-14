@@ -27,6 +27,7 @@ struct UpdatesScreen: View {
                         .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border))
                 }
                 if let error = state.actionError { ErrorBanner(message: error) }
+                if let notice = model.notice { ErrorBanner(message: notice) }
                 if let error = state.error { ErrorBanner(message: error) }
                 if let snapshot = state.snapshot {
                     if snapshot.rebootRequired { RebootBanner() }
@@ -46,6 +47,7 @@ struct UpdatesScreen: View {
         .focusedSceneValue(\.screenRefresh, { model.load() })
         .onAppear { model.load() }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
+        .sudoPassword(Binding(get: { model.sudoRequest }, set: { model.sudoRequest = $0 }))
     }
 
     // MARK: header

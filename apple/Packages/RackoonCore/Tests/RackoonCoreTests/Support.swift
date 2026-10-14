@@ -15,6 +15,8 @@ final class FakeTransport: SSHTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var queue: [Result<CommandResult, Error>]
     private(set) var commands: [String] = []
+    /// What was written to a command's standard input (`run(_:input:timeout:)`), in order.
+    private(set) var inputs: [String] = []
     /// What `stream` yields, chunk by chunk, before finishing; and what it was asked to run.
     var streamChunks: [String] = []
     private(set) var streamedCommands: [String] = []
@@ -25,12 +27,35 @@ final class FakeTransport: SSHTransport, @unchecked Sendable {
         try next(command).get()
     }
 
+    func run(_ command: String, input: String, timeout: TimeInterval) async throws -> CommandResult {
+        lock.withLock { inputs.append(input) }
+        return try next(command).get()
+    }
+
     private func next(_ command: String) -> Result<CommandResult, Error> {
         lock.lock(); defer { lock.unlock() }
         commands.append(command)
         guard !queue.isEmpty else { return .success(CommandResult(stdout: "", exitCode: 1)) }
         return queue.count > 1 ? queue.removeFirst() : queue[0]
     }
+
+    private var typist: Task<[String], Never>?
+
+    /// Yields `streamChunks` like `stream`, and collects what was typed (read it with `typedIntoStream()`).
+    func stream(_ command: String, input: AsyncStream<String>) -> AsyncThrowingStream<String, Error> {
+        lock.lock()
+        streamedCommands.append(command)
+        let chunks = streamChunks
+        typist = Task { var got: [String] = []; for await s in input { got.append(s) }; return got }
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            for chunk in chunks { continuation.yield(chunk) }
+            continuation.finish()
+        }
+    }
+
+    /// Everything typed into the last `stream(_:input:)`, once the runner has closed its input.
+    func typedIntoStream() async -> [String] { await (lock.withLock { typist })?.value ?? [] }
 
     func stream(_ command: String) -> AsyncThrowingStream<String, Error> {
         lock.lock(); streamedCommands.append(command); let chunks = streamChunks; lock.unlock()

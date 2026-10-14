@@ -122,8 +122,35 @@ public struct StreamedRun: Sendable {
     public var transportError: String?
     /// The visible text it printed, capped, for recognising known failures (sudo, apt lock) afterwards.
     public var text: String
+    /// How the password step went, when a sudo password was given (nil otherwise).
+    public var sudo: SudoOutcome?
 
     public var succeeded: Bool { exitCode == 0 }
+
+    /// sudo rejected the password that was typed.
+    public var sudoRejected: Bool { sudo == .rejected }
+
+    /// Offer the password sheet. For a plain run: sudo refused for want of a password, judged from the text, not the exit
+    /// code (`$S du … | sort | head` exits 0 even when sudo refused); this only ever opens the sheet. For a password
+    /// run: only when the password was rejected.
+    public var needsSudoPassword: Bool {
+        if let sudo { return sudo == .rejected }
+        return SudoElevation.needsPassword(ANSI.strip(text))
+    }
+
+    /// sudo took the password, but the command's own `sudo -n` still wanted one (it keeps no session record).
+    public var sudoAsksEveryTime: Bool { sudo == .accepted && SudoElevation.needsPassword(ANSI.strip(text)) }
+
+    /// Why the password step failed, in plain words, or nil when it did not.
+    public var sudoProblem: String? {
+        switch sudo {
+        case .rejected: "The server did not accept that sudo password. Nothing was run."
+        case .refused(let said): SudoElevation.explainRefusal(said)
+        case .otherPrompt: SudoElevation.otherPrompt
+        case .accepted where sudoAsksEveryTime: SudoElevation.asksEveryTime
+        default: nil
+        }
+    }
 
     /// A short reason for a run that did not succeed, or nil if it did.
     public func failureMessage(label: String) -> String? {
@@ -137,7 +164,11 @@ public struct StreamedRun: Sendable {
 public enum StreamRunner {
     /// Runs `command` over `transport.stream` with a pty of the given size, passing the output on as it arrives and
     /// reading the exit code from the in-band marker. Cancelling the calling task stops the remote command.
-    public static func run(transport: SSHTransport, command: String, cols: Int, rows: Int,
+    ///
+    /// With `sudo`, `command` must be a `SudoElevation.withPassword` script with the same nonce: the password is typed at
+    /// the first nonce prompt only, the outcome comes from the markers (`SudoHandshake`), and after that nothing the
+    /// command prints is looked at again. A second prompt means a wrong password: one Ctrl-C, nothing typed again.
+    public static func run(transport: SSHTransport, command: String, cols: Int, rows: Int, sudo: SudoCredential? = nil,
                            onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async -> StreamedRun {
         var parser = StreamOutputParser()
         var transportError: String?
@@ -146,18 +177,41 @@ public enum StreamRunner {
             onEvent(.output(shown))
             if text.utf8.count < 200_000 { text += shown }
         }
+        let wrapped = StreamedCommand.wrap(command, cols: cols, rows: rows)
+        var handshake = sudo.map { SudoHandshake(nonce: $0.nonce) }
+        let (typed, keyboard) = AsyncStream<String>.makeStream()
+        let output = sudo == nil ? transport.stream(wrapped) : transport.stream(wrapped, input: typed)
         do {
-            for try await chunk in transport.stream(StreamedCommand.wrap(command, cols: cols, rows: rows)) {
-                let shown = parser.push(chunk)
+            for try await chunk in output {
+                var visible = chunk
+                if let credential = sudo, var h = handshake {
+                    let step = h.push(chunk)
+                    handshake = h
+                    visible = step.shown
+                    for action in step.actions {
+                        switch action {
+                        case .typePassword: keyboard.yield(credential.password + "\n")
+                        case .interrupt: keyboard.yield("\u{03}")
+                        }
+                    }
+                }
+                let shown = parser.push(visible)
                 if !shown.isEmpty { keep(shown) }
             }
         } catch {
             transportError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
+        keyboard.finish()
+        if var h = handshake {
+            let held = parser.push(h.finish())
+            handshake = h
+            if !held.isEmpty { keep(held) }
+        }
         let rest = parser.finish()
         if !rest.text.isEmpty { keep(rest.text) }
         let cancelled = Task.isCancelled
         onEvent(.finished(exitCode: rest.exitCode))
-        return StreamedRun(exitCode: rest.exitCode, cancelled: cancelled, transportError: transportError, text: text)
+        return StreamedRun(exitCode: rest.exitCode, cancelled: cancelled, transportError: transportError, text: text,
+                           sudo: handshake?.outcome)
     }
 }

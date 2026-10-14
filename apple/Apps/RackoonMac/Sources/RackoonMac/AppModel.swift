@@ -38,25 +38,31 @@ private final class DemoRebootTransport: SSHTransport, @unchecked Sendable {
 }
 
 /// A reboot in progress for one server: asks the server to reboot, then waits until it answers with a new boot id.
+/// When the ssh user's sudo wants a password, the flow pauses in `needsPassword` and the Overview asks for it.
 @MainActor @Observable
 final class RebootFlow {
     enum Phase: Equatable {
         case requesting
+        /// `sudo -n` was refused: waiting for the user to type the sudo password (or give up). `problem` is why the
+        /// last attempt failed, when there was one.
+        case needsPassword(problem: String?)
         case waiting(since: Date)
         case back(after: TimeInterval)
         case timedOut
         case failed(String)
     }
 
+    let server: Server
     private(set) var phase: Phase = .requesting
     var isActive: Bool {
-        switch phase { case .requesting, .waiting: true; default: false }
+        switch phase { case .requesting, .needsPassword, .waiting: true; default: false }
     }
     @ObservationIgnored private let session: RebootSession
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored var onBack: () -> Void = {}
 
     init(server: Server) {
+        self.server = server
         // RACKOON_DEMO_REBOOT=1 swift run RackoonMac: pretend to reboot (nothing is sent to the server) and come back
         // after about 15 seconds, so the waiting banner can be seen without taking a real server down.
         let transport: SSHTransport = ProcessInfo.processInfo.environment["RACKOON_DEMO_REBOOT"] != nil || Demo.isOn
@@ -68,17 +74,70 @@ final class RebootFlow {
         task = Task {
             do {
                 try await session.reboot(confirmation: try session.confirm())
-                phase = .waiting(since: Date())
-                switch await session.waitForReturn() {
-                case .back(let elapsed):
-                    phase = .back(after: elapsed)
-                    onBack()
-                case .timedOut:
-                    phase = .timedOut
+                await awaitReturn()
+            } catch RebootError.noSudo {
+                guard SudoVault.shared.isRemembered(server) else { phase = .needsPassword(problem: nil); return }
+                switch await SudoVault.shared.unlock(server, reason: SudoVault.reason(server, doing: "reboot")) {
+                case .success(let password): reboot(with: password, source: .saved)
+                case .failure(.cancelled): phase = .failed(SudoSecretError.cancelled.errorDescription ?? "Cancelled.")
+                case .failure(let error): phase = .needsPassword(problem: error.sheetProblem)
                 }
             } catch {
                 phase = .failed((error as? LocalizedError)?.errorDescription ?? "\(error)")
             }
+        }
+    }
+
+    /// Reboot with the saved sudo password (the confirm sheet showed the sudo command). If it can't be unlocked, fall
+    /// back to asking; if it was forgotten in the meantime, start the plain way.
+    func startWithSavedPassword() {
+        let server = server
+        task = Task {
+            switch await SudoVault.shared.unlock(server, reason: SudoVault.reason(server, doing: "reboot")) {
+            case .success(let password): reboot(with: password, source: .saved)
+            case .failure(.cancelled): phase = .failed(SudoSecretError.cancelled.errorDescription ?? "Cancelled.")
+            case .failure(.notRemembered): start()
+            case .failure(let error): phase = .needsPassword(problem: error.sheetProblem)
+            }
+        }
+    }
+
+    /// The user typed the sudo password. It goes to the command's standard input; it is saved (sealed, see
+    /// `SudoVault`) only if `remember` is on and the server accepted it.
+    func submitPassword(_ password: String, remember: Bool) {
+        guard case .needsPassword = phase else { return }
+        reboot(with: password, source: .typed(remember: remember))
+    }
+
+    private func reboot(with password: String, source: SudoPasswordSource) {
+        phase = .requesting
+        let server = server
+        task = Task {
+            do {
+                try await session.reboot(sudoPassword: password, confirmation: try session.confirmSudo())
+                if source == .typed(remember: true) { await SudoVault.shared.remember(password, for: server) }
+                await awaitReturn()
+            } catch RebootError.badPassword {
+                if source == .saved {
+                    SudoVault.shared.forget(server.id)
+                    phase = .needsPassword(problem: "The saved sudo password was not accepted, so it was forgotten.")
+                } else {
+                    phase = .needsPassword(problem: RebootError.badPassword.errorDescription)
+                }
+            } catch {
+                phase = .failed((error as? LocalizedError)?.errorDescription ?? "\(error)")
+            }
+        }
+    }
+
+    private func awaitReturn() async {
+        phase = .waiting(since: Date())
+        switch await session.waitForReturn() {
+        case .back(let elapsed):
+            phase = .back(after: elapsed)
+            onBack()
+        case .timedOut:
+            phase = .timedOut
         }
     }
 
@@ -128,6 +187,7 @@ final class AppModel {
                 Task { @MainActor in self?.refresh() }
             }
         }
+        SudoVault.shared.load(servers)   // which servers have a saved sudo password (never prompts)
         if let selected { connect(selected) }
     }
 
@@ -155,6 +215,8 @@ final class AppModel {
         servers[i] = server
         persist()
         guard !before.connectsLike(server) else { return false }
+        // A saved sudo password belongs to the connection it was accepted on.
+        SudoVault.shared.forget(server.id)
         // A snapshot taken from another address would be painted as this server's past: drop it.
         if before.host != server.host { store.deleteSnapshot(serverID: server.id) }
         if server.id == selectedID { connect(server) }   // drops the old session and starts from the host-key check
@@ -163,6 +225,7 @@ final class AppModel {
 
     func remove(_ server: Server) {
         servers.removeAll { $0.id == server.id }
+        SudoVault.shared.forget(server.id)
         store.deleteSnapshot(serverID: server.id)
         persist()
         if selectedID == server.id {
@@ -176,6 +239,21 @@ final class AppModel {
 
     func requestReboot(_ server: Server) {
         guard !SafetyStore.shared.readOnly, reboots[server.id]?.isActive != true else { return }
+        if SudoVault.shared.isRemembered(server) {
+            // A saved sudo password: confirm the sudo command that will actually run, then unlock it.
+            pending = PendingAction(
+                title: "Reboot \(server.name)?",
+                message: "The server restarts in a couple of seconds. Everything running on it stops and comes back with it. Rackoon waits and reconnects when it is up again. " + SudoVault.useNote(server),
+                serverName: server.name, command: RebootSession.sudoRebootCommand, destructive: true,
+                run: { [weak self] in
+                    guard let self else { return }
+                    let flow = RebootFlow(server: server)
+                    flow.onBack = { [weak self] in self?.refresh() }
+                    self.reboots[server.id] = flow
+                    flow.startWithSavedPassword()
+                })
+            return
+        }
         pending = PendingAction(
             title: "Reboot \(server.name)?",
             message: "The server restarts in a couple of seconds. Everything running on it stops and comes back with it. Rackoon waits and reconnects when it is up again.",

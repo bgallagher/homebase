@@ -47,12 +47,38 @@ public struct OpenSSHTransport: SSHTransport {
 
     /// Shared by command polling and terminal tabs so a new tab reuses the open connection.
     /// Unix socket paths are limited to ~104 bytes, so keep this short.
+    ///
+    /// /tmp is shared by every user, so the folder is only used if it is a real directory (not a symlink) that this user
+    /// owns and nobody else can enter. Otherwise (someone made it first) the sockets go to this user's private
+    /// temporary folder instead, which is longer but still fits: a socket there could carry other people's commands.
     static func controlDirectory() -> String {
         let dir = "/tmp/rk-\(getuid())"
-        try? FileManager.default.createDirectory(
-            atPath: dir, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        return dir
+        mkdir(dir, 0o700)
+        if isPrivateDirectory(dir) { return dir }
+        return fallbackControlDirectory
+    }
+
+    /// A fresh private folder for this run of the app (mkdtemp makes it 0700 and ours), still short: ssh appends a
+    /// 40-character hash and, while it sets the socket up, a 17-character temporary suffix, all within ~104 bytes.
+    static let fallbackControlDirectory: String = {
+        var template = Array("/tmp/rk-\(getuid())-XXXXXX".utf8CString)
+        return template.withUnsafeMutableBufferPointer { buffer in
+            mkdtemp(buffer.baseAddress!).map { String(cString: $0) } ?? "/tmp/rk-\(getuid())-unavailable"
+        }
+    }()
+
+    /// For connections that carry a secret (a sudo password): the server's key must be the one in known_hosts, whatever
+    /// ~/.ssh/config says (a homelab config often has `StrictHostKeyChecking no`). Same file HostKeyVerifier uses.
+    static let strictHostKeyArguments: [String] = [
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "UserKnownHostsFile=\(NSString(string: "~/.ssh/known_hosts").expandingTildeInPath)",
+    ]
+
+    /// A directory (lstat, so a symlink is not one) owned by this user with no access for group or others.
+    static func isPrivateDirectory(_ path: String) -> Bool {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return false }
+        return (info.st_mode & S_IFMT) == S_IFDIR && info.st_uid == getuid() && (info.st_mode & 0o077) == 0
     }
 
     /// Options for non-interactive command execution.
@@ -111,6 +137,43 @@ public struct OpenSSHTransport: SSHTransport {
         }
     }
 
+    /// `run` with `input` written to the remote command's standard input and then closed (ssh forwards its own stdin).
+    /// The one way a secret reaches a server: never as part of the command. `input` is not logged or kept.
+    /// It uses its own connection, never the shared ControlMaster socket: a multiplexing client hands its stdin to
+    /// whatever answers on that socket.
+    public func run(_ command: String, input: String, timeout: TimeInterval) async throws -> CommandResult {
+        let arguments = Arguments((port.map { ["-p", String($0)] } ?? []) + [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+            "-e", "none",
+        ] + Self.strictHostKeyArguments + Self.identityArguments(identityFile) + [host, command])
+        do {
+            return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+                group.addTask {
+                    let result = try await Subprocess.run(
+                        .path("/usr/bin/ssh"), arguments: arguments, input: .string(input),
+                        output: .bytes(limit: Self.outputLimit), error: .bytes(limit: Self.outputLimit))
+                    return CommandResult(stdout: String(decoding: result.standardOutput, as: UTF8.self),
+                                         stderr: String(decoding: result.standardError, as: UTF8.self),
+                                         exitCode: Self.exitCode(result.terminationStatus))
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    return nil
+                }
+                let first = try await group.next() ?? nil
+                group.cancelAll()
+                guard let first else { throw OpenSSHError.timedOut(timeout) }
+                return first
+            }
+        } catch let error as SubprocessError {
+            throw OpenSSHError.launchFailed("\(error)")
+        }
+    }
+
     /// An exit status as ssh (and the old `Process`) reported it: the code, or the signal number if it was killed by one.
     static func exitCode(_ status: TerminationStatus) -> Int32 {
         switch status {
@@ -130,13 +193,26 @@ public struct OpenSSHTransport: SSHTransport {
     /// Streams deliberately do NOT use the shared ControlMaster connection: in testing, Ctrl-C written to
     /// a multiplexed client never reached the remote command, but on its own connection it does.
     public func stream(_ command: String) -> AsyncThrowingStream<String, Error> {
+        stream(command, typing: nil)
+    }
+
+    /// `stream` with each string from `input` written to ssh's stdin, which `-tt` forwards to the remote pty. Used to
+    /// answer sudo's prompt (sudo turns echo off). Nothing from `input` is logged or kept.
+    public func stream(_ command: String, input: AsyncStream<String>) -> AsyncThrowingStream<String, Error> {
+        stream(command, typing: input)
+    }
+
+    private func stream(_ command: String, typing: AsyncStream<String>?) -> AsyncThrowingStream<String, Error> {
         let args = ["-tt"] + (port.map { ["-p", String($0)] } ?? []) + [
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10",
             "-o", "ServerAliveInterval=15",
             "-o", "ControlMaster=no",
             "-o", "ControlPath=none",
-        ] + Self.identityArguments(identityFile) + [host, command]
+            // With a pty, ssh reads `~` at the start of a line as its escape character (`~.` drops the connection), which
+            // would mangle a typed password starting with `~`. Nothing typed into a stream is meant for ssh itself.
+            "-e", "none",
+        ] + (typing == nil ? [] : Self.strictHostKeyArguments) + Self.identityArguments(identityFile) + [host, command]
         return AsyncThrowingStream { continuation in
             let input = StdinBox()
             var options = PlatformOptions()
@@ -152,7 +228,10 @@ public struct OpenSSHTransport: SSHTransport {
                         input: .inputWriter, output: .sequence, error: .combinedWithOutput
                     ) { execution in
                         input.set(execution.standardInputWriter)
-                        defer { input.clear() }
+                        let typist = typing.map { typed in
+                            Task { for await text in typed { await input.send(Array(text.utf8)) } }
+                        }
+                        defer { typist?.cancel(); input.clear() }
                         for try await buffer in execution.standardOutput {
                             let text = chunker.push(Data(buffer.withUnsafeBytes { Array($0) }))
                             if !text.isEmpty { continuation.yield(text) }
@@ -187,8 +266,10 @@ private final class StdinBox: @unchecked Sendable {
     func clear() { lock.withLock { writer = nil } }
 
     /// Errors are ignored: the process may already be gone.
-    func sendInterrupt() async {
+    func sendInterrupt() async { await send([0x03]) }
+
+    func send(_ bytes: [UInt8]) async {
         let w = lock.withLock { writer }
-        _ = try? await w?.write([0x03])
+        _ = try? await w?.write(bytes)
     }
 }

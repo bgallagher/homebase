@@ -11,6 +11,10 @@ public struct UpdatesState: Sendable, Equatable {
     public var actionError: String?
     /// Tail of the last successful action's output, for a "done" message.
     public var actionOutput: String?
+    /// The last action failed because sudo wants a password (or rejected the one given): the app may ask for it.
+    public var sudoPasswordNeeded = false
+    /// The last action's sudo password was accepted (and sudo did not ask again for the command itself): it may be saved.
+    public var sudoAccepted = false
     public init() {}
 }
 
@@ -34,19 +38,26 @@ public actor UpdatesSession {
         self.policy = policy
     }
 
-    public nonisolated func confirm(_ action: AptAction) throws -> Confirmation {
-        guard let intent = action.intent else { throw PolicyError.invalidTarget }
+    /// With `sudoNonce`, confirms the password variant built with that nonce (the run must use the same one).
+    public nonisolated func confirm(_ action: AptAction, sudoNonce: String? = nil) throws -> Confirmation {
+        guard let intent = sudoNonce.map({ action.passwordIntent(nonce: $0) }) ?? action.intent else { throw PolicyError.invalidTarget }
         return try policy.confirm(intent)
     }
 
     /// Runs an apt action with its output streamed live (over a pty, so apt draws its normal progress), then re-reads
     /// the update list. Ignored while another action is running. Cancelling the calling task stops apt on the server.
+    ///
+    /// With `sudo`, the password variant with its nonce runs (`AptAction.passwordIntent(nonce:)`) and sudo's one prompt
+    /// is answered over the pty. When sudo wants a password (or rejected it), `state.sudoPasswordNeeded` is set.
     public func performStreaming(_ action: AptAction, confirmation: Confirmation?, cols: Int, rows: Int,
+                                 sudo: SudoCredential? = nil,
                                  onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
         guard !state.isWorking else { onEvent(.finished(exitCode: nil)); return }
         state.actionError = nil
         state.actionOutput = nil
-        guard let intent = action.intent else {
+        state.sudoPasswordNeeded = false
+        state.sudoAccepted = false
+        guard let intent = sudo.map({ action.passwordIntent(nonce: $0.nonce) }) ?? action.intent else {
             state.actionError = "Refusing to run apt: invalid package name."
             onEvent(.finished(exitCode: nil))
             return
@@ -57,8 +68,16 @@ public actor UpdatesSession {
             return
         }
         state.isWorking = true
-        let run = await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows, onEvent: onEvent)
-        if run.succeeded {
+        let run = await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows,
+                                         sudo: sudo, onEvent: onEvent)
+        state.sudoAccepted = run.sudo == .accepted && !run.sudoAsksEveryTime
+        if let problem = run.sudoProblem {
+            state.actionError = problem
+            state.sudoPasswordNeeded = run.sudoRejected
+        } else if !run.succeeded, run.needsSudoPassword {
+            state.actionError = AptAction.explain(stdout: ANSI.strip(run.text), stderr: "", exitCode: run.exitCode ?? 1)
+            state.sudoPasswordNeeded = true
+        } else if run.succeeded {
             state.actionOutput = ANSI.strip(run.text).split(separator: "\n").suffix(5).joined(separator: "\n")
         } else if let code = run.exitCode {
             // Known causes get a readable sentence (sudo asking for a password, another apt holding the lock).

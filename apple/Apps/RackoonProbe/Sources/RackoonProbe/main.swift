@@ -1,4 +1,6 @@
 import CryptoKit
+import LocalAuthentication
+import Security
 import Foundation
 import RackoonCore
 import RackoonSSHSystem
@@ -8,6 +10,91 @@ let args = CommandLine.arguments
 guard args.count >= 2 else {
     FileHandle.standardError.write(Data("usage: rackoon-probe <host> [command]\n".utf8))
     exit(2)
+}
+if args.count > 2, args[2] == "auth-methods" {
+    // Which ways of approving macOS offers right now. Never prompts. usage: rackoon-probe local auth-methods
+    let probe = LAContext()
+    print("biometry type: \(probe.biometryType == .touchID ? "Touch ID" : probe.biometryType == .none ? "none" : "\(probe.biometryType.rawValue)")")
+    var policies: [(String, LAPolicy)] = [("Touch ID (biometrics)", .deviceOwnerAuthenticationWithBiometrics)]
+    if #available(macOS 15.0, *) {
+        policies += [("Apple Watch (companion)", .deviceOwnerAuthenticationWithCompanion),
+                     ("Touch ID or Apple Watch", .deviceOwnerAuthenticationWithBiometricsOrCompanion)]
+    }
+    policies.append(("any: Touch ID, Watch or password", .deviceOwnerAuthentication))
+    for (name, policy) in policies {
+        var error: NSError?
+        let ok = LAContext().canEvaluatePolicy(policy, error: &error)
+        print("\(ok ? "yes" : "no ") \(name)\(error.map { "  (\(LAError.Code(rawValue: $0.code).map { "\($0)" } ?? "\($0.code)"): \($0.localizedDescription))" } ?? "")")
+    }
+    exit(0)
+}
+if args.count > 2, args[2] == "watch-check" {
+    // Two ways to get approval BEFORE using a Secure Enclave key, to see which one offers the Apple Watch (lid closed).
+    // Throwaway in-memory keys only: nothing is written to the keychain or to disk.
+    // usage: rackoon-probe local watch-check
+    var flags: SecAccessControlCreateFlags = [.privateKeyUsage, .or, .biometryAny, .devicePasscode]
+    if #available(macOS 15.0, *) { flags.insert(.companion) }
+    guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, nil) else { exit(1) }
+    func trial(_ name: String, _ approve: (LAContext) async throws -> Void) async {
+        do {
+            let key = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access)
+            let ephemeral = P256.KeyAgreement.PrivateKey()
+            func symmetric(_ secret: SharedSecret) -> SymmetricKey {
+                secret.hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data(), sharedInfo: Data("rackoon-watch-check".utf8), outputByteCount: 32)
+            }
+            let sealed = try AES.GCM.seal(Data("dummy".utf8), using: symmetric(try ephemeral.sharedSecretFromKeyAgreement(with: key.publicKey)))
+            print("\n\(name): approve with your Watch if it offers it...")
+            let context = LAContext()
+            try await approve(context)
+            print("   approved; now using the key (if a SECOND prompt appears, note it)")
+            let unlocked = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: key.dataRepresentation, authenticationContext: context)
+            let opened = try AES.GCM.open(sealed, using: symmetric(try unlocked.sharedSecretFromKeyAgreement(with: ephemeral.publicKey)))
+            print(String(decoding: opened, as: UTF8.self) == "dummy" ? "   PASS" : "   FAIL: wrong plaintext")
+        } catch {
+            print("   FAIL or cancelled: \(error)")
+        }
+    }
+    await trial("B. macOS's own approval policy (Touch ID, Watch or password)") { context in
+        _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "test approval B (Rackoon check)")
+    }
+    await trial("C. approval for the key's own access rule") { context in
+        _ = try await context.evaluateAccessControl(access, operation: .useKeyKeyExchange, localizedReason: "test approval C (Rackoon check)")
+    }
+    exit(0)
+}
+if args.count > 2, args[2] == "secure-enclave-check" {
+    // Can this unsigned-for-distribution build unlock a Secure Enclave key with Touch ID OR Apple Watch OR the login
+    // password? Uses a THROWAWAY key that lives only in memory: nothing is written to the keychain or to disk.
+    // usage: rackoon-probe local secure-enclave-check   (run it in a terminal; a system prompt appears)
+    guard SecureEnclave.isAvailable else { print("FAIL: no Secure Enclave on this Mac"); exit(1) }
+    var flags: SecAccessControlCreateFlags = [.privateKeyUsage, .or, .biometryAny, .devicePasscode]
+    if #available(macOS 15.0, *) { flags.insert(.companion) }
+    var cfError: Unmanaged<CFError>?
+    guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, &cfError) else {
+        print("FAIL: access control: \(cfError!.takeRetainedValue())"); exit(1)
+    }
+    do {
+        let key = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access)
+        print("1. Secure Enclave key created (no prompt expected)")
+        // Seal: needs only the public key, so no prompt.
+        let ephemeral = P256.KeyAgreement.PrivateKey()
+        func symmetric(_ secret: SharedSecret) -> SymmetricKey {
+            secret.hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data(), sharedInfo: Data("rackoon-se-check".utf8), outputByteCount: 32)
+        }
+        let sealed = try AES.GCM.seal(Data("dummy-not-a-password".utf8),
+                                      using: symmetric(try ephemeral.sharedSecretFromKeyAgreement(with: key.publicKey)))
+        print("2. sealed a dummy value (no prompt expected)")
+        print("3. opening it now: approve with Touch ID, your Apple Watch, or your login password...")
+        let context = LAContext()
+        context.localizedReason = "test unlocking a throwaway key (Rackoon check)"
+        let unlocked = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: key.dataRepresentation, authenticationContext: context)
+        let opened = try AES.GCM.open(sealed, using: symmetric(try unlocked.sharedSecretFromKeyAgreement(with: ephemeral.publicKey)))
+        print(String(decoding: opened, as: UTF8.self) == "dummy-not-a-password" ? "PASS: unlocked and opened" : "FAIL: wrong plaintext")
+        exit(0)
+    } catch {
+        print("FAIL or cancelled: \(error)")
+        exit(1)
+    }
 }
 if args.count > 2, args[2] == "hostkey" {
     // Uses a throwaway known_hosts file, never ~/.ssh/known_hosts.
@@ -43,7 +130,71 @@ if args.count > 2, args[2] == "hostkey" {
     print("3. tampered key      -> \(show(await verifier.check(server)))")
     exit(0)
 }
-let transport = OpenSSHTransport(host: args[1])
+// RACKOON_PROBE_KEY=~/.ssh/key picks the key file, like a saved server's key file (`user@host` works as the host).
+let transport = OpenSSHTransport(server: Server(name: args[1], host: args[1],
+                                                identityFile: ProcessInfo.processInfo.environment["RACKOON_PROBE_KEY"]))
+if args.count > 2, args[2] == "sudo-reject-check" || args[2] == "sudo-check" {
+    // The sudo password path over a real pty, with harmless commands only (`true`, `id -u`).
+    // sudo-reject-check: a deliberately WRONG password. sudo must prompt once, the password must be typed once and be
+    //   rejected, never show, and the run must stop without the script running.
+    // sudo-check: asks for the real password on this terminal (not echoed, not stored) and checks that `sudo -v` makes
+    //   the script's own `sudo -n` work, and that a fake prompt printed by the script afterwards is NOT answered.
+    let script = #"if [ "$(id -u)" -eq 0 ]; then S=; else S='sudo -n'; fi; $S true"#
+    let plain = await StreamRunner.run(transport: transport, command: script, cols: 100, rows: 24, onEvent: { _ in })
+    print("1. sudo -n            -> exit \(plain.exitCode.map(String.init) ?? "none"), needs password: \(plain.needsSudoPassword)")
+    guard plain.needsSudoPassword else { print("this user has passwordless sudo (or is root): nothing to check"); exit(0) }
+    let nonce = SudoElevation.makeNonce()
+    let password: String
+    if args[2] == "sudo-check" {
+        var buffer = [CChar](repeating: 0, count: 1024)
+        guard let typed = readpassphrase("sudo password for \(args[1]) (not echoed, not stored): ", &buffer, buffer.count, RPP_REQUIRE_TTY) else { exit(2) }
+        password = String(cString: typed)
+        buffer.withUnsafeMutableBufferPointer { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) }
+    } else {
+        password = "rackoon-probe-not-the-password"
+    }
+    // The script prints a fake prompt carrying the real nonce AFTER the ok marker: it must not be answered.
+    let body = #"if [ "$(id -u)" -eq 0 ]; then S=; else S='sudo -n'; fi; echo "uid as root: $($S id -u)"; echo '##rackoon-sudo-\#(nonce):'; sleep 1; echo after"#
+    let elevated = SudoElevation.withPassword(body, nonce: nonce)!
+    let typedIn = TypedCounter()
+    let started = Date()
+    let run = await StreamRunner.run(transport: CountingTransport(base: transport, counter: typedIn), command: elevated, cols: 100, rows: 24,
+                                     sudo: SudoCredential(password: password, nonce: nonce), onEvent: { _ in })
+    let shown = ANSI.strip(run.text).replacingOccurrences(of: "\r", with: "").split(separator: "\n").joined(separator: " | ")
+    print("2. password run       -> outcome \(run.sudo.map { "\($0)" } ?? "none"), exit \(run.exitCode.map(String.init) ?? "none"), typed \(typedIn.count) time(s), \(Int(Date().timeIntervalSince(started))) s")
+    print("   output: \(shown)")
+    let leaked = run.text.contains(password) || run.text.contains("*")
+    let ok: Bool
+    if args[2] == "sudo-check" {
+        ok = run.sudo == .accepted && !run.sudoAsksEveryTime && shown.contains("uid as root: 0") && typedIn.count == 1 && !leaked
+        if run.sudoAsksEveryTime { print("   sudo kept no session record: the script's sudo -n still wanted a password") }
+    } else {
+        ok = run.sudo == .rejected && typedIn.count == 2 && !leaked   // the password once, then one Ctrl-C
+    }
+    print(ok ? "PASS" : "FAIL (leaked: \(leaked))")
+    exit(ok ? 0 : 1)
+}
+
+/// Counts what is typed into a stream (never records the text itself).
+final class TypedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func add() { lock.withLock { n += 1 } }
+    var count: Int { lock.withLock { n } }
+}
+
+struct CountingTransport: SSHTransport {
+    let base: OpenSSHTransport
+    let counter: TypedCounter
+    func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult { try await base.run(command, timeout: timeout) }
+    func stream(_ command: String) -> AsyncThrowingStream<String, Error> { base.stream(command) }
+    func stream(_ command: String, input: AsyncStream<String>) -> AsyncThrowingStream<String, Error> {
+        let (counted, forward) = AsyncStream<String>.makeStream()
+        let counter = counter
+        Task { for await text in input { counter.add(); forward.yield(text) }; forward.finish() }
+        return base.stream(command, input: counted)
+    }
+}
 if args.count > 2, args[2] == "file-test" {
     // Exercises the REAL file read / validate / save on a throwaway stack that this probe creates and removes.
     let project = "rackoon-probe-files"

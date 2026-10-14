@@ -73,7 +73,9 @@ PLIST
 plutil -lint "$out/Contents/Info.plist" >/dev/null
 
 # Sign inside-out without the deprecated --deep: the relay first, then the app. Any failure stops the script.
-codesign --force --sign - "$out/Contents/MacOS/rackoon-pty"
-codesign --force --sign - "$out"
+# --options runtime (hardened runtime): blocks code injection such as DYLD_INSERT_LIBRARIES, so another program can't run
+# inside Rackoon and ask for a saved sudo password in its name. SudoVault only offers "Remember on this Mac" when it's on.
+codesign --force --options runtime --sign - "$out/Contents/MacOS/rackoon-pty"
+codesign --force --options runtime --sign - "$out"
 codesign --verify --strict --verbose=2 "$out"
 echo "built $out (version $version, build $build_number)"

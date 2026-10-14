@@ -210,6 +210,15 @@ public actor CommandLibrarySession {
         return Intent(summary: command.title, command: script, risk: command.risk, preview: preview)
     }
 
+    /// The same entry for a user whose sudo wants a password (`SudoElevation`), or nil for entries that don't use sudo.
+    /// `nonce` must be the one the run will use (`SudoCredential`); build the intent once and keep it.
+    public nonisolated func passwordIntent(for command: LibraryCommand, params: [String: String] = [:], preview: String? = nil,
+                                           nonce: String) -> Intent? {
+        guard command.root, let plain = intent(for: command, params: params, preview: preview),
+              let script = SudoElevation.withPassword(plain.command, nonce: nonce) else { return nil }
+        return Intent(summary: command.title + " (with sudo password)", command: script, risk: command.risk, preview: preview)
+    }
+
     /// Anything typed by hand. It can't be classified, so it counts as a change and always needs a confirmation.
     public nonisolated func customIntent(_ text: String) -> Intent? {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -228,13 +237,14 @@ public actor CommandLibrarySession {
 
     /// Runs `intent` with live output. Returns false without running if it needs a confirmation it does not have.
     @discardableResult
-    public func run(_ intent: Intent, confirmation: Confirmation?, cols: Int, rows: Int,
+    public func run(_ intent: Intent, confirmation: Confirmation?, cols: Int, rows: Int, sudo: SudoCredential? = nil,
                     onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async -> StreamedRun? {
         do { try policy.authorize(intent, with: confirmation) } catch {
             onEvent(.output("\u{1B}[31m\((error as? LocalizedError)?.errorDescription ?? "\(error)")\u{1B}[0m\r\n"))
             onEvent(.finished(exitCode: nil))
             return nil
         }
-        return await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows, onEvent: onEvent)
+        return await StreamRunner.run(transport: transport, command: intent.command, cols: cols, rows: rows,
+                                      sudo: sudo, onEvent: onEvent)
     }
 }
