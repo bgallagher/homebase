@@ -98,6 +98,8 @@ struct AppActions {
     var servers: [Server]
     var selectedServerID: String?
     var selectServer: (Server) -> Void
+    /// Opens the sidebar's server menu with its search field focused.
+    var switchServer: () -> Void
     var addServer: () -> Void
     /// Opens the Edit Connection sheet for the selected server.
     var editServer: () -> Void
@@ -189,6 +191,9 @@ struct GoCommands: Commands {
                     .disabled(actions == nil || actions?.servers.isEmpty == true)
             }
             Divider()
+            Button("Switch Server…") { actions?.switchServer() }
+                .keyboardShortcut("k")
+                .disabled(actions?.servers.isEmpty ?? true)
             Button("Previous Server") { step(-1) }
                 .keyboardShortcut("[")
                 .disabled((actions?.servers.count ?? 0) < 2)
@@ -315,6 +320,7 @@ struct ContentView: View {
     @State private var terminals = TerminalStore()
     @State private var dockerWorkspace = DockerWorkspace()
     @State private var showingAdd = false
+    @State private var switcher = ServerSwitcherState()
     /// The server whose connection details are being edited (the Edit Connection sheet).
     @State private var editing: Server?
     @Environment(\.openWindow) private var openWindow
@@ -322,19 +328,27 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
-                    background: { model.backgroundEntry($0) },
-                    updates: updateBadge,
-                    onSelect: { selection = .overview; model.select($0) },
-                    onEdit: { editing = $0 },
-                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
-                    onAddServer: { showingAdd = true })
+            Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, light: light,
+                    switcher: switcher, updates: updateBadge, onAddServer: { showingAdd = true })
             Divider()
             // The pane takes all the room that is left, whatever it shows. Without this an empty state shrank the whole row to
             // its own size and floated it in the middle of a wider window, with the window background showing at both sides.
             detail.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 1080, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
+        .coordinateSpace(name: ServerSwitcherState.space)
+        .overlay {
+            // The open server menu floats over the whole window, so it can reach past the sidebar and close on any click.
+            if switcher.isOpen {
+                ServerSwitcherPanel(
+                    switcher: switcher, servers: model.servers, selectedID: model.selectedID, light: light,
+                    onSelect: { server in if server.id != model.selectedID { selection = .overview }; model.select(server) },
+                    onEdit: { editing = $0 },
+                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
+                    onReorder: { model.reorder($0) },
+                    onAddServer: { showingAdd = true })
+            }
+        }
         .background(Theme.background)
         // The theme drives the whole window: accent for controls, light/dark for system-drawn parts, and
         // every open terminal is recoloured when the resolved theme changes.
@@ -399,6 +413,7 @@ struct ContentView: View {
             servers: model.servers,
             selectedServerID: model.selectedID,
             selectServer: { server in selection = .overview; model.select(server) },
+            switchServer: { switcher.open() },
             addServer: { showingAdd = true },
             editServer: { editing = model.selected },
             forgetSudoPassword: model.selected.flatMap { server in
@@ -425,6 +440,20 @@ struct ContentView: View {
         Binding(
             get: { if case .needsTrust = model.phase { true } else { false } },
             set: { if !$0 { model.declineTrust() } })
+    }
+
+    /// A server's status light: the selected one from its live poll, the others from the once-a-minute poll.
+    private func light(_ server: Server) -> ServerLight {
+        if server.id == model.selectedID {
+            let summary: String = switch status {
+            case .connected: "Online"
+            case .failing: model.state.error.map { "Not answering: \($0)" } ?? "Not connected"
+            case .connecting, .none: "Connecting…"
+            }
+            return ServerLight(status: status, summary: summary)
+        }
+        let entry = model.backgroundEntry(server.id)
+        return ServerLight(status: entry?.status ?? .none, summary: entry?.summary ?? "Not checked yet")
     }
 
     private var status: ConnectionStatus {

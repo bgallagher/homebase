@@ -216,6 +216,14 @@ final class AppModel {
         fleet.sync(servers: servers, selectedID: selectedID)
     }
 
+    /// Saves a new order for the servers (the server menu's drag and Move Up/Down). Only the order may differ.
+    func reorder(_ newOrder: [Server]) {
+        guard newOrder.count == servers.count, Set(newOrder.map(\.id)) == Set(servers.map(\.id)),
+              newOrder.map(\.id) != servers.map(\.id) else { return }
+        servers = newOrder
+        persist()
+    }
+
     /// The status light of a server that is not selected (the selected one's comes from `phase` and `state`).
     func backgroundEntry(_ id: String) -> FleetEntry? { fleet.entries[id] }
 
