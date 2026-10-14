@@ -26,7 +26,7 @@ public actor ServerSession {
     echo '##reboot'; if [ -f /var/run/reboot-required ]; then echo yes; else echo no; fi; \
     U=$(apt list --upgradable 2>/dev/null); echo '##updates'; echo "$U" | grep -c -E '^[^/ ]+/'; \
     echo '##security'; echo "$U" | grep -c -E '^[^/ ]+/[^ ]*-security'; \
-    echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null
+    echo '##unhealthy'; docker ps --filter health=unhealthy --format '{{.Names}}' 2>/dev/null || true
     """
 
     private let transport: SSHTransport

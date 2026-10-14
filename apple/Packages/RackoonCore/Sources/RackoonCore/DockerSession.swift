@@ -102,7 +102,7 @@ public actor DockerSession {
     public static let command = """
     echo '##docker'; if command -v docker >/dev/null 2>&1; then echo ok; else echo missing; fi; \
     echo '##ps'; docker ps -a --format '{{json .}}' 2>&1; \
-    echo '##stats'; docker stats --no-stream --format '{{json .}}' 2>&1
+    echo '##stats'; docker stats --no-stream --format '{{json .}}' 2>&1 || true
     """
 
     /// Container ids come from docker, but we still refuse anything that is not a hex id before it reaches a shell.

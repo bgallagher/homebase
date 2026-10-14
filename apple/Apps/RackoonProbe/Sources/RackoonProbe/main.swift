@@ -20,6 +20,7 @@ if args.count > 2, args[2] == "hostkey" {
         case .trusted: "trusted"
         case .unknown(let o): "unknown, \(o.hostname):\(o.port)\n  " + o.fingerprints.joined(separator: "\n  ")
         case .changed(let m): "CHANGED: \(m)"
+        case .authFailed(let m): "login refused (host key fine): \(m)"
         case .failed(let m): "failed: \(m)"
         }
     }

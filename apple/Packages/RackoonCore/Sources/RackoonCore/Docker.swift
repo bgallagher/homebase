@@ -102,6 +102,9 @@ public enum DockerParseError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notInstalled: "Docker is not installed on this server."
+        case .daemon(let m) where m.lowercased().contains("permission denied"):
+            // The classic: the ssh user is not in the docker group.
+            m + "\nThe SSH user can't use Docker. On the server, add it to the docker group (sudo usermod -aG docker <user>), then reconnect."
         case .daemon(let m): m
         case .malformed(let d): "Unexpected docker output: \(d)"
         }

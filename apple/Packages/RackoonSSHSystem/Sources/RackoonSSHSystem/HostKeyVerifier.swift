@@ -18,6 +18,9 @@ public enum HostKeyStatus: Sendable, Equatable {
     case unknown(HostKeyOffer)
     /// The stored key does not match. Never offered for acceptance.
     case changed(String)
+    /// The host key is fine (ssh checks it before any login), but the server refused the login itself. The message is
+    /// ssh's ("user@host: Permission denied (publickey)."). Polling may go on: it recovers once the key is sorted out.
+    case authFailed(String)
     case failed(String)
 }
 
@@ -30,7 +33,7 @@ public struct HostKeyVerifier: Sendable {
         self.knownHostsPath = knownHostsPath
     }
 
-    enum Outcome: Equatable { case trusted, unknownKey, changedKey, other(String) }
+    enum Outcome: Equatable { case trusted, unknownKey, changedKey, authFailed(String), other(String) }
 
     /// Maps the result of `ssh -o StrictHostKeyChecking=yes … true` to an outcome. Pure, so it is unit tested.
     static func classify(exitCode: Int32, stderr: String) -> Outcome {
@@ -39,8 +42,12 @@ public struct HostKeyVerifier: Sendable {
             return .changedKey
         }
         if stderr.contains("Host key verification failed") { return .unknownKey }
-        // The key was accepted and authentication is what failed: the session will show that error.
-        if stderr.contains("Permission denied") { return .trusted }
+        // The host key was accepted (ssh checks it first) and the login is what failed. Only the last line is the
+        // verdict; anything before it is ssh's own warnings (a key file with loose permissions, for instance).
+        if stderr.contains("Permission denied") {
+            let lines = stderr.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            return .authFailed(lines.last(where: { $0.contains("Permission denied") }) ?? "Permission denied")
+        }
         let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return .other(detail.isEmpty ? "ssh exited with code \(exitCode)" : detail)
     }
@@ -50,10 +57,12 @@ public struct HostKeyVerifier: Sendable {
                     "-o", "ControlMaster=no", "-o", "ControlPath=none",
                     "-o", "UserKnownHostsFile=\(knownHostsPath)"]
         if let port = server.port { args += ["-p", String(port)] }
+        args += OpenSSHTransport.identityArguments(server.identityFile)
         args += [server.sshDestination, "true"]
         let result = await Self.run(.path("/usr/bin/ssh"), args)
         switch Self.classify(exitCode: result.code, stderr: result.stderr) {
         case .trusted: return .trusted
+        case .authFailed(let message): return .authFailed(message)
         case .changedKey:
             return .changed("The host key for \(server.host) has changed since you last connected. "
                 + "This could be a reinstall or someone intercepting the connection. Remove the old entry from known_hosts only if you expected this.")

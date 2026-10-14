@@ -19,20 +19,30 @@ public enum OpenSSHError: Error, LocalizedError {
 public struct OpenSSHTransport: SSHTransport {
     public let host: String
     private let port: Int?
+    private let identityFile: String?
     private let controlDir: String
 
     public init(server: Server) {
-        self.init(destination: server.sshDestination, port: server.port)
+        self.init(destination: server.sshDestination, port: server.port, identityFile: server.identityFile)
     }
 
     public init(host: String) {
-        self.init(destination: host, port: nil)
+        self.init(destination: host, port: nil, identityFile: nil)
     }
 
-    private init(destination: String, port: Int?) {
+    private init(destination: String, port: Int?, identityFile: String?) {
         self.host = destination
         self.port = port
+        self.identityFile = identityFile
         self.controlDir = Self.controlDirectory()
+    }
+
+    /// `-i <file> -o IdentitiesOnly=yes` when the server names a key file, so ssh offers that key and only that key (an
+    /// agent full of other keys could otherwise use up the server's attempt limit first). `~` is expanded here, so every
+    /// ssh invocation (commands, streams, terminals, the host-key check) gets the same path. Empty when there is none.
+    public static func identityArguments(_ identityFile: String?) -> [String] {
+        guard let file = identityFile?.trimmingCharacters(in: .whitespaces), !file.isEmpty else { return [] }
+        return ["-i", NSString(string: file).expandingTildeInPath, "-o", "IdentitiesOnly=yes"]
     }
 
     /// Shared by command polling and terminal tabs so a new tab reuses the open connection.
@@ -57,7 +67,7 @@ public struct OpenSSHTransport: SSHTransport {
                     "-o", "ControlPersist=120",
                     "-o", "ControlPath=\(controlDirectory())/%C"]
         if let port = server.port { args += ["-p", String(port)] }
-        return args + [server.sshDestination]
+        return args + identityArguments(server.identityFile) + [server.sshDestination]
     }
 
     func baseArguments() -> [String] {
@@ -68,8 +78,7 @@ public struct OpenSSHTransport: SSHTransport {
             "-o", "ControlMaster=auto",
             "-o", "ControlPersist=120",
             "-o", "ControlPath=\(controlDir)/%C",
-            host,
-        ]
+        ] + Self.identityArguments(identityFile) + [host]
     }
 
     /// Most output one command may produce (a safety net; the largest real answers are a few hundred KB).
@@ -127,9 +136,7 @@ public struct OpenSSHTransport: SSHTransport {
             "-o", "ServerAliveInterval=15",
             "-o", "ControlMaster=no",
             "-o", "ControlPath=none",
-            host,
-            command,
-        ]
+        ] + Self.identityArguments(identityFile) + [host, command]
         return AsyncThrowingStream { continuation in
             let input = StdinBox()
             var options = PlatformOptions()

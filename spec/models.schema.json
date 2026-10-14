@@ -25,6 +25,13 @@
             "null"
           ]
         },
+        "identityFile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A private key file to log in with. The Mac passes it to ssh as -i with IdentitiesOnly; may start with ~. Unused on Android."
+        },
         "user": {
           "type": [
             "string",

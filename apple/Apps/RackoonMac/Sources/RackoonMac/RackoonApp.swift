@@ -99,6 +99,8 @@ struct AppActions {
     var selectedServerID: String?
     var selectServer: (Server) -> Void
     var addServer: () -> Void
+    /// Opens the Edit Connection sheet for the selected server.
+    var editServer: () -> Void
     var refresh: () -> Void
     var openTerminalHere: () -> Void
     var ipAddress: String?
@@ -248,6 +250,9 @@ struct ServerCommands: Commands {
             Button("Add Server…") { actions?.addServer() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions == nil)
+            Button("Edit Connection…") { actions?.editServer() }
+                .keyboardShortcut("i")
+                .disabled(!hasServer)
         }
     }
 }
@@ -306,6 +311,8 @@ struct ContentView: View {
     @State private var terminals = TerminalStore()
     @State private var dockerWorkspace = DockerWorkspace()
     @State private var showingAdd = false
+    /// The server whose connection details are being edited (the Edit Connection sheet).
+    @State private var editing: Server?
     @Environment(\.openWindow) private var openWindow
     private let appearance = AppearanceStore.shared
 
@@ -314,6 +321,7 @@ struct ContentView: View {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
                     updates: updateBadge,
                     onSelect: { selection = .overview; model.select($0) },
+                    onEdit: { editing = $0 },
                     onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
                     onAddServer: { showingAdd = true })
             Divider()
@@ -346,10 +354,23 @@ struct ContentView: View {
                 model.add(server)
             } onCancel: { showingAdd = false }
         }
+        .sheet(item: $editing) { server in
+            EditServerSheet(server: server, onSave: applyEdit) { editing = nil }
+        }
         .sheet(isPresented: pendingTrust) {
             if case .needsTrust(let offer) = model.phase, let server = model.selected {
                 HostKeySheet(server: server, offer: offer, onTrust: model.trustPending, onCancel: model.declineTrust)
             }
+        }
+    }
+
+    /// The Edit Connection sheet was saved. When the connection details changed, what was open against the old address
+    /// (terminal tabs, Docker and Files models) is closed; the model reconnects the selected server itself.
+    private func applyEdit(_ server: Server) {
+        editing = nil
+        if model.update(server) {
+            terminals.closeAll(for: server)
+            dockerWorkspace.forget(serverID: server.id)
         }
     }
 
@@ -374,6 +395,7 @@ struct ContentView: View {
             selectedServerID: model.selectedID,
             selectServer: { server in selection = .overview; model.select(server) },
             addServer: { showingAdd = true },
+            editServer: { editing = model.selected },
             refresh: { model.refresh() },
             openTerminalHere: {
                 guard let server = model.selected else { return }
@@ -413,7 +435,8 @@ struct ContentView: View {
                 switch selection {
                 case .overview:
                     OverviewView(model: model, server: server, openTerminal: { selection = .terminal },
-                                 openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } })
+                                 openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } },
+                                 editServer: { editing = server })
                 case .docker:
                     DockerScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace, openShell: { container in
                         guard let command = DockerSession.shellCommand(id: container.id) else { return }
