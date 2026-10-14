@@ -148,7 +148,7 @@ final class DockerModel {
             message: stopping ? "\(container.name) will stop until you start it again."
                               : "\(container.name) will be restarted. Connections to it drop for a moment.",
             serverName: serverName, command: intent.command,
-            destructive: stopping,
+            destructive: true,   // both interrupt the container: a click, not Return, confirms
             run: { [weak self] in self?.perform(action, on: container) })
     }
 
@@ -190,7 +190,7 @@ final class DockerModel {
              "Recreating \(stack.name)…")
         }
         pending = PendingAction(title: title, message: message, serverName: serverName, command: intent.command,
-                                destructive: action == .recreate,
+                                destructive: action == .recreate || action == .restart,
                                 run: { [weak self] in self?.run(action, on: stack, label: working) })
     }
 

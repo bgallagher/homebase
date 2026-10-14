@@ -68,6 +68,26 @@ final class DockerParserTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(stacks.last).isStandalone)
     }
 
+    func testStackHealthAndSearch() throws {
+        let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/docker/synthetic-mixed-states.out.txt"), encoding: .utf8)
+        let stacks = try DockerParser.parse(text).stacks
+        let monitoring = try XCTUnwrap(stacks.first { $0.name == "monitoring" })
+        XCTAssertEqual(monitoring.health, .attention, "one exited and one unhealthy container")
+        XCTAssertTrue(monitoring.matches("MONITOR"))
+        XCTAssertTrue(monitoring.matches("grafana"), "a container's name or service matches")
+        XCTAssertTrue(monitoring.matches(""))
+        XCTAssertFalse(monitoring.matches("monitoring shlink"), "every word must match")
+        var empty = monitoring
+        empty.containers = []
+        XCTAssertEqual(empty.health, .stopped, "never started")
+        var allUp = monitoring
+        allUp.containers = monitoring.containers.map { var c = $0; c.state = "running"; c.health = ""; return c }
+        XCTAssertEqual(allUp.health, .running)
+        var allDown = monitoring
+        allDown.containers = monitoring.containers.map { var c = $0; c.state = "exited"; c.health = ""; return c }
+        XCTAssertEqual(allDown.health, .stopped)
+    }
+
     func testPorts() {
         let ports = DockerParser.parsePorts("127.0.0.1:8087->8080/tcp, [::]:8087->8080/tcp, 172.17.0.1:8087->8080/tcp, 5432/tcp, 67-68/udp, 0.0.0.0:53->53/udp, 0.0.0.0:8000-8010->8000-8010/tcp")
         XCTAssertEqual(ports, [.init(hostPort: 8087, containerPort: 8080, proto: "tcp"),

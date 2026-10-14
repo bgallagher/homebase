@@ -76,6 +76,9 @@ struct DockerScreen: View {
     private let model: DockerModel
     @State private var tileHeight: CGFloat = 0
     @State private var bookmarking: BookmarkModel?
+    /// The overview's search text and status filter (nil: every stack).
+    @State private var query = ""
+    @State private var healthFilter: DockerStack.Health?
 
     private var openStack: String? {
         get { workspace.openStack[server.id] }
@@ -116,9 +119,14 @@ struct DockerScreen: View {
                     if let snapshot = state.snapshot {
                         if snapshot.containers.isEmpty, model.createdStacks.isEmpty {
                             Text("No containers on this server.").foregroundStyle(Theme.textMuted)
+                        } else if model.stacks.count > 1 {
+                            filterBar
+                        }
+                        if !model.stacks.isEmpty, shownStacks.isEmpty {
+                            Text("No stacks match.").foregroundStyle(Theme.textMuted)
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
-                            ForEach(model.stacks.filter(\.hasBookmark) + model.stacks.filter { !$0.hasBookmark }) { stack in   // bookmarked first, each part in its usual order
+                            ForEach(shownStacks) { stack in
                                 StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name), height: tileHeight,
                                           bookmark: model.bookmarkableStacks.contains { $0.name == stack.name } ? { startBookmark(stack) } : nil) {
                                     openStack = stack.name
@@ -159,6 +167,54 @@ struct DockerScreen: View {
         .onChange(of: model.removedStack) { _, removed in
             if let removed, openStack == removed { openStack = nil }   // the stack is gone: back to the overview
         }
+    }
+
+    /// The stacks the search and filter let through: bookmarked first, each part in its usual order.
+    private var shownStacks: [DockerStack] {
+        let shown = model.stacks.filter { $0.matches(query) && (healthFilter == nil || $0.health == healthFilter) }
+        return shown.filter(\.hasBookmark) + shown.filter { !$0.hasBookmark }
+    }
+
+    /// Search and status chips above the stack cards. Clicking a chip again shows every stack.
+    private var filterBar: some View {
+        let counts = Dictionary(grouping: model.stacks, by: \.health).mapValues(\.count)
+        return HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
+                TextField("Search stacks, containers, images", text: $query).textFieldStyle(.plain)
+                if !query.isEmpty {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textMuted) }
+                        .buttonStyle(.pointer).accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 10).frame(width: 300, height: 30)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+            healthChip("All", nil, model.stacks.count, Theme.textPrimary)
+            healthChip("Running", .running, counts[.running] ?? 0, Theme.ok)
+            healthChip("Needs attention", .attention, counts[.attention] ?? 0, Theme.warn)
+            healthChip("Stopped", .stopped, counts[.stopped] ?? 0, Theme.textSecondary)
+            Spacer()
+        }
+    }
+
+    private func healthChip(_ title: String, _ health: DockerStack.Health?, _ count: Int, _ color: Color) -> some View {
+        let on = healthFilter == health
+        return Button { healthFilter = on ? nil : health } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                Text("\(count)").monospacedDigit().foregroundStyle(on ? color : Theme.textMuted)
+            }
+            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? color : Theme.textSecondary)
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(on ? color.opacity(0.14) : .clear, in: Capsule())
+            .overlay(Capsule().stroke(on ? color.opacity(0.4) : Theme.border))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pointer)
+        .disabled(health != nil && count == 0 && !on)
+        .opacity(health != nil && count == 0 && !on ? 0.45 : 1)
     }
 
     private func startBookmark(_ stack: DockerStack) {
@@ -319,13 +375,16 @@ private struct StackTile: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    // The stack's name wins over the file name when the card is narrow.
+                    Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1).layoutPriority(1)
                     Text(stack.configFileName ?? "").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
                     Spacer(minLength: 4)
                     if busyStack || stack.containers.contains(where: { busy.contains($0.id) }) {
                         ProgressView().controlSize(.mini)
                     } else {
-                        if !status.text.isEmpty { Text(status.text).font(.system(size: 12)).foregroundStyle(status.color) }
+                        if !status.text.isEmpty {
+                            Text(status.text).font(.system(size: 12)).foregroundStyle(status.color).lineLimit(1).fixedSize()
+                        }
                         Circle().fill(status.dot).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
                     }
                 }
@@ -553,25 +612,54 @@ private struct StackDetail: View {
         return ("\(stack.runningCount) of \(n) running", Theme.warn)
     }
 
+    /// Every stack action sits in one menu, each saying what it does, and each asks first with the exact command: nothing
+    /// that changes the server is a single click away on this page.
     @ViewBuilder private var actions: some View {
         let reason = model.composeBlockedReason(for: stack)
         let working = busy.contains { id in stack.containers.contains { $0.id == id } } || model.composeWorking != nil
         HStack(spacing: 8) {
             if working { ProgressView().controlSize(.small) }
-            Button("Pull Images") { model.request(.pull, on: stack) }.handCursor()
-            Button("Rebuild") { model.request(.rebuild, on: stack) }.handCursor()
-            Button("Restart") { model.request(.restart, on: stack) }.handCursor()
             Menu {
-                Button("Update") { model.request(.up, on: stack) }
-                Divider()
-                Button("Recreate All Containers…", role: .destructive) { model.request(.recreate, on: stack) }
-                Button("Delete Stack…", role: .destructive) { model.requestDelete(stack) }
-            } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).handCursor()
+                Section("Apply changes") {
+                    Button { model.request(.up, on: stack) } label: {
+                        Text("Update…")
+                        Text("Recreate containers whose image or settings changed; start stopped ones")
+                    }
+                    Button { model.request(.pull, on: stack) } label: {
+                        Text("Pull Latest Images…")
+                        Text("Download newer images; nothing restarts until you Update")
+                    }
+                    Button { model.request(.rebuild, on: stack) } label: {
+                        Text("Rebuild…")
+                        Text("Build images from the stack's Dockerfiles, then recreate what changed")
+                    }
+                }
+                Section {
+                    Button { model.request(.restart, on: stack) } label: {
+                        Text("Restart All Containers…")
+                        Text("Restart in place; changes are not applied")
+                    }
+                }
+                Section {
+                    Button(role: .destructive) { model.request(.recreate, on: stack) } label: {
+                        Text("Recreate All Containers…")
+                        Text("Stop and recreate every container from the compose file")
+                    }
+                    Button(role: .destructive) { model.requestDelete(stack) } label: {
+                        Text("Delete Stack…")
+                        Text("Remove the containers, and optionally volumes and files")
+                    }
+                }
+            } label: {
+                Label("Stack Actions", systemImage: "slider.horizontal.3")
+            }
+            .menuIndicator(.visible)
+            .fixedSize()
+            .handCursor()
+            .disabled(reason != nil)
         }
         .buttonStyle(.bordered).controlSize(.large)
-        .disabled(reason != nil)
-        .help(reason ?? "Actions for the whole \(stack.name) stack")
+        .help(reason ?? "Update, pull, rebuild, restart or remove the whole \(stack.name) stack. Each asks first.")
     }
 
     // MARK: containers
@@ -596,55 +684,78 @@ private struct StackDetail: View {
     }
 }
 
-/// One container in the detail list: status dot, name, usage, image, and text actions.
+/// One container in the detail list: status dot, name, image, ports and usage. Clicking the row shows only its logs
+/// (click again for all of them). Its actions are behind the ⋯ button and the right-click menu, never inline, so a click
+/// meant for the row can't restart or stop anything; Shell, which changes nothing, has its own button.
 private struct ContainerCard: View {
     let container: DockerContainer
     let stack: DockerStack
     let busy: Bool
     let model: DockerModel
     let openShell: (DockerContainer) -> Void
+    @State private var hovering = false
 
     var body: some View {
         let showingLogs = model.logFocus == container.source
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Circle().fill(dot).frame(width: 7, height: 7)
-                Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)
-                Spacer(minLength: 4)
-                Text(usage).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
+        HStack(spacing: 10) {
+            Circle().fill(containerDot(container)).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)
+                    if showingLogs {
+                        Text("LOGS").font(.system(size: 9, weight: .bold)).tracking(0.5).foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Theme.accent.opacity(0.14), in: Capsule())
+                    }
+                }
+                Text(container.image).font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Text(containerUsage(container))
+                    if let ports = containerPorts(container) { Text(ports).lineLimit(1).truncationMode(.tail) }
+                }
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textMuted)
             }
-            Text(container.image).font(.system(size: 11)).foregroundStyle(Theme.textMuted)
-                .lineLimit(1).truncationMode(.middle).padding(.top, 4).padding(.leading, 15)
-            ContainerActions(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
-                .padding(.top, 10).padding(.leading, 15)
+            Spacer(minLength: 4)
+            ContainerButtons(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
         }
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .background(showingLogs ? Theme.accent.opacity(0.08) : .clear)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(showingLogs ? Theme.accent.opacity(0.10) : (hovering ? Theme.selection.opacity(0.5) : .clear))
+        .overlay(alignment: .leading) { if showingLogs { Theme.accent.frame(width: 3) } }
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         // Click a container to follow only its logs; click it again for all of them.
         .onTapGesture { model.logFocus = showingLogs ? nil : container.source }
-        .help(showingLogs ? "Showing only \(container.source). Click to show all containers." : "Click to show only \(container.source)'s logs")
-    }
-
-    private var dot: Color {
-        if container.isUnhealthy { return Theme.danger }
-        switch container.state {
-        case "running": return container.health == "starting" ? Theme.warn : Theme.ok
-        case "restarting", "paused": return Theme.warn
-        default: return Theme.idle
-        }
-    }
-
-    private var usage: String {
-        guard container.isRunning else { return container.state }
-        guard let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
-        return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
+        .contextMenu { ContainerMenuItems(container: container, stack: stack, busy: busy, model: model, openShell: openShell) }
+        .help(showingLogs ? "Showing only \(container.source)'s logs. Click to show all containers." : "Click to show only \(container.source)'s logs")
+        .accessibilityAddTraits(showingLogs ? [.isButton, .isSelected] : .isButton)
     }
 }
 
-/// Shell, Restart and Rebuild as text links, with Stop/Start tucked into a "···" menu (Stop weighs the same as
-/// Restart otherwise).
-private struct ContainerActions: View {
+/// A container's state as a colour.
+@MainActor private func containerDot(_ container: DockerContainer) -> Color {
+    if container.isUnhealthy { return Theme.danger }
+    switch container.state {
+    case "running": return container.health == "starting" ? Theme.warn : Theme.ok
+    case "restarting", "paused": return Theme.warn
+    default: return Theme.idle
+    }
+}
+
+/// CPU and memory of a running container, or its state.
+private func containerUsage(_ container: DockerContainer) -> String {
+    guard container.isRunning else { return container.state.capitalized }
+    guard let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
+    return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
+}
+
+/// Published ports as `host→container`, or nil when none are published.
+private func containerPorts(_ container: DockerContainer) -> String? {
+    container.ports.isEmpty ? nil : container.ports.map { "\($0.hostPort)→\($0.containerPort)" }.joined(separator: " ")
+}
+
+/// Shell (changes nothing, so it is a plain button) and a ⋯ menu with everything else.
+private struct ContainerButtons: View {
     let container: DockerContainer
     let stack: DockerStack
     let busy: Bool
@@ -652,27 +763,65 @@ private struct ContainerActions: View {
     let openShell: (DockerContainer) -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            LinkAction(title: "Shell", enabled: container.isRunning) { openShell(container) }
+        HStack(spacing: 2) {
+            IconButton(symbol: "terminal", help: container.isRunning ? "Open a shell in \(container.source)" : "The container is not running") {
+                openShell(container)
+            }
+            .disabled(!container.isRunning)
+            .opacity(container.isRunning ? 1 : 0.4)
             if busy {
-                ProgressView().controlSize(.mini)
+                ProgressView().controlSize(.small).frame(width: 28, height: 28)
             } else {
-                LinkAction(title: "Restart", mutates: true) { model.request(.restart, on: container) }
-                if model.canRebuild(container, in: stack) {
-                    LinkAction(title: "Rebuild", mutates: true) { model.requestRebuild(of: container, in: stack) }
-                }
                 Menu {
-                    if container.isRunning {
-                        Button("Stop…", role: .destructive) { model.request(.stop, on: container) }
-                    } else {
-                        Button("Start") { model.request(.start, on: container) }
-                    }
-                } label: { Image(systemName: "ellipsis").font(.system(size: 12)).frame(width: 22, height: 20) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().handCursor()
-                    .disabled(SafetyStore.shared.readOnly)
-                    .help(SafetyStore.shared.readOnly ? "Read-only mode is on" : "More actions")
+                    ContainerMenuItems(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
+                } label: {
+                    Image(systemName: "ellipsis.circle").font(.system(size: 14))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .frame(width: 28, height: 28)
+                .handCursor()
+                .help("Container actions")
+                .accessibilityLabel("Actions for \(container.source)")
             }
         }
+    }
+}
+
+/// The actions for one container, in the ⋯ menu and the right-click menu. Each change asks first with the exact command.
+private struct ContainerMenuItems: View {
+    let container: DockerContainer
+    let stack: DockerStack
+    let busy: Bool
+    let model: DockerModel
+    let openShell: (DockerContainer) -> Void
+
+    var body: some View {
+        let readOnly = SafetyStore.shared.readOnly
+        let showingLogs = model.logFocus == container.source
+        if stack.containers.count > 1 {
+            Button(showingLogs ? "Show All Containers' Logs" : "Show Only Its Logs") {
+                model.logFocus = showingLogs ? nil : container.source
+            }
+        }
+        Button("Open Shell") { openShell(container) }.disabled(!container.isRunning)
+        Button("Copy Container Name") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(container.name, forType: .string)
+        }
+        Divider()
+        Group {
+            if container.isRunning {
+                Button("Restart…") { model.request(.restart, on: container) }
+                Button("Stop…", role: .destructive) { model.request(.stop, on: container) }
+            } else {
+                Button("Start") { model.request(.start, on: container) }
+            }
+            if model.canRebuild(container, in: stack) {
+                Button("Rebuild from Dockerfile…") { model.requestRebuild(of: container, in: stack) }
+            }
+        }
+        .disabled(readOnly || busy)
+        if readOnly { Text("Read-only mode is on") }
     }
 }
 
@@ -686,44 +835,18 @@ private struct ContainerStrip: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Circle().fill(container.isUnhealthy ? Theme.danger : (container.isRunning ? Theme.ok : Theme.idle)).frame(width: 7, height: 7)
+            Circle().fill(containerDot(container)).frame(width: 7, height: 7)
             Text(container.image).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
-            if !container.ports.isEmpty {
-                Text(container.ports.map { "\($0.hostPort)→\($0.containerPort)" }.joined(separator: " ")).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1)
+            if let ports = containerPorts(container) {
+                Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text(usage).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
-            ContainerActions(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
+            Text(containerUsage(container)).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
+            ContainerButtons(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 8)
         .card()
-    }
-
-    private var usage: String {
-        guard container.isRunning else { return container.state }
-        guard let cpu = container.cpuPercent, let mem = container.memoryUsedBytes else { return "—" }
-        return "\(String(format: "%.0f", cpu))% · \(Format.bytes(mem))"
-    }
-}
-
-/// A small text action under a container. Mutating ones disable themselves in read-only mode.
-private struct LinkAction: View {
-    let title: String
-    var tint: Color = Theme.textSecondary
-    var mutates = false
-    var enabled = true
-    let action: () -> Void
-
-    var body: some View {
-        let blocked = (mutates && SafetyStore.shared.readOnly) || !enabled
-        Button(action: action) {
-            Text(title).font(.system(size: 12)).padding(.vertical, 3).contentShape(Rectangle())
-        }
-        .buttonStyle(.pointer)
-        .foregroundStyle(tint)
-        .disabled(blocked)
-        .opacity(blocked ? 0.4 : 1)
-        .help(mutates && SafetyStore.shared.readOnly ? "Read-only mode is on" : (!enabled ? "The container is not running" : title))
+        .contextMenu { ContainerMenuItems(container: container, stack: stack, busy: busy, model: model, openShell: openShell) }
     }
 }
 
@@ -812,15 +935,6 @@ struct LogPanel: View {
                     NSPasteboard.general.setString(model.logText, forType: .string)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-                }
-                if let focused {
-                    if busy.contains(focused.id) {
-                        ProgressView().controlSize(.small).frame(width: 28, height: 28)
-                    } else {
-                        IconButton(symbol: "arrow.clockwise", help: "Restart \(focused.source)", mutates: true) {
-                            model.request(.restart, on: focused)
-                        }
-                    }
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
