@@ -93,6 +93,14 @@ public struct DockerStack: Sendable, Equatable, Identifiable {
     public var hasBookmark: Bool { containers.contains { $0.bookmark != nil } }
 }
 
+public enum DockerAccess {
+    /// docker is installed but this ssh user may not use it directly: the app offers to run Docker through sudo.
+    public static func isPermissionProblem(_ message: String) -> Bool {
+        let m = message.lowercased()
+        return m.contains("permission denied") && (m.contains("docker") || m.contains("/var/run/docker.sock"))
+    }
+}
+
 public enum DockerParseError: Error, Equatable, LocalizedError {
     case notInstalled
     /// Docker is installed but the command failed (daemon down, permission denied...). Carries docker's message.
@@ -103,8 +111,9 @@ public enum DockerParseError: Error, Equatable, LocalizedError {
         switch self {
         case .notInstalled: "Docker is not installed on this server."
         case .daemon(let m) where m.lowercased().contains("permission denied"):
-            // The classic: the ssh user is not in the docker group.
-            m + "\nThe SSH user can't use Docker. On the server, add it to the docker group (sudo usermod -aG docker <user>), then reconnect."
+            // The ssh user may not use Docker directly. Rackoon offers to run Docker through sudo; it never suggests
+            // changing the server's configuration (the docker group is root-equivalent).
+            m + "\nThis user can't use Docker directly. Unlock Docker with the sudo password to see and manage containers."
         case .daemon(let m): m
         case .malformed(let d): "Unexpected docker output: \(d)"
         }

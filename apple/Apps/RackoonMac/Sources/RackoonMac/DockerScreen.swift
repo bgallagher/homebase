@@ -50,10 +50,17 @@ final class DockerWorkspace {
         return model
     }
 
+    /// The access key each model was built with: unlocking or locking Docker through sudo changes it, and the model
+    /// (which holds its connection) is rebuilt.
+    @ObservationIgnored private var modelKeys: [String: String] = [:]
+
     func model(for server: Server) -> DockerModel {
-        if let existing = models[server.id] { return existing }
+        let key = DockerElevation.shared.key(server)
+        if let existing = models[server.id], modelKeys[server.id] == key { return existing }
+        models[server.id]?.stop()
         let model = DockerModel(server: server)
         models[server.id] = model
+        modelKeys[server.id] = key
         return model
     }
 }
@@ -104,7 +111,7 @@ struct DockerScreen: View {
                 // On a stack's page the Output tab shows the run; the banner is for the overview.
                 if stack == nil, newStack == nil, let working = model.composeWorking { ComposeBanner(text: working) }
                 if let error = state.actionError { ErrorBanner(message: error) }
-                if let error = state.error { ErrorBanner(message: error) }
+                DockerAccessNotice(server: server, error: state.error)
                 if stack == nil, newStack == nil {
                     if let snapshot = state.snapshot {
                         if snapshot.containers.isEmpty, model.createdStacks.isEmpty {

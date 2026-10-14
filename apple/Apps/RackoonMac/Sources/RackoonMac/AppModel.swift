@@ -215,8 +215,9 @@ final class AppModel {
         servers[i] = server
         persist()
         guard !before.connectsLike(server) else { return false }
-        // A saved sudo password belongs to the connection it was accepted on.
+        // A saved sudo password belongs to the connection it was accepted on; so does unlocked Docker access.
         SudoVault.shared.forget(server.id)
+        DockerElevation.shared.lock(server.id)
         // A snapshot taken from another address would be painted as this server's past: drop it.
         if before.host != server.host { store.deleteSnapshot(serverID: server.id) }
         if server.id == selectedID { connect(server) }   // drops the old session and starts from the host-key check
@@ -226,6 +227,7 @@ final class AppModel {
     func remove(_ server: Server) {
         servers.removeAll { $0.id == server.id }
         SudoVault.shared.forget(server.id)
+        DockerElevation.shared.lock(server.id)
         store.deleteSnapshot(serverID: server.id)
         persist()
         if selectedID == server.id {
@@ -237,7 +239,9 @@ final class AppModel {
         }
     }
 
-    func requestReboot(_ server: Server) {
+    /// `then` runs once the user has confirmed and the reboot has started (the Updates screen uses it to move to the
+    /// Overview, which is where the waiting and reconnect progress is shown).
+    func requestReboot(_ server: Server, then: (() -> Void)? = nil) {
         guard !SafetyStore.shared.readOnly, reboots[server.id]?.isActive != true else { return }
         if SudoVault.shared.isRemembered(server) {
             // A saved sudo password: confirm the sudo command that will actually run, then unlock it.
@@ -251,6 +255,7 @@ final class AppModel {
                     flow.onBack = { [weak self] in self?.refresh() }
                     self.reboots[server.id] = flow
                     flow.startWithSavedPassword()
+                    then?()
                 })
             return
         }
@@ -264,6 +269,7 @@ final class AppModel {
                 flow.onBack = { [weak self] in self?.refresh() }   // poll straight away instead of waiting for the next tick
                 self.reboots[server.id] = flow
                 flow.start()
+                then?()
             })
     }
 

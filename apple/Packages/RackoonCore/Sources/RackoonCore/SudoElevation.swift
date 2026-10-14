@@ -50,6 +50,15 @@ public enum SudoElevation {
             || t.contains("incorrect authentication") || t.contains("no password was provided") || t.contains("authentication required")
     }
 
+    /// sudo's OWN wrong-password lines in a command's stderr: they start with "sudo:", or are classic sudo's bare
+    /// "Sorry, try again.". A command's own text ("unauthorized: authentication required" from a registry) doesn't count.
+    public static func isSudoAuthFailure(_ stderr: String) -> Bool {
+        stderr.split(whereSeparator: \.isNewline).contains { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            return line == "Sorry, try again." || (line.lowercased().hasPrefix("sudo:") && isAuthFailure(line))
+        }
+    }
+
     /// sudo said no for a reason other than a wrong password (what it printed before the fail marker), in plain words.
     public static func explainRefusal(_ sudoText: String) -> String {
         let text = sudoText.lowercased()

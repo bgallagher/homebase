@@ -27,7 +27,7 @@ struct BookmarksScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header(count: all.count)
-                if let error = model.state.error { ErrorBanner(message: error) }
+                DockerAccessNotice(server: server, error: model.state.error)
                 if let error = model.state.actionError { ErrorBanner(message: error) }
                 if let error = message ?? removing?.notice { ErrorBanner(message: error) }
                 if model.state.snapshot == nil, model.state.error == nil {
