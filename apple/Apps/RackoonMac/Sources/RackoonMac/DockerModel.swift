@@ -49,14 +49,14 @@ final class DockerModel {
     private(set) var composeWorking: String?
     /// The most recent stack action and everything it printed, kept until dismissed or replaced by the next one.
     private(set) var output: ActionOutput?
-    /// Stacks created from this app that have no containers yet. `docker ps` can't see them, so they are remembered
-    /// here (for this run of the app) until their containers show up in the snapshot.
+    /// Stacks created from this app that have no containers yet, by stack id. `docker ps` can't see them, so they are
+    /// remembered here (for this run of the app) until their containers show up in the snapshot.
     private(set) var createdStacks: [String: DockerStack] = [:]
     /// The stack the user is deciding to delete (shown as a sheet by the Docker screen).
     var deleting: DockerStack?
-    /// Stacks being deleted right now, kept visible (their containers vanish from `docker ps` before the run ends).
+    /// Stacks being deleted right now, by stack id, kept visible (their containers vanish from `docker ps` before the run ends).
     private(set) var removing: [String: DockerStack] = [:]
-    /// Set when a delete finished successfully, so the screen can leave the stack's page.
+    /// The id of the stack a delete just removed, so the screen can leave the stack's page.
     private(set) var removedStack: String?
     @ObservationIgnored private let serverName: String
     @ObservationIgnored private let serverUser: String?
@@ -78,19 +78,20 @@ final class DockerModel {
     /// Every stack to show: the ones docker reports, then freshly created ones that have no containers yet.
     var stacks: [DockerStack] {
         let reported = state.snapshot?.stacks ?? []
-        let names = Set(reported.map(\.name))
-        let extra = createdStacks.merging(removing) { $1 }.values.filter { !names.contains($0.name) }.sorted { $0.name < $1.name }
+        let ids = Set(reported.map(\.id))
+        let extra = createdStacks.merging(removing) { $1 }.values.filter { !ids.contains($0.id) }.sorted { $0.name < $1.name }
         return reported + extra
     }
 
-    func stack(named name: String) -> DockerStack? { stacks.first { $0.name == name } }
+    /// A stack by `DockerStack.id` (a compose project's name, or `standalone/<container name>`).
+    func stack(id: String) -> DockerStack? { stacks.first { $0.id == id } }
 
     /// Where a new stack should go by default: where this server's existing stacks live.
     var suggestedStackFolder: String {
         NewStackDefaults.parentDirectory(stacks: state.snapshot?.stacks ?? [], user: serverUser)
     }
 
-    func adopt(_ stack: DockerStack) { createdStacks[stack.name] = stack }
+    func adopt(_ stack: DockerStack) { createdStacks[stack.id] = stack }
 
     /// Screens that show Docker data attach while visible; polling runs while at least one is. Counting matters because
     /// a new screen can appear before the old one disappears.
@@ -152,7 +153,8 @@ final class DockerModel {
             run: { [weak self] in self?.perform(action, on: container) })
     }
 
-    /// Why the stack's actions are unavailable, or nil if they can run.
+    /// Why the stack's actions are unavailable, or nil if they can run. A standalone container has its own actions
+    /// (`standaloneBlockedReason`); compose ones are refused for it.
     func composeBlockedReason(for stack: DockerStack) -> String? {
         if SafetyStore.shared.readOnly { return "Read-only mode is on" }
         if composeWorking != nil { return "Another stack action is running" }
@@ -211,8 +213,62 @@ final class DockerModel {
     }
 
     func requestDelete(_ stack: DockerStack) {
-        guard composeBlockedReason(for: stack) == nil else { return }
+        guard (stack.isStandalone ? standaloneBlockedReason(for: stack) : composeBlockedReason(for: stack)) == nil else { return }
         deleting = stack
+    }
+
+    /// Why a standalone container's actions (pull, restart, delete) are unavailable, or nil if they can run.
+    func standaloneBlockedReason(for stack: DockerStack) -> String? {
+        if SafetyStore.shared.readOnly { return "Read-only mode is on" }
+        if composeWorking != nil { return "Another stack action is running" }
+        if StandaloneAction.remove(volumes: false).command(for: stack) == nil { return "This container can't be addressed safely" }
+        return nil
+    }
+
+    /// Pulls a standalone container's image after asking with the exact command. Deleting goes through `requestDelete`,
+    /// whose sheet has the volumes option and the typed name.
+    func requestPull(of stack: DockerStack) {
+        guard standaloneBlockedReason(for: stack) == nil, let intent = StandaloneAction.pullImage.intent(for: stack),
+              let image = StandaloneAction.pullableImage(of: stack) else { return }
+        pending = PendingAction(
+            title: "Pull the latest \(image)?",
+            message: "Downloads a newer copy of the image \(stack.name) runs. The container is not touched and keeps running the image it has: it was started with docker run, so it only switches when it is created again with its original settings.",
+            serverName: serverName, command: intent.command, destructive: false,
+            run: { [weak self] in self?.run(.pullImage, on: stack, label: "Pulling \(image)…") })
+    }
+
+    /// Deletes a standalone container after the sheet's confirmation, with the output in its Output tab. On success the screen
+    /// is told to leave its page; on failure the container is normally still there and stays on screen.
+    func delete(_ stack: DockerStack, volumes: Bool) {
+        guard composeWorking == nil else { return }
+        removing[stack.id] = stack
+        removedStack = nil
+        run(.remove(volumes: volumes), on: stack, label: "Deleting \(stack.name)…") { [weak self] succeeded in
+            guard let self else { return }
+            self.removing[stack.id] = nil
+            if succeeded { self.removedStack = stack.id }
+        }
+    }
+
+    private func run(_ action: StandaloneAction, on stack: DockerStack, label: String, completion: ((Bool) -> Void)? = nil) {
+        guard composeWorking == nil else { return }
+        composeWorking = label
+        let session = session
+        let title = switch action {
+        case .pullImage: "docker pull \(StandaloneAction.pullableImage(of: stack) ?? stack.name)"
+        case .remove: "docker rm \(stack.name)"
+        }
+        output = ActionOutput.launch(
+            scope: stack.id, title: title,
+            work: { cols, rows, onEvent in
+                let confirmation = try? session.confirm(action, stack: stack)
+                await session.performStreaming(action, stack: stack, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
+            },
+            completion: { [weak self] in
+                guard let self else { return }
+                self.composeWorking = nil
+                completion?(self.output?.phase == .succeeded)
+            })
     }
 
     /// Deletes a stack after the sheet's confirmation, with the output in the stack's Output tab. On success the stack is
@@ -220,11 +276,11 @@ final class DockerModel {
     func delete(_ stack: DockerStack, _ removal: StackRemoval) {
         guard composeWorking == nil else { return }
         composeWorking = "Deleting \(stack.name)…"
-        removing[stack.name] = stack
+        removing[stack.id] = stack
         removedStack = nil
         let session = session
         output = ActionOutput.launch(
-            scope: stack.name, title: "docker compose down",
+            scope: stack.id, title: "docker compose down",
             work: { cols, rows, onEvent in
                 let confirmation = try? session.confirm(removal, stack: stack)
                 await session.performStreaming(removal, stack: stack, confirmation: confirmation, cols: cols, rows: rows, onEvent: onEvent)
@@ -232,16 +288,16 @@ final class DockerModel {
             completion: { [weak self] in
                 guard let self else { return }
                 self.composeWorking = nil
-                self.removing[stack.name] = nil
+                self.removing[stack.id] = nil
                 if self.output?.phase == .succeeded {
-                    self.createdStacks[stack.name] = nil
-                    self.removedStack = stack.name
+                    self.createdStacks[stack.id] = nil
+                    self.removedStack = stack.id
                 } else {
                     // Failed or cancelled part way (the containers may be gone but the folder is not): keep the stack on screen,
                     // as "Not started" if docker no longer reports it, so its Output can be read and the files are not orphaned.
                     var left = stack
                     left.containers = []
-                    self.createdStacks[stack.name] = left
+                    self.createdStacks[stack.id] = left
                 }
             })
     }
@@ -259,7 +315,7 @@ final class DockerModel {
         composeWorking = label
         let session = session
         output = ActionOutput.launch(
-            scope: stack.name, title: "docker compose \(action.rawValue)" + (service.map { " \($0)" } ?? ""),
+            scope: stack.id, title: "docker compose \(action.rawValue)" + (service.map { " \($0)" } ?? ""),
             work: { cols, rows, onEvent in
                 let confirmation = try? session.confirm(action, stack: stack, service: service)
                 await session.performStreaming(action, stack: stack, service: service, confirmation: confirmation,
@@ -282,7 +338,7 @@ final class DockerModel {
         composeWorking = "\(action.rawValue.capitalized) \(container.name)…"
         let session = session
         output = ActionOutput.launch(
-            scope: container.project ?? "Standalone", title: "docker \(action.rawValue) \(container.name)",
+            scope: DockerStack.id(of: container), title: "docker \(action.rawValue) \(container.name)",
             intro: "\u{1B}[2m$ docker \(action.rawValue) \(container.name)\u{1B}[0m\r\n",
             work: { cols, rows, onEvent in
                 let confirmation = try? session.confirm(action, containerID: container.id)

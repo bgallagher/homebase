@@ -662,7 +662,7 @@ private struct DockerServerSection: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12, alignment: .top)], spacing: 12) {
                     ForEach(stacks) { stack in
-                        AppTile(stack: stack, host: row.state.overview?.tailscaleIP ?? row.state.overview?.ipAddress) { openStack(stack.name) }
+                        AppTile(stack: stack, serverID: row.server.id, host: row.state.overview?.tailscaleIP ?? row.state.overview?.ipAddress) { openStack(stack.id) }
                     }
                 }
             }
@@ -689,6 +689,7 @@ private struct DockerServerSection: View {
 /// One stack as an app: its icon, state, services, the port its web front end is published on, image and usage.
 private struct AppTile: View {
     let stack: DockerStack
+    let serverID: String
     /// The address the Mac reaches the server on (its Tailscale IP when it has one), for the web port's link.
     let host: String?
     let open: () -> Void
@@ -750,12 +751,8 @@ private struct AppTile: View {
         }
     }
 
-    @ViewBuilder private var icon: some View {
-        if let href = stack.bookmarkLinks.map(\.href).first(where: { FaviconStore.shared.image(for: $0) != nil }) {
-            FaviconView(href: href, size: 22)
-        } else {
-            LetterTile(name: stack.name, size: 22)
-        }
+    private var icon: some View {
+        AppIconView(stack: stack, serverID: serverID, webHost: host, size: 22)
     }
 
     /// http://<server>:<web port>, when the stack has a web port and the server's address is known.

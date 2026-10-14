@@ -8,7 +8,8 @@ final class ActionOutput: Identifiable {
     enum Phase: Equatable { case starting, running, succeeded, failed(Int32?), cancelled }
 
     nonisolated let id = UUID()
-    /// What the run belongs to: a compose project name, "Standalone", or "updates". Screens show only their own.
+    /// What the run belongs to: a stack's `DockerStack.id` (a compose project name or `standalone/<container>`), or
+    /// "updates". Screens show only their own.
     let scope: String
     let title: String
     private(set) var phase: Phase = .starting

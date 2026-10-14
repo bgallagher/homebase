@@ -13,6 +13,7 @@ private struct TileHeightKey: PreferenceKey {
 /// draft in progress.
 @MainActor @Observable
 final class DockerWorkspace {
+    /// The `DockerStack.id` of the stack page open for each server.
     var openStack: [String: String] = [:]
     var drafts: [String: AddContainerModel] = [:]
     /// One Docker model per server, shared by the Docker and Bookmarks screens so both see the same stacks and labels.
@@ -72,6 +73,8 @@ struct DockerScreen: View {
     let theme: TerminalTheme
     /// Opens a shell inside a container (a terminal tab running `docker exec`).
     let openShell: (DockerContainer) -> Void
+    /// The address the Mac reaches the server on (Tailscale IP when it has one), for the site icons of apps' web ports.
+    let webHost: String?
     let workspace: DockerWorkspace
     private let model: DockerModel
     @State private var tileHeight: CGFloat = 0
@@ -89,23 +92,25 @@ struct DockerScreen: View {
         nonmutating set { workspace.drafts[server.id] = newValue }
     }
 
-    init(server: Server, theme: TerminalTheme, workspace: DockerWorkspace, openShell: @escaping (DockerContainer) -> Void) {
+    init(server: Server, theme: TerminalTheme, workspace: DockerWorkspace, webHost: String? = nil,
+         openShell: @escaping (DockerContainer) -> Void) {
         self.server = server
         self.theme = theme
         self.workspace = workspace
+        self.webHost = webHost
         self.openShell = openShell
         model = workspace.model(for: server)
     }
 
     var body: some View {
         let state = model.state
-        let stack = openStack.flatMap { model.stack(named: $0) }
+        let stack = openStack.flatMap { model.stack(id: $0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let stack {
-                    StackDetail(stack: stack, server: server, model: model, theme: theme, busy: state.busy,
+                    StackDetail(stack: stack, server: server, webHost: webHost, model: model, theme: theme, busy: state.busy,
                                 back: { model.closeLogs(); openStack = nil }, openShell: openShell)
-                        .id(stack.name)   // one editor (and its drafts) per stack
+                        .id(stack.id)   // one editor (and its drafts) per stack
                 } else if let newStack {
                     AddContainerScreen(model: newStack, theme: theme, back: { self.newStack = nil })
                 } else {
@@ -127,9 +132,9 @@ struct DockerScreen: View {
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], spacing: 16) {
                             ForEach(shownStacks) { stack in
-                                StackTile(stack: stack, busy: state.busy, busyStack: state.busyStacks.contains(stack.name), height: tileHeight,
-                                          bookmark: model.bookmarkableStacks.contains { $0.name == stack.name } ? { startBookmark(stack) } : nil) {
-                                    openStack = stack.name
+                                StackTile(stack: stack, serverID: server.id, webHost: webHost, busy: state.busy, busyStack: state.busyStacks.contains(stack.id), height: tileHeight,
+                                          bookmark: model.bookmarkableStacks.contains { $0.id == stack.id } ? { startBookmark(stack) } : nil) {
+                                    openStack = stack.id
                                 }
                             }
                         }
@@ -158,8 +163,13 @@ struct DockerScreen: View {
         }
         .confirmAction(Binding(get: { model.pending }, set: { model.pending = $0 }))
         .sheet(item: Binding(get: { model.deleting }, set: { model.deleting = $0 })) { stack in
-            DeleteStackSheet(stack: stack, serverName: server.name, cancel: { model.deleting = nil },
-                             run: { removal in model.deleting = nil; model.delete(stack, removal) })
+            if stack.isStandalone {
+                DeleteContainerSheet(stack: stack, serverName: server.name, cancel: { model.deleting = nil },
+                                     run: { volumes in model.deleting = nil; model.delete(stack, volumes: volumes) })
+            } else {
+                DeleteStackSheet(stack: stack, serverName: server.name, cancel: { model.deleting = nil },
+                                 run: { removal in model.deleting = nil; model.delete(stack, removal) })
+            }
         }
         .sheet(item: $bookmarking) { draft in
             BookmarkSheet(model: draft, cancel: { bookmarking = nil })
@@ -225,7 +235,7 @@ struct DockerScreen: View {
             bookmarking = nil
             if apply {
                 model.runDirect(.up, on: stack)   // the label shows once the container is recreated; the output is on the stack's page
-                openStack = stack.name
+                openStack = stack.id
             }
         })
         bookmarking = draft
@@ -252,7 +262,7 @@ struct DockerScreen: View {
                 if result.isNew { model.adopt(result.stack) }
                 if result.start { model.runDirect(.up, on: result.stack) }   // the output is already showing when the stack's page opens
                 workspace.drafts[serverID] = nil
-                workspace.openStack[serverID] = result.stack.name
+                workspace.openStack[serverID] = result.stack.id
             })
     }
 
@@ -327,6 +337,8 @@ private struct StackLink: View {
 /// One stack as a card: containers with their CPU and memory, and a memory bar along the bottom.
 private struct StackTile: View {
     let stack: DockerStack
+    let serverID: String
+    let webHost: String?
     let busy: Set<String>
     let busyStack: Bool
     /// Height every card is drawn at (the tallest one's natural height).
@@ -336,20 +348,11 @@ private struct StackTile: View {
     let open: () -> Void
     @State private var hovering = false
 
-    /// The favicon of the stack's first bookmark that has one; nil (nothing shown) until one has been fetched.
-    private var faviconHref: String? {
-        stack.containers.compactMap { $0.bookmark?.href }.first { FaviconStore.shared.image(for: $0) != nil }
-    }
-
     var body: some View {
         card
             // Siblings of the card's button, not inside it, so a click on an icon never also opens the stack.
             .overlay(alignment: .topLeading) {
-                if let faviconHref {
-                    FaviconView(href: faviconHref, size: 26).padding(.top, 16).padding(.leading, 18)
-                } else {
-                    LetterTile(name: stack.name, size: 26).padding(.top, 16).padding(.leading, 18)
-                }
+                EditableIcon(stack: stack, serverID: serverID, webHost: webHost, size: 26).padding(.top, 16).padding(.leading, 18)
             }
             .overlay(alignment: .bottomLeading) {
                 StackLink(links: stack.bookmarkLinks, font: 12)
@@ -375,9 +378,9 @@ private struct StackTile: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    // The stack's name wins over the file name when the card is narrow.
+                    // The stack's name wins over its kind ("Compose Stack" or "Standalone") when the card is narrow.
                     Text(stack.name).font(.system(size: 15, weight: .semibold)).lineLimit(1).layoutPriority(1)
-                    Text(stack.configFileName ?? "").font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
+                    Text(stack.kindLabel).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1)
                     Spacer(minLength: 4)
                     if busyStack || stack.containers.contains(where: { busy.contains($0.id) }) {
                         ProgressView().controlSize(.mini)
@@ -390,15 +393,24 @@ private struct StackTile: View {
                 }
                 .padding(.trailing, bookmark == nil ? 0 : 26)   // room for the bookmark button
                 .padding(.leading, 36)   // and for the icon slot (site icon or letter tile)
+                // At most four services, so a big stack doesn't stretch every card (they all share the tallest height);
+                // its page lists them all.
+                let summary = stack.summaryContainers(limit: 4)
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(stack.containers) { c in
+                    ForEach(summary.shown) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            ServiceIconView(container: c, stack: stack, serverID: serverID, webHost: webHost, size: 15)
+                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                             Text(c.service ?? c.name).lineLimit(1).truncationMode(.tail)
                                 .foregroundStyle(problem(c) ? Theme.danger : Theme.textPrimary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text(usage(c)).font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(problem(c) ? Theme.danger : Theme.textMuted)
                         }
+                    }
+                    if summary.hidden > 0 {
+                        Text("+ \(summary.hidden) more service\(summary.hidden == 1 ? "" : "s")")
+                            .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
                     }
                 }
                 Spacer(minLength: 0)
@@ -412,7 +424,6 @@ private struct StackTile: View {
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
             .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .stroke(unhealthy ? Theme.danger.opacity(0.5) : (hovering ? Theme.textMuted.opacity(0.5) : Theme.border)))
-            .overlay(CornerTicks().stroke(Theme.border, lineWidth: 1.5).padding(5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.pointer)
@@ -503,24 +514,12 @@ struct ScopeTag: View {
     }
 }
 
-/// Four small corner ticks, the card's signature detail from the design.
-private struct CornerTicks: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let n: CGFloat = 6
-        for (x, y, dx, dy) in [(rect.minX, rect.minY, 1.0, 1.0), (rect.maxX, rect.minY, -1.0, 1.0),
-                               (rect.minX, rect.maxY, 1.0, -1.0), (rect.maxX, rect.maxY, -1.0, -1.0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
-            p.move(to: CGPoint(x: x + dx * n, y: y)); p.addLine(to: CGPoint(x: x, y: y)); p.addLine(to: CGPoint(x: x, y: y + dy * n))
-        }
-        return p
-    }
-}
-
 // MARK: - Stack detail
 
 private struct StackDetail: View {
     let stack: DockerStack
     let server: Server
+    let webHost: String?
     let model: DockerModel
     let theme: TerminalTheme
     let busy: Set<String>
@@ -530,17 +529,18 @@ private struct StackDetail: View {
     @State private var tab: PanelSelection
     @State private var confirmDiscard = false
 
-    init(stack: DockerStack, server: Server, model: DockerModel, theme: TerminalTheme, busy: Set<String>,
+    init(stack: DockerStack, server: Server, webHost: String?, model: DockerModel, theme: TerminalTheme, busy: Set<String>,
          back: @escaping () -> Void, openShell: @escaping (DockerContainer) -> Void) {
         self.stack = stack
         self.server = server
+        self.webHost = webHost
         self.model = model
         self.theme = theme
         self.busy = busy
         self.back = back
         self.openShell = openShell
         // A run that started just before this page opened (a new stack's first deploy) is already showing.
-        _tab = State(initialValue: model.output?.scope == stack.name ? .output : .logs)
+        _tab = State(initialValue: model.output?.scope == stack.id ? .output : .logs)
         _editor = State(initialValue: StackEditorModel(stack: stack, server: server, redeploy: { model.runDirect(.up, on: $0) }))
     }
 
@@ -549,7 +549,7 @@ private struct StackDetail: View {
             header
                 .onChange(of: model.output?.id) { _, id in
                     // Starting Pull, Update, Restart... on this stack shows its live output.
-                    if id != nil, model.output?.scope == stack.name { tab = .output }
+                    if id != nil, model.output?.scope == stack.id { tab = .output }
                 }
             if stack.containers.count == 1, let only = stack.containers.first {
                 ContainerStrip(container: only, stack: stack, busy: busy.contains(only.id), model: model, openShell: openShell)
@@ -589,16 +589,14 @@ private struct StackDetail: View {
             }
             .font(.system(size: 13))
             HStack(alignment: .center, spacing: 10) {
-                if let icon = stack.bookmarkLinks.map(\.href).first(where: { FaviconStore.shared.image(for: $0) != nil }) {
-                    FaviconView(href: icon, size: 30, hideWhenMissing: true)
-                }
+                EditableIcon(stack: stack, serverID: server.id, webHost: webHost, size: 30)
                 Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
                 // A pill, centred on the lowercase body of the title (its x-height), which is what the eye reads.
                 // Centring on the full text box puts it about 2 pt too high, because ascenders pull that centre up.
                 Badge(text: summary.text, color: summary.color).offset(y: 2)
                 StackLink(links: stack.bookmarkLinks, font: 13).padding(.leading, 6).offset(y: 2)
                 Spacer()
-                if !stack.isStandalone { actions }
+                actions
             }
         }
     }
@@ -613,43 +611,15 @@ private struct StackDetail: View {
     }
 
     /// Every stack action sits in one menu, each saying what it does, and each asks first with the exact command: nothing
-    /// that changes the server is a single click away on this page.
+    /// that changes the server is a single click away on this page. A standalone container gets the same menu; the actions
+    /// that need a compose file are shown greyed out with the reason.
     @ViewBuilder private var actions: some View {
-        let reason = model.composeBlockedReason(for: stack)
+        let reason = stack.isStandalone ? model.standaloneBlockedReason(for: stack) : model.composeBlockedReason(for: stack)
         let working = busy.contains { id in stack.containers.contains { $0.id == id } } || model.composeWorking != nil
         HStack(spacing: 8) {
             if working { ProgressView().controlSize(.small) }
             Menu {
-                Section("Apply changes") {
-                    Button { model.request(.up, on: stack) } label: {
-                        Text("Update…")
-                        Text("Recreate containers whose image or settings changed; start stopped ones")
-                    }
-                    Button { model.request(.pull, on: stack) } label: {
-                        Text("Pull Latest Images…")
-                        Text("Download newer images; nothing restarts until you Update")
-                    }
-                    Button { model.request(.rebuild, on: stack) } label: {
-                        Text("Rebuild…")
-                        Text("Build images from the stack's Dockerfiles, then recreate what changed")
-                    }
-                }
-                Section {
-                    Button { model.request(.restart, on: stack) } label: {
-                        Text("Restart All Containers…")
-                        Text("Restart in place; changes are not applied")
-                    }
-                }
-                Section {
-                    Button(role: .destructive) { model.request(.recreate, on: stack) } label: {
-                        Text("Recreate All Containers…")
-                        Text("Stop and recreate every container from the compose file")
-                    }
-                    Button(role: .destructive) { model.requestDelete(stack) } label: {
-                        Text("Delete Stack…")
-                        Text("Remove the containers, and optionally volumes and files")
-                    }
-                }
+                if stack.isStandalone { standaloneItems } else { composeItems }
             } label: {
                 Label("Stack Actions", systemImage: "slider.horizontal.3")
             }
@@ -659,7 +629,93 @@ private struct StackDetail: View {
             .disabled(reason != nil)
         }
         .buttonStyle(.bordered).controlSize(.large)
-        .help(reason ?? "Update, pull, rebuild, restart or remove the whole \(stack.name) stack. Each asks first.")
+        .help(reason ?? (stack.isStandalone
+                         ? "Pull, restart or remove \(stack.name). Each asks first."
+                         : "Update, pull, rebuild, restart or remove the whole \(stack.name) stack. Each asks first."))
+    }
+
+    @ViewBuilder private var composeItems: some View {
+        Section("Apply changes") {
+            Button { model.request(.up, on: stack) } label: {
+                Text("Update…")
+                Text("Recreate containers whose image or settings changed; start stopped ones")
+            }
+            Button { model.request(.pull, on: stack) } label: {
+                Text("Pull Latest Images…")
+                Text("Download newer images; nothing restarts until you Update")
+            }
+            Button { model.request(.rebuild, on: stack) } label: {
+                Text("Rebuild…")
+                Text("Build images from the stack's Dockerfiles, then recreate what changed")
+            }
+        }
+        Section {
+            Button { model.request(.restart, on: stack) } label: {
+                Text("Restart All Containers…")
+                Text("Restart in place; changes are not applied")
+            }
+        }
+        Section {
+            Button(role: .destructive) { model.request(.recreate, on: stack) } label: {
+                Text("Recreate All Containers…")
+                Text("Stop and recreate every container from the compose file")
+            }
+            Button(role: .destructive) { model.requestDelete(stack) } label: {
+                Text("Delete Stack…")
+                Text("Remove the containers, and optionally volumes and files")
+            }
+        }
+    }
+
+    /// The same menu for a container started with `docker run`. Update, Rebuild and Recreate need the definition a compose
+    /// file holds, which such a container doesn't have, so they stay visible but disabled and say why.
+    @ViewBuilder private var standaloneItems: some View {
+        let needsCompose = StandaloneAction.needsComposeReason
+        let image = StandaloneAction.pullableImage(of: stack)
+        Section("Apply changes") {
+            Button {} label: {
+                Text("Update…")
+                Text(needsCompose)
+            }
+            .disabled(true)
+            Button { model.requestPull(of: stack) } label: {
+                Text("Pull Latest Image…")
+                Text(image == nil ? "The container runs an untagged image, so there is nothing to pull"
+                                  : "Download a newer \(image ?? ""); the container keeps the image it has")
+            }
+            .disabled(image == nil)
+            Button {} label: {
+                Text("Rebuild…")
+                Text(needsCompose)
+            }
+            .disabled(true)
+        }
+        if let container = stack.containers.first {
+            Section {
+                if container.isRunning {
+                    Button { model.request(.restart, on: container) } label: {
+                        Text("Restart Container…")
+                        Text("Restart in place; its settings are not changed")
+                    }
+                } else {
+                    Button { model.request(.start, on: container) } label: {
+                        Text("Start Container")
+                        Text("Start it again with the settings it was created with")
+                    }
+                }
+            }
+        }
+        Section {
+            Button(role: .destructive) {} label: {
+                Text("Recreate Container…")
+                Text(needsCompose)
+            }
+            .disabled(true)
+            Button(role: .destructive) { model.requestDelete(stack) } label: {
+                Text("Delete Container…")
+                Text("Stop and remove the container, and optionally its anonymous volumes")
+            }
+        }
     }
 
     // MARK: containers
@@ -669,7 +725,8 @@ private struct StackDetail: View {
             Text("CONTAINERS").font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
             VStack(spacing: 0) {
                 ForEach(stack.containers) { c in
-                    ContainerCard(container: c, stack: stack, busy: busy.contains(c.id), model: model, openShell: openShell)
+                    ContainerCard(container: c, stack: stack, serverID: server.id, webHost: webHost, busy: busy.contains(c.id),
+                                  model: model, openShell: openShell)
                     if c.id != stack.containers.last?.id { Divider().overlay(Theme.border) }
                 }
             }
@@ -690,6 +747,8 @@ private struct StackDetail: View {
 private struct ContainerCard: View {
     let container: DockerContainer
     let stack: DockerStack
+    let serverID: String
+    let webHost: String?
     let busy: Bool
     let model: DockerModel
     let openShell: (DockerContainer) -> Void
@@ -699,6 +758,7 @@ private struct ContainerCard: View {
         let showingLogs = model.logFocus == container.source
         HStack(spacing: 10) {
             Circle().fill(containerDot(container)).frame(width: 7, height: 7)
+            EditableIcon(stack: stack, container: container, serverID: serverID, webHost: webHost, size: 24)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)

@@ -93,3 +93,69 @@ struct DeleteStackSheet: View {
         }
     }
 }
+
+/// Confirmation for deleting a standalone container (started with `docker run`): what is removed and what is kept, an
+/// opt-in for its anonymous volumes, the exact command, and always a typed name, because nothing on the server can create
+/// the container again (its settings were only in the original command line).
+struct DeleteContainerSheet: View {
+    let stack: DockerStack
+    let serverName: String
+    let cancel: () -> Void
+    let run: (_ volumes: Bool) -> Void
+    @State private var removeVolumes = false
+    @State private var typed = ""
+
+    private var command: String { StandaloneAction.remove(volumes: removeVolumes).command(for: stack) ?? "" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 22)).foregroundStyle(Theme.warn)
+                Text("Delete \(stack.name)?").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+            }
+            Text("Stops and removes the container. It was started with docker run, not Docker Compose, so it can't be created again from here: that needs its original docker run command. Its image, named volumes and bind-mounted folders are kept.")
+                .foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $removeVolumes) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Also delete its anonymous volumes").foregroundStyle(Theme.textPrimary)
+                    Text("Volumes Docker made for it without a name are lost for good. Named volumes are kept.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .handCursor()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("RUNS ON \(serverName.uppercased())")
+                    .font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.textMuted)
+                Text(command).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Type \(stack.name) to confirm").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                TextField(stack.name, text: $typed).textFieldStyle(.roundedBorder).font(.system(size: 13, design: .monospaced))
+            }
+
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction).buttonStyle(.bordered)
+                Button("Delete Container") { run(removeVolumes) }
+                    .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).tint(Theme.danger)
+                    .disabled(typed != stack.name || command.isEmpty)
+            }
+            .controlSize(.large)
+            .handCursor()
+            .padding(.top, 4)
+        }
+        .padding(22)
+        .frame(width: 480)
+        .background(Theme.background)
+        .tint(Theme.accent)
+        .preferredColorScheme(AppearanceStore.shared.fixedColorScheme)
+    }
+}
