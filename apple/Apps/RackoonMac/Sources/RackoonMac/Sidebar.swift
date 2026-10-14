@@ -60,57 +60,39 @@ struct Sidebar: View {
     @Binding var selection: Screen
     let servers: [Server]
     let selectedID: String?
-    let status: ConnectionStatus
-    /// The once-a-minute reading of each server that is not selected, for its status light.
-    var background: (String) -> FleetEntry? = { _ in nil }
+    /// Each server's status light: the selected one from its live poll, the others from the once-a-minute poll.
+    let light: (Server) -> ServerLight
+    let switcher: ServerSwitcherState
     var updates: UpdateBadge?
-    let onSelect: (Server) -> Void
-    let onEdit: (Server) -> Void
-    let onRemove: (Server) -> Void
     let onAddServer: () -> Void
 
-    private var selectedName: String? { servers.first { $0.id == selectedID }?.name }
+    private var selected: Server? { servers.first { $0.id == selectedID } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Servers and screens scroll when the window is short; Safety and Appearance stay put at the bottom.
+            // The screens scroll when the window is short; Safety and Appearance stay put at the bottom.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 4) {
-                    SectionLabel("Servers")
-                    ForEach(servers) { server in
-                        let isSelected = server.id == selectedID
-                        let entry = isSelected ? nil : background(server.id)
-                        Button { onSelect(server) } label: {
-                            HStack(spacing: 10) {
-                                StatusDot(status: isSelected ? status : (entry?.status ?? .none), glow: isSelected)
-                                    .help(entry?.summary ?? "")
-                                Text(server.name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 9)
-                            .background(isSelected ? Theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
-                            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
-                            .contentShape(Rectangle())
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionLabel("Servers")
+                        Spacer()
+                        FleetSummary(lights: servers.map(light)).padding(.trailing, 8)
+                    }
+                    if let server = selected {
+                        ServerSwitcherCard(server: server, light: light(server), switcher: switcher)
+                    } else {
+                        Button(action: onAddServer) {
+                            Label("Add server", systemImage: "plus")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10).padding(.vertical, 9)
+                                .foregroundStyle(Theme.textMuted)
+                                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.pointer)
-                        .contextMenu {
-                            Button("Edit Connection…") { onEdit(server) }
-                            Divider()
-                            Button("Remove \(server.name)", role: .destructive) { onRemove(server) }
-                        }
                     }
-                    Button(action: onAddServer) {
-                        Label("Add server", systemImage: "plus")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10).padding(.vertical, 9)
-                            .foregroundStyle(Theme.textMuted)
-                            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.pointer)
-                    .padding(.top, 4)
 
-                    if let name = selectedName {
+                    if let name = selected?.name {
                         Divider().padding(.vertical, 12)
                         SectionLabel(name)
                         ForEach(Screen.allCases) { screen in
@@ -130,6 +112,25 @@ struct Sidebar: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.sidebar)
         .foregroundStyle(Theme.textPrimary)
+    }
+}
+
+/// Beside the Servers heading: how many servers there are, or how many are not answering.
+private struct FleetSummary: View {
+    let lights: [ServerLight]
+
+    var body: some View {
+        let down = lights.filter { $0.status == .failing }.count
+        if down > 0 {
+            HStack(spacing: 4) {
+                Circle().fill(Theme.danger).frame(width: 6, height: 6)
+                Text("\(down) down").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.danger)
+            }
+            .help("\(down) of \(lights.count) servers are not answering")
+        } else if lights.count > 1 {
+            Text("\(lights.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textMuted)
+                .help("\(lights.count) servers")
+        }
     }
 }
 
