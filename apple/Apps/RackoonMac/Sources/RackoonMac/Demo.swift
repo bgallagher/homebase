@@ -21,6 +21,7 @@ enum Demo {
     }()
 
     static var favicons: URL { directory.appendingPathComponent("favicons", isDirectory: true) }
+    static var appIcons: URL { directory.appendingPathComponent("app-icons", isDirectory: true) }
 
     /// A store holding just the demo servers, in a temporary folder (never the real `servers.json`).
     static func store() -> ServerStore {
@@ -72,12 +73,15 @@ struct DemoProfile {
     var rebootRequired: Bool
     var stacks: [DemoStack]
     var machineID: String
+    /// Containers started with `docker run` (no compose labels); `service` is the container's name.
+    var standalone: [DemoContainer] = []
 
     static let homelab = DemoProfile(
         hostname: "homelab", prettyName: "Ubuntu 24.04.2 LTS", versionID: "24.04", codename: "noble", vendor: "Intel Corporation",
         product: "NUC13ANHi5", kernel: "6.8.0-52-generic", cores: 8, memTotalKB: 16_384_000, memUsedFraction: 0.39,
         diskTotal: 500_107_862_016, diskUsedFraction: 0.41, uptimeDays: 27.4, ip: "203.0.113.24", tailscaleIP: "100.100.40.7",
-        updates: 5, security: 2, rebootRequired: true, stacks: DemoData.homelabStacks, machineID: "8c2f4e61b0a94d37a1c5d2e9f7b3a608")
+        updates: 5, security: 2, rebootRequired: true, stacks: DemoData.homelabStacks, machineID: "8c2f4e61b0a94d37a1c5d2e9f7b3a608",
+        standalone: DemoData.homelabStandalone)
 
     static let nuc = DemoProfile(
         hostname: "garage-nuc", prettyName: "Debian GNU/Linux 12 (bookworm)", versionID: "12", codename: "bookworm", vendor: "Raspberry Pi",
@@ -139,6 +143,12 @@ enum DemoData {
         DemoStack(name: "traefik", containers: [DemoContainer(service: "traefik", image: "traefik:v3.2", cpu: 0.4, memMB: 58, ports: "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp")], bookmark: nil),
         DemoStack(name: "watchtower", containers: [DemoContainer(service: "watchtower", image: "containrrr/watchtower:1.7.1", cpu: 0.0, memMB: 18)], bookmark: nil),
         DemoStack(name: "dockge", containers: [DemoContainer(service: "dockge", image: "louislam/dockge:1", health: "healthy", cpu: 0.3, memMB: 120, ports: "100.100.40.7:5001->5001/tcp")], bookmark: nil),
+    ]
+
+    /// Started with `docker run`, so each is its own Standalone card.
+    static let homelabStandalone: [DemoContainer] = [
+        DemoContainer(service: "portainer", image: "portainer/portainer-ce:2.21.5", cpu: 0.2, memMB: 48, ports: "100.100.40.7:9443->9443/tcp"),
+        DemoContainer(service: "speedtest-tracker", image: "lscr.io/linuxserver/speedtest-tracker:0.24.2", cpu: 0.1, memMB: 95, running: false),
     ]
 
     static let nucStacks: [DemoStack] = [
@@ -391,6 +401,15 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
                 ps.append(json(row))
                 let cpu = max(0, c.cpu * (1 + 0.3 * sin(phase + Double(cid.hashValue % 7))))
                 stats.append(json(["ID": cid, "Name": "\(stack.name)-\(c.service)-1", "CPUPerc": String(format: "%.2f%%", cpu),
+                                   "MemUsage": String(format: "%.1fMiB / %.2fGiB", c.memMB, Double(profile.memTotalKB) / 1_048_576)]))
+            }
+        }
+        for c in profile.standalone {
+            let cid = id("standalone", c.service)
+            ps.append(json(["ID": cid, "Image": c.image, "Names": c.service, "State": c.running ? "running" : "exited", "Status": c.status,
+                            "HealthStatus": c.health == "none" ? "" : c.health, "Ports": c.ports, "Labels": ""]))
+            if c.running {
+                stats.append(json(["ID": cid, "Name": c.service, "CPUPerc": String(format: "%.2f%%", c.cpu),
                                    "MemUsage": String(format: "%.1fMiB / %.2fGiB", c.memMB, Double(profile.memTotalKB) / 1_048_576)]))
             }
         }

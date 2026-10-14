@@ -279,6 +279,27 @@ public actor DockerSession {
                      label: "docker compose down", cols: cols, rows: rows, onEvent: onEvent)
     }
 
+    public nonisolated func confirm(_ action: StandaloneAction, stack: DockerStack) throws -> Confirmation {
+        guard let intent = action.intent(for: stack) else { throw PolicyError.invalidTarget }
+        return try policy.confirm(intent)
+    }
+
+    /// Pulls a standalone container's image or deletes the container, with live output, then refreshes. The stack is
+    /// busy under its id (`standalone/<name>`), which can't clash with a compose project's name.
+    public func performStreaming(_ action: StandaloneAction, stack: DockerStack, confirmation: Confirmation?,
+                                 cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {
+        guard let intent = action.intent(for: stack) else {
+            var next = state
+            next.actionError = "Refusing to change \(stack.name): it is not a single standalone container with a usable id and image."
+            publish(next)
+            onEvent(.finished(exitCode: nil))
+            return
+        }
+        let label = switch action { case .pullImage: "docker pull"; case .remove: "docker rm" }
+        await stream(intent, confirmation: confirmation, ids: Set(stack.containers.map(\.id)), stackName: stack.id,
+                     label: label, cols: cols, rows: rows, onEvent: onEvent)
+    }
+
     /// The same for one container's start, stop or restart, so every action shows up in the same live output.
     public func performStreaming(_ action: DockerAction, containerID: String, confirmation: Confirmation?,
                                  cols: Int, rows: Int, onEvent: @escaping @Sendable (ActionStreamEvent) -> Void) async {

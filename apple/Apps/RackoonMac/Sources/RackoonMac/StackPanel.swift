@@ -38,7 +38,7 @@ struct StackPanel: View {
     private var tabBar: some View {
         HStack(spacing: 4) {
             TabButton(label: "Logs", dirty: false, selected: tab == .logs) { tab = .logs }
-            if let run = model.output, run.scope == stack.name {
+            if let run = model.output, run.scope == stack.id {
                 TabButton(label: "Output", dirty: false, running: run.phase == .starting || run.phase == .running,
                           selected: tab == .output) { tab = .output }
             }
@@ -58,7 +58,7 @@ struct StackPanel: View {
 
     /// The live output of the last stack action (pull, update, restart, ...): a read-only terminal, with Cancel while it runs.
     @ViewBuilder private var outputPanel: some View {
-        if let run = model.output, run.scope == stack.name {
+        if let run = model.output, run.scope == stack.id {
             ActionOutputPanel(run: run, theme: theme, cancel: { model.cancelOutput() },
                               close: { model.dismissOutput(); tab = .logs })
         } else {

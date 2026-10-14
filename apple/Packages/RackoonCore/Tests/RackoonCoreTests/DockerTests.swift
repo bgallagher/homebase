@@ -57,15 +57,23 @@ final class DockerParserTests: XCTestCase {
         XCTAssertNotNil(DockerSession.actionCommand(.stop, id: String(repeating: "a", count: 64)))
     }
 
-    func testStacksGroupByProjectWithStandaloneLast() throws {
+    func testStacksGroupByProjectAndEachStandaloneContainerIsItsOwnStack() throws {
         let text = try String(contentsOf: specDir.appendingPathComponent("fixtures/docker/synthetic-mixed-states.out.txt"), encoding: .utf8)
         let stacks = try DockerParser.parse(text).stacks
-        XCTAssertEqual(stacks.map(\.name), ["dockge", "monitoring", "shlink", "watchtower", "Standalone"])
+        XCTAssertEqual(stacks.map(\.name), ["dockge", "monitoring", "scratch", "shlink", "watchtower"],
+                       "standalone containers sort in among the compose stacks")
         let monitoring = try XCTUnwrap(stacks.first { $0.name == "monitoring" })
         XCTAssertEqual(monitoring.configFileName, "compose.yaml")
+        XCTAssertEqual(monitoring.kindLabel, "Compose Stack")
+        XCTAssertEqual(monitoring.id, "monitoring")
         XCTAssertEqual(monitoring.stoppedCount, 1, "grafana is exited in this fixture")
         XCTAssertEqual(monitoring.unhealthyCount, 1, "prometheus is unhealthy in this fixture")
-        XCTAssertTrue(try XCTUnwrap(stacks.last).isStandalone)
+        let scratch = try XCTUnwrap(stacks.first { $0.name == "scratch" })
+        XCTAssertTrue(scratch.isStandalone)
+        XCTAssertEqual(scratch.kindLabel, "Standalone")
+        XCTAssertEqual(scratch.id, "standalone/scratch")
+        XCTAssertEqual(scratch.containers.map(\.name), ["scratch"])
+        XCTAssertNil(scratch.workingDir)
     }
 
     func testStackHealthAndSearch() throws {

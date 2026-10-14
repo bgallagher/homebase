@@ -5,15 +5,16 @@ public struct DockerSnapshot: Sendable, Codable, Equatable {
     public var containers: [DockerContainer]
     public init(containers: [DockerContainer]) { self.containers = containers }
 
-    /// Compose stacks grouped by project label, sorted by name. Containers without a project
-    /// label are collected in one trailing "Standalone" group.
+    /// The apps on the server, sorted by name: one stack per compose project (containers grouped by project label), and
+    /// one per container that has no project label (started with `docker run`), so a standalone container is shown and
+    /// managed like a compose stack instead of being lumped in with every other standalone container.
     public var stacks: [DockerStack] {
         var byProject: [String: [DockerContainer]] = [:]
         var standalone: [DockerContainer] = []
         for c in containers {
             if let p = c.project { byProject[p, default: []].append(c) } else { standalone.append(c) }
         }
-        var result = byProject.keys.sorted().map { name -> DockerStack in
+        let compose = byProject.keys.map { name -> DockerStack in
             let members = byProject[name]!.sorted { ($0.service ?? $0.name) < ($1.service ?? $1.name) }
             // Every container in a project carries the same compose labels. If they disagree (a container made by
             // an older file, a moved directory), there is no single file set to run against, so the stack gets none
@@ -27,11 +28,15 @@ public struct DockerSnapshot: Sendable, Codable, Equatable {
                                configFile: layout?.files.first, configFiles: layout?.files ?? [],
                                containers: members, isStandalone: false)
         }
-        if !standalone.isEmpty {
-            result.append(DockerStack(name: "Standalone", workingDir: nil, configFile: nil, configFiles: [],
-                                      containers: standalone.sorted { $0.name < $1.name }, isStandalone: true))
+        let single = standalone.map {
+            DockerStack(name: $0.name, workingDir: nil, configFile: nil, configFiles: [], containers: [$0], isStandalone: true)
         }
-        return result
+        // Case-insensitive, because container names may have capitals and project names never do; on a tie the compose
+        // stack comes first, so the order never depends on the order docker listed the containers in.
+        return (compose + single).sorted {
+            let a = $0.name.lowercased(), b = $1.name.lowercased()
+            return a != b ? a < b : (!$0.isStandalone && $1.isStandalone) || ($0.isStandalone == $1.isStandalone && $0.name < $1.name)
+        }
     }
 }
 
@@ -82,13 +87,36 @@ public struct DockerStack: Sendable, Equatable, Identifiable {
     public var configFile: String?
     public var configFiles: [String]
     public var containers: [DockerContainer]
+    /// True for a container started without Docker Compose (`docker run`): the stack is that one container, named after it.
     public var isStandalone: Bool
-    public var id: String { name }
+    /// Unique among a server's stacks. A compose stack is its project name; a standalone container gets a prefix, because a
+    /// container may be called the same as a compose project. `/` can't appear in either name, so the two never clash.
+    public var id: String { isStandalone ? Self.standaloneID(name) : name }
+
+    /// The id of the stack a standalone container (no compose project) is shown as.
+    public static func standaloneID(_ containerName: String) -> String { "standalone/" + containerName }
+
+    /// The id of the stack a container belongs to: its compose project, or its own standalone stack.
+    public static func id(of container: DockerContainer) -> String { container.project ?? standaloneID(container.name) }
+
+    /// What kind of app this is, shown where a card used to show the compose file's name: "Compose Stack" or "Standalone".
+    public var kindLabel: String { isStandalone ? "Standalone" : "Compose Stack" }
 
     public var configFileName: String? { configFile.map { ($0 as NSString).lastPathComponent } }
     public var runningCount: Int { containers.filter(\.isRunning).count }
     public var unhealthyCount: Int { containers.filter(\.isUnhealthy).count }
     public var stoppedCount: Int { containers.count - runningCount }
+    /// The containers a summary card lists, at most `limit`, and how many are left out. Unhealthy containers come first, then
+    /// stopped ones, then the rest, each in the stack's own order, so a card whose status says "1 unhealthy" never hides it.
+    public func summaryContainers(limit: Int = 4) -> (shown: [DockerContainer], hidden: Int) {
+        guard containers.count > limit else { return (containers, 0) }
+        let unhealthy = containers.filter(\.isUnhealthy)
+        let stopped = containers.filter { !$0.isUnhealthy && !$0.isRunning }
+        let rest = containers.filter { !$0.isUnhealthy && $0.isRunning }
+        let picked = Set((unhealthy + stopped + rest).prefix(limit).map(\.id))
+        return (containers.filter { picked.contains($0.id) }, containers.count - picked.count)
+    }
+
     /// True when any container of the stack has a bookmark.
     public var hasBookmark: Bool { containers.contains { $0.bookmark != nil } }
 

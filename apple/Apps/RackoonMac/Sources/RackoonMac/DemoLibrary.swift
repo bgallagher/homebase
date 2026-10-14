@@ -48,6 +48,12 @@ enum DemoLibrary {
             let id = command.components(separatedBy: "docker \(verb) ").last?.split(separator: " ").first.map(String.init) ?? ""
             return [id]
         }
+        if command.contains("docker pull ") {
+            return ["2.21.5: Pulling from portainer/portainer-ce", "Digest: sha256:5f3c8d1b0e7a", "Status: Image is up to date"]
+        }
+        if command.contains("docker rm -f") {
+            return [command.range(of: #"[0-9a-f]{12,64}"#, options: .regularExpression).map { String(command[$0]) } ?? ""]
+        }
         if command.contains("docker system prune") {
             return ["Deleted Containers:", "4c0e1f2a9b11", "", "Deleted Networks:", "aiostreams_default", "", "Deleted Images:", "deleted: sha256:9f0b6c2d1e7a",
                     "", "Total reclaimed space: 1.24GB"]

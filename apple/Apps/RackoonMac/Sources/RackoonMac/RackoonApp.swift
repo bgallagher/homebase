@@ -347,7 +347,7 @@ struct ContentView: View {
                         model.select(server)
                     },
                     onEdit: { editing = $0 },
-                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); model.remove($0) },
+                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); AppIconStore.shared.forget(serverID: $0.id); model.remove($0) },
                     onReorder: { model.reorder($0) },
                     onAddServer: { showingAdd = true })
             }
@@ -489,7 +489,8 @@ struct ContentView: View {
                                  openScreen: { fix in if let s = Screen(rawValue: fix), s.isAvailable { selection = s } },
                                  editServer: { editing = server })
                 case .docker:
-                    DockerScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace, openShell: { container in
+                    DockerScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace,
+                                 webHost: model.state.overview?.tailscaleIP ?? model.state.overview?.ipAddress, openShell: { container in
                         guard let command = DockerSession.shellCommand(id: container.id) else { return }
                         // With Docker unlocked through sudo, the terminal asks for the password itself (sudo's prompt).
                         let shell = DockerElevation.shared.isUnlocked(server) ? "sudo " + command : command
@@ -498,7 +499,7 @@ struct ContentView: View {
                     }).id(DockerElevation.shared.key(server))
                 case .bookmarks:
                     BookmarksScreen(server: server, workspace: dockerWorkspace,
-                                    openStack: { name in dockerWorkspace.openStack[server.id] = name; selection = .docker })
+                                    openStack: { id in dockerWorkspace.openStack[server.id] = id; selection = .docker })
                         .id(DockerElevation.shared.key(server))
                 case .files:
                     FilesScreen(server: server, workspace: dockerWorkspace, openTerminal: { directory in

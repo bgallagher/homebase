@@ -210,7 +210,7 @@ struct BookmarksScreen: View {
             removing = nil
             if apply {
                 model.runDirect(.up, on: stack)
-                openStack(stack.name)
+                openStack(stack.id)
             }
         })
     }
