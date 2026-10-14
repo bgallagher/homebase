@@ -6,8 +6,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class DockerSnapshot(val containers: List<DockerContainer>) {
     /**
-     * Compose stacks grouped by project label, sorted by name. Containers without a project label are collected in one
-     * trailing "Standalone" group.
+     * The apps on the server, sorted by name: one stack per compose project (containers grouped by project label), and one per
+     * container that has no project label (started with `docker run`), so a standalone container is shown and managed like a
+     * compose stack instead of being lumped in with every other standalone container.
      */
     val stacks: List<DockerStack>
         get() {
@@ -17,7 +18,7 @@ data class DockerSnapshot(val containers: List<DockerContainer>) {
                 val p = c.project
                 if (p != null) byProject.getOrPut(p) { mutableListOf() } += c else standalone += c
             }
-            val result = byProject.keys.sorted().map { name ->
+            val compose = byProject.keys.map { name ->
                 val members = byProject.getValue(name).sortedBy { it.service ?: it.name }
                 // Every container in a project carries the same compose labels. If they disagree (a container made by an older
                 // file, a moved directory), there is no single file set to run against, so the stack gets none and compose
@@ -31,11 +32,13 @@ data class DockerSnapshot(val containers: List<DockerContainer>) {
                     name = name, workingDir = layout?.workingDir, configFile = layout?.files?.firstOrNull(),
                     configFiles = layout?.files ?: emptyList(), containers = members, isStandalone = false,
                 )
-            }.toMutableList()
-            if (standalone.isNotEmpty()) {
-                result += DockerStack("Standalone", null, null, emptyList(), standalone.sortedBy { it.name }, isStandalone = true)
             }
-            return result
+            val single = standalone.map { DockerStack(it.name, null, null, emptyList(), listOf(it), isStandalone = true) }
+            // Case-insensitive, because container names may have capitals and project names never do; on a tie the compose
+            // stack comes first, so the order never depends on the order docker listed the containers in.
+            return (compose + single).sortedWith(
+                compareBy<DockerStack> { it.name.lowercase() }.thenBy { it.isStandalone }.thenBy { it.name },
+            )
         }
 
     private data class ComposeLayout(val workingDir: String, val files: List<String>)
@@ -81,15 +84,31 @@ data class DockerStack(
     val configFile: String?,
     val configFiles: List<String>,
     val containers: List<DockerContainer>,
+    /** True for a container started without Docker Compose (`docker run`): the stack is that one container, named after it. */
     val isStandalone: Boolean,
 ) {
-    val id: String get() = name
+    /**
+     * Unique among a server's stacks. A compose stack is its project name; a standalone container gets a prefix, because a
+     * container may be called the same as a compose project. `/` can't appear in either name, so the two never clash.
+     */
+    val id: String get() = if (isStandalone) standaloneId(name) else name
+
+    /** What kind of app this is, shown where a card used to show the compose file's name: "Compose Stack" or "Standalone". */
+    val kindLabel: String get() = if (isStandalone) "Standalone" else "Compose Stack"
     val configFileName: String? get() = configFile?.substringAfterLast('/')
     val runningCount: Int get() = containers.count { it.isRunning }
     val unhealthyCount: Int get() = containers.count { it.isUnhealthy }
     val stoppedCount: Int get() = containers.size - runningCount
     /** True when any container of the stack has a bookmark. */
     val hasBookmark: Boolean get() = containers.any { it.bookmark != null }
+
+    companion object {
+        /** The id of the stack a standalone container (no compose project) is shown as. */
+        fun standaloneId(containerName: String): String = "standalone/$containerName"
+
+        /** The id of the stack a container belongs to: its compose project, or its own standalone stack. */
+        fun idOf(container: DockerContainer): String = container.project ?: standaloneId(container.name)
+    }
 }
 
 sealed class DockerParseError(message: String) : Exception(message) {

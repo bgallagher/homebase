@@ -106,7 +106,11 @@ fun RackoonRoot(vm: AppViewModel) {
             else -> Shell(vm, selected!!, overview, tab, readOnly, reboot)
         }
         bookmarkForm?.let { BookmarkSheet(vm, it, readOnly) }
-        deleting?.let { stack -> DeleteStackSheet(stack, selected?.name.orEmpty(), selected?.user?.takeIf { it.isNotEmpty() } ?: "root", onCancel = vm::cancelDelete, onRun = { vm.deleteStack(stack, it) }) }
+        deleting?.let { stack ->
+            val user = selected?.user?.takeIf { it.isNotEmpty() } ?: "root"
+            if (stack.isStandalone) DeleteContainerSheet(stack, user, onCancel = vm::cancelDelete, onRun = { vm.deleteContainer(stack, it) })
+            else DeleteStackSheet(stack, selected?.name.orEmpty(), user, onCancel = vm::cancelDelete, onRun = { vm.deleteStack(stack, it) })
+        }
         pending?.let { ConfirmSheet(it, onCancel = vm::cancelPending, onConfirm = vm::confirmPending) }
         if (switcher) ServerSwitcher(
             servers, selected, overview, onPick = vm::select, onAdd = vm::startAdd, onRemove = vm::remove,

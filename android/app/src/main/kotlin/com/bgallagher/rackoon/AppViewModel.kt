@@ -25,6 +25,7 @@ import com.bgallagher.rackoon.core.FileEdit
 import com.bgallagher.rackoon.core.SaveOutcome
 import com.bgallagher.rackoon.core.StackFileSession
 import com.bgallagher.rackoon.core.StackFiles
+import com.bgallagher.rackoon.core.StandaloneAction
 import com.bgallagher.rackoon.core.bookmarkableStacks
 import com.bgallagher.rackoon.core.serviceNames
 import com.bgallagher.rackoon.ui.PendingAction
@@ -99,8 +100,8 @@ sealed class DockerUi {
     ) : DockerUi() {
         /** Every stack to show: the ones docker reports, then the extras it doesn't (so a stack never vanishes while it is being deleted). */
         val stacks: List<DockerStack> by lazy {
-            val names = snapshot.stacks.map { it.name }.toSet()
-            snapshot.stacks + extraStacks.filter { it.name !in names }.sortedBy { it.name }
+            val ids = snapshot.stacks.map { it.id }.toSet()
+            snapshot.stacks + extraStacks.filter { it.id !in ids }.sortedBy { it.name }
         }
 
         companion object {
@@ -154,6 +155,7 @@ data class SettingsForm(
 /** The add/edit bookmark sheet: which stack and service, the fields, and what it is doing. */
 data class BookmarkForm(
     val stackLocked: Boolean = false,
+    /** The chosen stack's [DockerStack.id] (for a compose stack, its project name). */
     val stackName: String? = null,
     val service: String = "",
     val existing: Bookmark? = null,
@@ -187,7 +189,7 @@ data class BookmarkForm(
     fun choosingStack(stack: DockerStack, wanted: String?): BookmarkForm {
         val names = stack.serviceNames
         val service = wanted?.takeIf { it in names } ?: names.firstOrNull { n -> stack.containers.firstOrNull { it.service == n }?.bookmark != null } ?: names.firstOrNull() ?: ""
-        return copy(stackName = stack.name).choosingService(stack, service)
+        return copy(stackName = stack.id).choosingService(stack, service)
     }
 
     fun choosingService(stack: DockerStack, service: String): BookmarkForm {
@@ -444,13 +446,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _docker = MutableStateFlow<DockerUi>(DockerUi.Loading)
     val docker: StateFlow<DockerUi> = _docker.asStateFlow()
 
-    /** The compose project whose page is open, or null for the list. */
+    /** The [DockerStack.id] of the stack whose page is open (a compose project's name, or `standalone/<container>`), or null for the list. */
     private val _openStack = MutableStateFlow<String?>(null)
     val openStack: StateFlow<String?> = _openStack.asStateFlow()
-    fun openStack(name: String?) {
-        _openStack.value = name
+    fun openStack(id: String?) {
+        _openStack.value = id
         // A run that belongs to this stack is still on screen: reopen the page on its Output.
-        _stackTab.value = if (name != null && _output.value?.scope == name) StackTab.Output else StackTab.Containers
+        _stackTab.value = if (id != null && _output.value?.scope == id) StackTab.Output else StackTab.Containers
     }
 
     suspend fun pollDockerWhileVisible() {
@@ -505,7 +507,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openEditor(stack: DockerStack, file: EditableFile) {
         val l = live ?: return
-        if (editor == null || editorStack?.name != stack.name) {
+        if (editor == null || editorStack?.id != stack.id) {
             editor?.close(); editorJob?.cancel()
             val ed = StackEditor(StackFileSession(l.transport, stack, policy), stack, l.server.name, viewModelScope, { _readOnly.value })
             editor = ed; editorStack = stack
@@ -627,9 +629,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun onAddDone(l: Live, stack: DockerStack, isNew: Boolean, start: Boolean) {
         if (live !== l) return
         // A new stack with no containers is invisible to `docker ps`, so it is remembered here until its containers show up.
-        if (isNew) { leftoverStacks[stack.name] = stack; publishDocker() }
+        if (isNew) { leftoverStacks[stack.id] = stack; publishDocker() }
         closeAddNow()
-        _openStack.value = stack.name
+        _openStack.value = stack.id
         _stackTab.value = StackTab.Containers
         if (start) runStackAction(l, stack, com.bgallagher.rackoon.core.ComposeAction.UP, null) else refreshDockerNow()
     }
@@ -637,6 +639,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // MARK: delete stack (docker compose down, optionally volumes and the folder; the folder rules live in core's StackRemoval)
 
     private var lastDockerState: DockerState? = null
+    /** By [DockerStack.id], like everything else that remembers a stack (a container may be called like a compose project). */
     private val removingStacks = LinkedHashMap<String, DockerStack>()
     private val leftoverStacks = LinkedHashMap<String, DockerStack>()
 
@@ -651,7 +654,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** The stack the user is deciding to delete (a sheet), or null. */
     private val _deleting = MutableStateFlow<DockerStack?>(null)
     val deleting: StateFlow<DockerStack?> = _deleting.asStateFlow()
-    fun requestDelete(stack: DockerStack) { if (stackBlockedReason(stack) == null) _deleting.value = stack }
+    fun requestDelete(stack: DockerStack) {
+        val blocked = if (stack.isStandalone) standaloneBlockedReason(stack) else stackBlockedReason(stack)
+        if (blocked == null) _deleting.value = stack
+    }
     fun cancelDelete() { _deleting.value = null }
 
     /** Deletes a stack after the sheet's confirmation, streaming into the stack's Output tab. On success the stack page closes. */
@@ -659,26 +665,74 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val l = live ?: return
         _deleting.value = null
         if (_working.value != null || _readOnly.value) return
-        removingStacks[stack.name] = stack
+        removingStacks[stack.id] = stack
         publishDocker()
         launchOutput(
-            stack.name, "docker compose down", "Deleting ${stack.name}…", null,
+            stack.id, "docker compose down", "Deleting ${stack.name}…", null,
             onDone = { out ->
-                removingStacks.remove(stack.name)
+                removingStacks.remove(stack.id)
                 if (out.phase.value == ActionOutput.Phase.Succeeded) {
-                    leftoverStacks.remove(stack.name)
+                    leftoverStacks.remove(stack.id)
                     publishDocker()
-                    if (live === l && _openStack.value == stack.name) { _openStack.value = null; _stackTab.value = StackTab.Containers; _output.value = null }
+                    if (live === l && _openStack.value == stack.id) { _openStack.value = null; _stackTab.value = StackTab.Containers; _output.value = null }
                 } else {
                     // Failed or cancelled part way (the containers may be gone but the folder is not): keep the stack on screen, as
                     // "Not started" if docker no longer reports it, so its Output can be read and its files are not orphaned.
-                    leftoverStacks[stack.name] = stack.copy(containers = emptyList())
+                    leftoverStacks[stack.id] = stack.copy(containers = emptyList())
                     publishDocker()
                 }
             },
         ) { cols, rows, onEvent ->
             val confirmation = try { l.docker.confirm(removal, stack) } catch (_: PolicyError) { null }
             l.docker.performStreaming(removal, stack, confirmation, cols, rows, onEvent)
+        }
+    }
+
+    // MARK: standalone containers (started with docker run: one container is the whole stack; Pull and Delete are its own)
+
+    /** Why a standalone container's actions (pull, restart, delete) are unavailable (null when they can run). */
+    fun standaloneBlockedReason(stack: DockerStack): String? = ActionPrompts.standaloneBlockedReason(stack, _readOnly.value, _working.value != null)
+
+    /** Pulls a standalone container's image after asking with the exact command. Delete goes through [requestDelete]'s sheet. */
+    fun requestPull(stack: DockerStack) {
+        val l = live ?: return
+        if (standaloneBlockedReason(stack) != null) return
+        val intent = StandaloneAction.PullImage.intent(stack) ?: return
+        val prompt = ActionPrompts.pull(stack) ?: return
+        _pending.value = PendingAction(
+            prompt.title, prompt.message, l.endpointUser(), intent.command, destructive = prompt.destructive,
+            run = { runStandaloneAction(l, stack, StandaloneAction.PullImage, prompt.working) },
+        )
+    }
+
+    /**
+     * Deletes a standalone container after the sheet's confirmation (typed name, optional anonymous volumes), streaming into
+     * its Output tab. On success the page closes; on failure the container is normally still there and stays on screen.
+     */
+    fun deleteContainer(stack: DockerStack, volumes: Boolean) {
+        val l = live ?: return
+        _deleting.value = null
+        if (_working.value != null || _readOnly.value) return
+        removingStacks[stack.id] = stack
+        publishDocker()
+        runStandaloneAction(l, stack, StandaloneAction.Remove(volumes), "Deleting ${stack.name}…") { out ->
+            removingStacks.remove(stack.id)
+            publishDocker()
+            if (out.phase.value == ActionOutput.Phase.Succeeded && live === l && _openStack.value == stack.id) {
+                _openStack.value = null; _stackTab.value = StackTab.Containers; _output.value = null
+            }
+        }
+    }
+
+    private fun runStandaloneAction(l: Live, stack: DockerStack, action: StandaloneAction, working: String, onDone: (ActionOutput) -> Unit = {}) {
+        if (live !== l || _working.value != null) return
+        val title = when (action) {
+            StandaloneAction.PullImage -> "docker pull ${StandaloneAction.pullableImage(stack) ?: stack.name}"
+            is StandaloneAction.Remove -> "docker rm ${stack.name}"
+        }
+        launchOutput(stack.id, title, working, null, onDone) { cols, rows, onEvent ->
+            val confirmation = try { l.docker.confirm(action, stack) } catch (_: PolicyError) { null }
+            l.docker.performStreaming(action, stack, confirmation, cols, rows, onEvent)
         }
     }
 
@@ -752,7 +806,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun runStackAction(l: Live, stack: DockerStack, action: com.bgallagher.rackoon.core.ComposeAction, service: String?) {
         if (live !== l || _working.value != null) return
         val prompt = if (service != null) ActionPrompts.rebuild(service, stack) else ActionPrompts.stack(action, stack)
-        launchOutput(stack.name, "docker compose ${action.raw}" + (service?.let { " $it" } ?: ""), prompt.working, null) { cols, rows, onEvent ->
+        launchOutput(stack.id, "docker compose ${action.raw}" + (service?.let { " $it" } ?: ""), prompt.working, null) { cols, rows, onEvent ->
             val confirmation = try { l.docker.confirm(action, stack, service) } catch (_: PolicyError) { null }
             l.docker.performStreaming(action, stack, service, confirmation, cols, rows, onEvent)
         }
@@ -762,7 +816,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (live !== l || _working.value != null) return
         val verb = action.raw
         launchOutput(
-            container.project ?: "Standalone", "docker $verb ${container.name}", ActionPrompts.container(action, container)?.working ?: "Starting ${container.name}…",
+            DockerStack.idOf(container), "docker $verb ${container.name}", ActionPrompts.container(action, container)?.working ?: "Starting ${container.name}…",
             "\u001B[2m$ docker $verb ${container.name}\u001B[0m\r\n",
         ) { cols, rows, onEvent ->
             val confirmation = try { l.docker.confirm(action, container.id) } catch (_: PolicyError) { null }
@@ -1066,7 +1120,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun openBookmarkSheet(stackName: String? = null, service: String? = null) {
         val snap = snapshot()
         if (snap == null) { _bookmarkMessage.value = "Docker hasn't been read yet. Try again in a moment."; return }
-        val stack = stackName?.let { n -> snap.stacks.firstOrNull { it.name == n } }
+        val stack = stackName?.let { n -> snap.stacks.firstOrNull { it.id == n } }
         if (stackName == null) {
             if (_readOnly.value) { _bookmarkMessage.value = "Read-only mode is on. Turn it off to add a bookmark."; return }
             if (snap.bookmarkableStacks.isEmpty()) {
@@ -1082,12 +1136,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun editBookmark(change: (BookmarkForm) -> BookmarkForm) { _bookmarkForm.update { it?.let(change)?.copy(notice = null) } }
 
     fun chooseBookmarkStack(name: String) {
-        val stack = snapshot()?.stacks?.firstOrNull { it.name == name } ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.id == name } ?: return
         _bookmarkForm.update { it?.choosingStack(stack, null) }
     }
 
     fun chooseBookmarkService(service: String) {
-        val stack = snapshot()?.stacks?.firstOrNull { it.name == _bookmarkForm.value?.stackName } ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.id == _bookmarkForm.value?.stackName } ?: return
         _bookmarkForm.update { it?.choosingService(stack, service) }
     }
 
@@ -1110,7 +1164,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun requestBookmarkSave(apply: Boolean) {
         val form = _bookmarkForm.value ?: return
         val l = live ?: return
-        val stack = snapshot()?.stacks?.firstOrNull { it.name == form.stackName } ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.id == form.stackName } ?: return
         val bookmark = form.bookmark() ?: return
         if (form.saveBlockedReason(_readOnly.value, stack) != null) return
         prepareBookmarkEdit(l, stack, form.service, bookmark.labelChanges, apply, removing = false, formReporter(l))
@@ -1120,7 +1174,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun requestBookmarkRemoval() {
         val form = _bookmarkForm.value ?: return
         val l = live ?: return
-        val stack = snapshot()?.stacks?.firstOrNull { it.name == form.stackName } ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.id == form.stackName } ?: return
         if (form.busy != null) return
         prepareBookmarkEdit(l, stack, form.service, Bookmark.removalChanges, apply = true, removing = true, formReporter(l))
     }
@@ -1128,7 +1182,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Remove from the list: no edit sheet, just the confirmation (or a message saying why it can't be done). */
     fun requestBookmarkRemovalFor(stackName: String, service: String) {
         val l = live ?: return
-        val stack = snapshot()?.stacks?.firstOrNull { it.name == stackName } ?: return
+        val stack = snapshot()?.stacks?.firstOrNull { it.id == stackName } ?: return
         if (_bookmarkBusy.value != null) return
         _bookmarkMessage.value = null
         prepareBookmarkEdit(l, stack, service, Bookmark.removalChanges, apply = true, removing = true, listReporter(l))

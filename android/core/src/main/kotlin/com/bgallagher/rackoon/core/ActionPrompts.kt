@@ -17,6 +17,28 @@ object ActionPrompts {
         else -> null
     }
 
+    /**
+     * Why a standalone container's actions (pull, restart, delete) are unavailable, or null if they can run. Compose actions
+     * stay refused for it ([blockedReason]).
+     */
+    fun standaloneBlockedReason(stack: DockerStack, readOnly: Boolean, otherActionRunning: Boolean): String? = when {
+        readOnly -> "Read-only mode is on"
+        otherActionRunning -> "Another stack action is running"
+        StandaloneAction.Remove(false).command(stack) == null -> "This container can't be addressed safely"
+        else -> null
+    }
+
+    /** The question before pulling a standalone container's image, or null when it runs an image that can't be pulled. */
+    fun pull(stack: DockerStack): ActionPrompt? {
+        val image = StandaloneAction.pullableImage(stack) ?: return null
+        return ActionPrompt(
+            "Pull the latest $image?",
+            "Downloads a newer copy of the image ${stack.name} runs. The container is not touched and keeps running the image it has: " +
+                "it was started with docker run, so it only switches when it is created again with its original settings.",
+            "Pulling $image…", false,
+        )
+    }
+
     /** Stop and restart ask first; start runs straight away (it cannot break anything), so it has no prompt. */
     fun container(action: DockerAction, container: DockerContainer): ActionPrompt? = when (action) {
         DockerAction.START -> null

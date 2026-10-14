@@ -132,6 +132,16 @@ class DemoConnection(private val world: DemoWorld) : ServerConnection {
                 }
             }
         }
+        // A standalone container's own actions (docker run, no compose project): pull its image, or delete it.
+        Regex("""^docker pull '([^']+)'$""").find(inner)?.let { m ->
+            val image = m.groupValues[1]
+            return Plan(listOf("${image.substringAfterLast(':')}: Pulling from ${image.substringBeforeLast(':')}", "Digest: sha256:5f3c8d1b0e7a", "Status: Image is up to date for $image")) {}
+        }
+        Regex("""^docker rm -f(?: -v)? ([0-9a-f]{12,64})$""").find(inner)?.let { m ->
+            val c = world.containers.firstOrNull { it.id.startsWith(m.groupValues[1]) }
+                ?: return Plan(listOf("Error response from daemon: No such container: ${m.groupValues[1]}"), {})
+            return Plan(listOf(c.id)) { world.containers.remove(c) }
+        }
         Regex("""docker compose -p (\S+) .*? down --remove-orphans""").find(inner)?.let { d ->
             val project = d.groupValues[1]
             val members = world.containers.filter { it.project == project }

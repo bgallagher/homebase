@@ -323,7 +323,7 @@ fun main(args: Array<String>) {
                         expect("setup: second stack that must be left alone", make("keep"))
                         delay(2_000)
                         docker.refresh()
-                        val full = docker.state.value.snapshot?.stacks?.firstOrNull { it.name == "rackoon-probe-del-full" }
+                        val full = docker.state.value.snapshot?.stacks?.firstOrNull { it.id == "rackoon-probe-del-full" }
                         expect("docker reports the stack by its real labels", full != null)
                         if (full == null) return@runBlocking
                         expect("folder deletion is offered for it: ${StackRemoval.folderProblem(full) ?: "yes"}", StackRemoval.folderProblem(full) == null)
@@ -340,7 +340,7 @@ fun main(args: Array<String>) {
 
                         // Without confirmation, or in read-only mode, nothing runs.
                         docker.refresh()
-                        val keep = docker.state.value.snapshot?.stacks?.firstOrNull { it.name == "rackoon-probe-del-keep" }
+                        val keep = docker.state.value.snapshot?.stacks?.firstOrNull { it.id == "rackoon-probe-del-keep" }
                         if (keep != null) {
                             policy.isReadOnly = true
                             expect("read-only refuses to confirm a delete", runCatching { docker.confirm(removal, keep) }.isFailure)
@@ -503,7 +503,7 @@ fun main(args: Array<String>) {
 
                     val policy = ActionPolicy()
                     val session = DockerSession(transport, policy = policy)
-                    suspend fun theStack(): com.bgallagher.rackoon.core.DockerStack? { session.refresh(); return session.state.value.snapshot?.stacks?.firstOrNull { it.name == project } }
+                    suspend fun theStack(): com.bgallagher.rackoon.core.DockerStack? { session.refresh(); return session.state.value.snapshot?.stacks?.firstOrNull { it.id == project } }
                     fun ids(st: com.bgallagher.rackoon.core.DockerStack?) = st?.containers?.map { it.id }?.toSet() ?: emptySet()
 
                     var stack = theStack()

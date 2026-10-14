@@ -69,21 +69,21 @@ import kotlinx.coroutines.delay
 @Composable
 fun DockerScreen(vm: AppViewModel, server: Server, wide: Boolean, readOnly: Boolean) {
     val ui by vm.docker.collectAsStateWithLifecycle()
-    val openName by vm.openStack.collectAsStateWithLifecycle()
-    BackHandler(enabled = openName != null) { vm.openStack(null) }
+    val openId by vm.openStack.collectAsStateWithLifecycle()
+    BackHandler(enabled = openId != null) { vm.openStack(null) }
     when (val state = ui) {
         DockerUi.Loading -> DockerLoading()
         DockerUi.NotInstalled -> Message("Docker isn't installed", "Rackoon didn't find Docker on ${server.name}. Install it and this page will fill in.", "Check again", vm::refreshDockerNow)
         is DockerUi.Failed -> if (state.unreachable) Unreachable(server, state.message, vm::refreshDockerNow)
         else Message("Docker isn't responding", state.message, "Try again", vm::refreshDockerNow)
         is DockerUi.Ready -> {
-            val stack = openName?.let { n -> state.stacks.firstOrNull { it.name == n } }
-            if (openName != null && stack == null) LaunchedEffect(openName) { vm.openStack(null) }   // the stack went away
+            val stack = openId?.let { id -> state.stacks.firstOrNull { it.id == id } }
+            if (openId != null && stack == null) LaunchedEffect(openId) { vm.openStack(null) }   // the stack went away
             if (stack != null) StackDetail(vm, server, stack, state, readOnly, onBack = { vm.openStack(null) })
             else if (state.snapshot.containers.isEmpty()) Message(
                 "No containers found", "Docker is running on ${server.name}, but there are no containers yet. Stacks appear here once their containers exist.", "Scan again", vm::refreshDockerNow,
             )
-            else StackList(state, vm.favicons, readOnly, onOpen = { vm.openStack(it.name) }, onBookmark = { vm.openBookmarkSheet(it.name) }, onAdd = vm::openAddContainer, onRefresh = vm::refreshDockerNow)
+            else StackList(state, vm.favicons, readOnly, onOpen = { vm.openStack(it.id) }, onBookmark = { vm.openBookmarkSheet(it.id) }, onAdd = vm::openAddContainer, onRefresh = vm::refreshDockerNow)
         }
     }
 }
@@ -98,7 +98,7 @@ private fun StackList(ui: DockerUi.Ready, favicons: com.bgallagher.rackoon.data.
     val addresses = remember(ui.snapshot) { ui.snapshot.bookmarkItems.map { it.bookmark.href }.distinct() }
     LaunchedEffect(addresses) { favicons.ensure(addresses) }
     // Which stacks can take a bookmark is worked out once per snapshot, not for every card on every recomposition.
-    val bookmarkable = remember(ui.snapshot) { ui.snapshot.bookmarkableStacks.map { it.name }.toSet() }
+    val bookmarkable = remember(ui.snapshot) { ui.snapshot.bookmarkableStacks.map { it.id }.toSet() }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { refreshing = true; onRefresh() }, modifier = Modifier.fillMaxSize()) {
         // One column on a phone; more on a tablet or foldable.
         LazyVerticalGrid(
@@ -121,8 +121,9 @@ private fun StackList(ui: DockerUi.Ready, favicons: com.bgallagher.rackoon.data.
                     if (ui.error != null) Text("Showing the last reading. ${ui.error}", color = Rackoon.colors.warn, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
-            items(stacks, key = { it.name }) { stack ->
-                StackCard(stack, favicons, onClick = { onOpen(stack) }, onBookmark = if (stack.name in bookmarkable) ({ onBookmark(stack) }) else null)
+            // By id: a standalone container may be called like a compose project, and the grid needs unique keys.
+            items(stacks, key = { it.id }) { stack ->
+                StackCard(stack, favicons, onClick = { onOpen(stack) }, onBookmark = if (stack.id in bookmarkable) ({ onBookmark(stack) }) else null)
             }
         }
     }
@@ -144,8 +145,8 @@ private fun StackCard(stack: DockerStack, favicons: com.bgallagher.rackoon.data.
             SiteIcon(stack.name, stack.containers.firstNotNullOfOrNull { it.bookmark?.href }, 28.dp, favicons)
             Column(Modifier.weight(1f)) {
                 Text(stack.name, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                // The usual file name says nothing; only an unusual one is worth showing.
-                stack.configFileName?.takeIf { it != "compose.yaml" }?.let { Text(it, fontFamily = MonoFamily, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // What kind of app it is ("Compose Stack" or "Standalone" for a docker run container), like the Mac card.
+                Text(stack.kindLabel, fontSize = 12.sp, color = c.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             StatusDot(severityColor(status.severity, dot = true))
             // A stack that already shows its link needs no icon (the link row is the signal; Edit bookmark is in the stack menu).
