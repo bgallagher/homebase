@@ -45,7 +45,9 @@ import com.bgallagher.rackoon.core.DockerContainer
 import com.bgallagher.rackoon.core.PolicyError
 import com.bgallagher.rackoon.core.TerminalTheme
 import com.bgallagher.rackoon.output.ActionOutput
+import com.bgallagher.rackoon.core.ConnectionFailure
 import com.bgallagher.rackoon.core.Server
+import com.bgallagher.rackoon.core.ServerInput
 import com.bgallagher.rackoon.core.ServerSession
 import com.bgallagher.rackoon.core.ServerState
 import com.bgallagher.rackoon.ssh.HostKeyInfo
@@ -130,10 +132,16 @@ data class AuthFields(
     }
 }
 
-/** Server settings: rename, change how Rackoon signs in, forget the trusted host key, remove. */
+/** Server settings: rename, change the address and how Rackoon signs in, forget the trusted host key, remove. */
 data class SettingsForm(
     val server: Server,
     val name: String,
+    /** The address as typed: host, user and port are text until they are saved. A blank user means root, a blank port 22. */
+    val host: String = server.host,
+    val user: String = server.user.orEmpty(),
+    val port: String = server.port?.toString().orEmpty(),
+    /** Set while the user is deciding whether to trust the key a changed address presented for the first time. */
+    val trust: HostKeyInfo? = null,
     val auth: AuthFields,
     val currentKind: AuthKind,
     val currentKeyName: String?,
@@ -1210,7 +1218,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val server = current() ?: return
         val stored = c.secrets.load(server.id)
         _settings.value = SettingsForm(
-            server, server.name, AuthFields(stored?.kind ?: AuthKind.Tailscale), stored?.kind ?: AuthKind.Tailscale, stored?.keyName,
+            server = server, name = server.name, auth = AuthFields(stored?.kind ?: AuthKind.Tailscale),
+            currentKind = stored?.kind ?: AuthKind.Tailscale, currentKeyName = stored?.keyName,
             hostKey = c.knownHosts.lookup(server.host, server.port ?: 22),
         )
     }
@@ -1219,31 +1228,90 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun editSettings(change: (SettingsForm) -> SettingsForm) { _settings.update { it?.let(change) } }
 
-    /** Saves the name, and a changed sign-in only after it has been tried against the server. */
+    /** Which sign-in the server uses, for the Overview's advice when a login is refused. */
+    fun signInOf(server: Server): ConnectionFailure.SignIn? = when (c.secrets.load(server.id)?.kind) {
+        AuthKind.Tailscale -> ConnectionFailure.SignIn.Tailscale
+        AuthKind.Key -> ConnectionFailure.SignIn.Key
+        AuthKind.Password -> ConnectionFailure.SignIn.Password
+        null -> ConnectionFailure.SignIn.Tailscale   // nothing saved means the default, Tailscale SSH
+    }
+
+    /**
+     * Saves the form. A rename alone is saved at once and changes nothing live. A changed address or sign-in is tried against
+     * the server first (asking to trust the host key when the address is new), and only then saved; the selected server
+     * reconnects, and what was open against the old address (terminals, the cached reading) is dropped.
+     */
     fun saveSettings() {
         val form = _settings.value ?: return
-        val name = form.name.trim().ifEmpty { form.server.host }
-        if (!form.authChanged) {
-            updateServer(form.server.copy(name = name)); _settings.value = null; return
+        ServerInput.problem(form.host, form.user, form.port)?.let { problem -> editSettings { it.copy(error = problem) }; return }
+        val host = form.host.trim()
+        val user = form.user.trim().ifEmpty { "root" }
+        val port = form.port.trim().toIntOrNull()?.takeIf { it != 22 }
+        val updated = form.server.copy(name = form.name.trim().ifEmpty { host }, host = host, user = user, port = port)
+        val addressChanged = !form.server.connectsLike(updated)
+        if (!addressChanged && !form.authChanged) {
+            updateServer(updated); _settings.value = null; return
         }
-        form.auth.problem()?.let { problem -> editSettings { it.copy(error = problem) }; return }
+        if (c.isDemo) { editSettings { it.copy(error = "Demo mode: connections can't be changed. Restart the app normally to use your own.") }; return }
+        if (form.authChanged) form.auth.problem()?.let { problem -> editSettings { it.copy(error = problem) }; return }
         editSettings { it.copy(busy = true, error = null) }
-        val server = form.server
         viewModelScope.launch {
-            val stored = form.auth.toStored()
-            val endpoint = SshEndpoint(server.host, server.port ?: 22, server.user?.takeIf { it.isNotEmpty() } ?: "root", stored.toSshAuth())
-            val test = c.connection(endpoint)
             try {
-                test.connect()
-                c.secrets.save(server.id, stored)
-                updateServer(server.copy(name = name))
-                _settings.value = null
-                if (server.id == _selectedId.value) openLive(server.copy(name = name))   // reconnect with the new sign-in
+                if (addressChanged && c.knownHosts.lookup(host, port ?: 22) == null) {
+                    // A new address has no trusted key yet: show it before any credentials are sent.
+                    val key = scanHostKey(host, port ?: 22)
+                    editSettings { it.copy(busy = false, trust = key) }
+                } else {
+                    tryAndCommit(form, updated, addressChanged)
+                }
             } catch (e: SshException) {
                 editSettings { it.copy(busy = false, error = e.message) }
-            } finally {
-                test.close()
             }
+        }
+    }
+
+    fun trustSettingsKey() {
+        val form = _settings.value ?: return
+        val key = form.trust ?: return
+        val host = form.host.trim()
+        val port = form.port.trim().toIntOrNull() ?: 22
+        c.knownHosts.trust(host, port, key)
+        editSettings { it.copy(trust = null, busy = true, error = null) }
+        val updated = form.server.copy(
+            name = form.name.trim().ifEmpty { host }, host = host, user = form.user.trim().ifEmpty { "root" }, port = port.takeIf { it != 22 },
+        )
+        viewModelScope.launch {
+            try { tryAndCommit(form, updated, addressChanged = true) } catch (e: SshException) { editSettings { it.copy(busy = false, error = e.message) } }
+        }
+    }
+
+    fun declineSettingsTrust() { editSettings { it.copy(trust = null) } }
+
+    /** Signs in with the new details once; only when that works is anything saved. A failure leaves the old server untouched. */
+    private suspend fun tryAndCommit(form: SettingsForm, updated: Server, addressChanged: Boolean) {
+        val old = form.server
+        val stored = if (form.authChanged) form.auth.toStored() else c.secrets.load(old.id) ?: StoredAuth(AuthKind.Tailscale)
+        val endpoint = SshEndpoint(updated.host, updated.port ?: 22, updated.user ?: "root", stored.toSshAuth())
+        val test = c.connection(endpoint)
+        try {
+            test.connect()
+        } finally {
+            test.close()
+        }
+        if (form.authChanged) c.secrets.save(old.id, stored)
+        if (addressChanged) {
+            c.terminals.closeAll(old.id)   // they are ssh sessions to the old address
+            if (old.host != updated.host) c.snapshots.remove(old.id)   // another machine's past is not this server's
+            // The old address's trusted key goes unless another saved server still connects there.
+            if ((old.host != updated.host || old.port != updated.port) && _servers.value.none { it.id != old.id && it.host == old.host && it.port == old.port }) {
+                c.knownHosts.forget(old.host, old.port ?: 22)
+            }
+        }
+        updateServer(updated)
+        _settings.value = null
+        if (old.id == _selectedId.value) {
+            _tab.value = Tab.Overview
+            openLive(updated)   // reconnect with the new details
         }
     }
 

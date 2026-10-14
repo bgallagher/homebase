@@ -45,6 +45,7 @@ import com.bgallagher.rackoon.Issue
 import com.bgallagher.rackoon.OverviewUi
 import com.bgallagher.rackoon.RebootUi
 import com.bgallagher.rackoon.core.AttentionItem
+import com.bgallagher.rackoon.core.ConnectionFailure
 import com.bgallagher.rackoon.core.Overview
 import com.bgallagher.rackoon.core.ServerState
 import com.bgallagher.rackoon.ui.theme.Rackoon
@@ -53,13 +54,13 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OverviewScreen(ui: OverviewUi, wide: Boolean, reboot: RebootUi?, serverName: String, readOnly: Boolean, onReboot: () -> Unit, onDismissReboot: () -> Unit, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onBack: () -> Unit, onOpenFix: (String) -> Unit) {
+fun OverviewScreen(ui: OverviewUi, wide: Boolean, reboot: RebootUi?, serverName: String, readOnly: Boolean, onReboot: () -> Unit, onDismissReboot: () -> Unit, onRefresh: () -> Unit, onTrustFirstKey: (Issue.KeyUnknown) -> Unit, onEditConnection: () -> Unit, signIn: ConnectionFailure.SignIn?, onBack: () -> Unit, onOpenFix: (String) -> Unit) {
     when (ui) {
         OverviewUi.Connecting -> Loading()
         is OverviewUi.Failed -> when (val issue = ui.issue) {
             is Issue.KeyChanged -> HostKeyChangedScreen(issue.host, issue.trusted, issue.presented, onBack)
             is Issue.KeyUnknown -> TrustSheet(issue.host, issue.presented, onTrust = { onTrustFirstKey(issue) }, onCancel = onBack)
-            else -> Unavailable(issue, onRefresh)
+            else -> Unavailable(issue, signIn, onRefresh, onEditConnection)
         }
         is OverviewUi.Ready -> Ready(ui.state, wide, reboot, serverName, readOnly, onReboot, onDismissReboot, onRefresh, onOpenFix)
     }
@@ -91,24 +92,38 @@ private fun Placeholder(modifier: Modifier) {
 }
 
 @Composable
-private fun Unavailable(issue: Issue, onRetry: () -> Unit) {
-    val (title, body) = when (issue) {
-        is Issue.Unreachable -> "Can't reach this server" to (issue.detail + ". " + if (!vpnActive(LocalContext.current)) "No VPN is active on this phone. If this server is on your tailnet, open Tailscale and connect, then try again." else "Check that the address is right and the server is running.")
-        is Issue.AuthFailed -> "Sign-in was refused" to issue.detail
-        is Issue.Other -> "Something went wrong" to issue.detail
-        else -> "Unavailable" to ""
+private fun Unavailable(issue: Issue, signIn: ConnectionFailure.SignIn?, onRetry: () -> Unit, onEdit: () -> Unit) {
+    val raw = when (issue) {
+        is Issue.Unreachable -> "Could not reach the server: ${issue.detail}"
+        is Issue.AuthFailed -> "Sign-in was refused: ${issue.detail}"
+        is Issue.Other -> issue.detail
+        else -> ""
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val failure = ConnectionFailure.explain(raw, signIn)
+    val title = failure?.headline ?: when (issue) {
+        is Issue.Unreachable -> "Can't reach this server"
+        is Issue.AuthFailed -> "Sign-in was refused"
+        is Issue.Other -> "Something went wrong"
+        else -> "Unavailable"
+    }
+    val vpn = vpnActive(LocalContext.current)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         RCard(Modifier.fillMaxWidth(), borderColor = Rackoon.colors.danger) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusDot(Rackoon.colors.danger, 10)
                     Text(title, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Rackoon.colors.textPrimary)
                 }
-                Text(body, color = Rackoon.colors.textSecondary, lineHeight = 21.sp)
+                // The raw message stays visible beside the explanation, so nothing is hidden.
+                Text(raw, color = Rackoon.colors.textSecondary, fontFamily = MonoFamily, fontSize = 12.sp, lineHeight = 18.sp)
+                failure?.advice?.let { Text(it, color = Rackoon.colors.textPrimary, lineHeight = 21.sp) }
+                if (failure?.kind == ConnectionFailure.Kind.Unreachable && !vpn) {
+                    Text("No VPN is active on this phone. If this server is on your tailnet, open Tailscale and connect, then try again.", color = Rackoon.colors.textSecondary, lineHeight = 21.sp)
+                }
             }
         }
-        PrimaryButton("Try again", onRetry, Modifier.fillMaxWidth())
+        PrimaryButton("Edit connection", onEdit, Modifier.fillMaxWidth())
+        SecondaryButton("Try again", onRetry, Modifier.fillMaxWidth())
         Text("Rackoon keeps trying every few seconds while this screen is open.", color = Rackoon.colors.textMuted, fontSize = 12.sp)
     }
 }

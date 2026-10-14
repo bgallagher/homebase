@@ -96,7 +96,9 @@ private fun map(e: Throwable): SshException = when (e) {
     is SshException -> e
     is UserAuthException -> SshException.AuthFailed(e.message ?: "no accepted method", e)
     is SocketTimeoutException -> SshException.Unreachable("timed out", e)
-    is ConnectException, is NoRouteToHostException, is UnknownHostException -> SshException.Unreachable(e.message ?: e.javaClass.simpleName, e)
+    // Android words this as 'Unable to resolve host "x": …'; a plain JVM gives only the name. Say it either way, so the UI can explain it.
+    is UnknownHostException -> SshException.Unreachable(e.message?.takeIf { it.contains("resolve", ignoreCase = true) } ?: "Unable to resolve host ${e.message.orEmpty()}".trim(), e)
+    is ConnectException, is NoRouteToHostException -> SshException.Unreachable(e.message ?: e.javaClass.simpleName, e)
     is TransportException -> SshException.ConnectionLost(e.message ?: "transport error", e)
     is IOException -> SshException.ConnectionLost(e.message ?: "I/O error", e)
     else -> SshException.ConnectionLost(e.message ?: e.javaClass.simpleName, e)

@@ -56,7 +56,7 @@ Unless a section says otherwise, the features below are on **both** the Mac and 
 - Everything is standard SSH and shell commands on the server. No agent, no daemon, nothing to install (Debian and Ubuntu with `apt` for now; Docker is optional).
 - On the Mac it uses the system OpenSSH, so your `~/.ssh/config`, ssh-agent, keys and Tailscale SSH all work as they do in a terminal. On Android it has its own SSH client (Tailscale SSH, password or a private key file, kept encrypted with the Android Keystore).
 - Add a server by host, or import aliases from `~/.ssh/config`. First connections show the host key fingerprints for you to trust; a changed key is blocked, never offered for acceptance.
-- **Mac only for now:** edit a saved connection at any time (right-click it in the sidebar, Server > Edit Connection…, or the button on a failed connection): name, host, user, port and the key file to log in with. When a server refuses the login, the Overview says which keys ssh offered and what to do, instead of a bare "Permission denied".
+- Edit a saved connection at any time: name, host, user, port and the sign-in. On the Mac: right-click it in the sidebar, Server > Edit Connection…, or the button on a failed connection, and choose the key file to log in with. On Android: More > Server settings, or the Edit connection button on a failed connection. When a server refuses the login or can't be reached, the Overview explains why and what to do, instead of a bare "Permission denied"; on the Mac it says which keys ssh offered.
 
 **Overview**
 - CPU, memory, disks and load at a glance, refreshed every few seconds, with the last snapshot shown instantly while it reconnects.

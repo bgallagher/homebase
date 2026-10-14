@@ -14,6 +14,7 @@ object DemoWorlds {
         Server(id = "demo-homelab", name = "homelab", host = "homelab.demo", user = "ubuntu"),
         Server(id = "demo-garage", name = "garage-nuc", host = "garage-nuc.demo", user = "pi"),
         Server(id = "demo-nas", name = "old-nas", host = "old-nas.demo", user = "admin"),
+        Server(id = "demo-backup", name = "backup-box", host = "backup-box.demo", user = "backup"),
     )
 
     private val worlds = HashMap<String, DemoWorld>()
@@ -22,6 +23,7 @@ object DemoWorlds {
         when (host) {
             "garage-nuc.demo" -> DemoData.garage()
             "old-nas.demo" -> DemoData.homelab().also { it.unreachable = true }   // always times out: the "can't reach" screens
+            "backup-box.demo" -> DemoData.homelab().also { it.refusesLogin = true }   // always refuses the login: the "sign-in refused" screen
             else -> DemoData.homelab()
         }
     }
@@ -60,6 +62,7 @@ class DemoWorld(
     val containers: MutableList<DemoContainer>,
 ) {
     @Volatile var unreachable = false
+    @Volatile var refusesLogin = false
 
     // MARK: apt (Updates screen)
 
