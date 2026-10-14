@@ -186,6 +186,28 @@
       ]
     },
     {
+      "id": "docker_pull_image",
+      "kind": "action",
+      "description": "Pull Latest Image for a standalone container (one with no compose project label): downloads a newer copy of the image it runs. The container keeps the image it was created from; nothing restarts. {image} is the container's image reference from docker ps, only letters, digits and ._-/:@, not an image id (12 or 64 hex characters) and not starting with sha256:, and single-quoted for the shell.",
+      "script": "docker pull {image}",
+      "timeoutSeconds": 900,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
+      "id": "docker_remove",
+      "kind": "action",
+      "description": "Delete a standalone container (one with no compose project label): stops and removes it. {volumes} is empty or ` -v` (also remove its anonymous volumes). Named volumes, bind-mounted folders and the image are never removed. {id} must match ^[0-9a-f]{12,64}$.",
+      "script": "docker rm -f{volumes} {id}",
+      "timeoutSeconds": 60,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "file_read",
       "description": "Read one file of a stack (a compose file or <working_dir>/.env): missing, too large (over 65536 bytes), or its mtime, mode, owner, sha256 and base64 content. Read only. {file} is the quoted absolute path.",
       "script": "F={file}; if [ ! -e \"$F\" ]; then echo '##missing'; exit 0; fi; if [ \"$(stat -c %s \"$F\")\" -gt 65536 ]; then echo '##toolarge'; exit 0; fi; echo '##meta'; stat -c '%Y %a %U:%G' \"$F\"; echo '##sha256'; sha256sum \"$F\" | cut -d' ' -f1; echo '##content'; base64 -w0 \"$F\"; echo",
