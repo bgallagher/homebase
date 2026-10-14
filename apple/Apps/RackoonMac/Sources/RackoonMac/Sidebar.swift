@@ -61,6 +61,8 @@ struct Sidebar: View {
     let servers: [Server]
     let selectedID: String?
     let status: ConnectionStatus
+    /// The once-a-minute reading of each server that is not selected, for its status light.
+    var background: (String) -> FleetEntry? = { _ in nil }
     var updates: UpdateBadge?
     let onSelect: (Server) -> Void
     let onEdit: (Server) -> Void
@@ -77,9 +79,11 @@ struct Sidebar: View {
                     SectionLabel("Servers")
                     ForEach(servers) { server in
                         let isSelected = server.id == selectedID
+                        let entry = isSelected ? nil : background(server.id)
                         Button { onSelect(server) } label: {
                             HStack(spacing: 10) {
-                                StatusDot(status: isSelected ? status : .none, glow: isSelected)
+                                StatusDot(status: isSelected ? status : (entry?.status ?? .none), glow: isSelected)
+                                    .help(entry?.summary ?? "")
                                 Text(server.name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1)
                                 Spacer()
                             }

@@ -323,6 +323,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, status: status,
+                    background: { model.backgroundEntry($0) },
                     updates: updateBadge,
                     onSelect: { selection = .overview; model.select($0) },
                     onEdit: { editing = $0 },

@@ -145,7 +145,7 @@ final class RebootFlow {
 }
 
 /// Saved servers, the selected server, and the live session for it.
-/// Only the selected server is polled, so we hold one SSH connection at a time.
+/// The selected server is polled every few seconds; `fleet` polls the others once a minute for their status lights.
 @MainActor @Observable
 final class AppModel {
     private(set) var servers: [Server]
@@ -160,6 +160,8 @@ final class AppModel {
     /// for the Overview's explanation. Nil until a login fails; cleared when a poll succeeds or the server changes.
     private(set) var authAttempt: SSHAttempt?
 
+    /// Slow polls of every server that is not selected.
+    let fleet: FleetMonitor
     private let store: ServerStore
     private let verifier = HostKeyVerifier()
     private var session: ServerSession?
@@ -171,6 +173,7 @@ final class AppModel {
 
     init(store: ServerStore = Demo.isOn ? Demo.store() : .defaultStore()) {
         self.store = store
+        fleet = FleetMonitor(store: store)
         servers = store.loadServers()
         let last = UserDefaults.standard.string(forKey: "selectedServerID")
         selectedID = servers.contains { $0.id == last } ? last : servers.first?.id
@@ -184,18 +187,25 @@ final class AppModel {
             wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
+                Task { @MainActor in
+                    self?.refresh()
+                    self?.fleet.refreshAll()
+                }
             }
         }
         SudoVault.shared.load(servers)   // which servers have a saved sudo password (never prompts)
         if let selected { connect(selected) }
+        fleet.sync(servers: servers, selectedID: selectedID)
     }
 
     func select(_ server: Server) {
         guard server.id != selectedID else { return }
+        // The server being left keeps its light: hand its latest reading to the slow poll.
+        if let old = selectedID { fleet.seed(old, with: state) }
         selectedID = server.id
         if !Demo.isOn { UserDefaults.standard.set(server.id, forKey: "selectedServerID") }
         connect(server)
+        fleet.sync(servers: servers, selectedID: selectedID)
     }
 
     func add(_ server: Server) {
@@ -203,7 +213,11 @@ final class AppModel {
         persist()
         select(server)
         if selectedID == server.id, phase == .idle { connect(server) }
+        fleet.sync(servers: servers, selectedID: selectedID)
     }
+
+    /// The status light of a server that is not selected (the selected one's comes from `phase` and `state`).
+    func backgroundEntry(_ id: String) -> FleetEntry? { fleet.entries[id] }
 
     /// Saves an edited server. Returns true when its connection details changed (host, user, port, key file or the ssh
     /// config link), in which case the caller drops what it holds for the old address (terminal tabs, Docker models) and
@@ -220,7 +234,9 @@ final class AppModel {
         DockerElevation.shared.lock(server.id)
         // A snapshot taken from another address would be painted as this server's past: drop it.
         if before.host != server.host { store.deleteSnapshot(serverID: server.id) }
+        fleet.reset(server.id)
         if server.id == selectedID { connect(server) }   // drops the old session and starts from the host-key check
+        fleet.sync(servers: servers, selectedID: selectedID)
         return true
     }
 
@@ -237,6 +253,8 @@ final class AppModel {
             phase = .idle
             if let next = selected { connect(next) }
         }
+        fleet.reset(server.id)
+        fleet.sync(servers: servers, selectedID: selectedID)
     }
 
     /// `then` runs once the user has confirmed and the reboot has started (the Updates screen uses it to move to the
@@ -339,6 +357,7 @@ final class AppModel {
             if Task.isCancelled { return }
             switch status {
             case .trusted:
+                fleet.noteTrusted(server.id)
                 startSession(for: server)
             case .failed(let message):
                 // Unreachable right now: keep polling so it recovers when the network returns.
