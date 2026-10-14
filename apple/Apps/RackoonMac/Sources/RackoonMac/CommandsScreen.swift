@@ -221,7 +221,7 @@ private struct ScriptPreview: View {
                 Spacer(minLength: 0)
                 if exact != nil {
                     Button(showExact ? "Hide exact script" : "Show exact script") { showExact.toggle() }
-                        .buttonStyle(.link).font(.system(size: 11)).handCursor()
+                        .buttonStyle(.link).font(.system(size: 11)).foregroundStyle(Theme.accent).handCursor()
                 }
             }
             if showExact, let exact { block("Exact script sent over SSH", exact) }
