@@ -2,12 +2,18 @@ import RackoonCore
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
+    /// Every server at once; not one of a server's screens.
+    case dashboard
     case overview, docker, updates, bookmarks, files, terminal, command, alerts, security
+
+    /// The screens listed under the selected server.
+    static var serverScreens: [Screen] { allCases.filter { $0 != .dashboard } }
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .dashboard: "Dashboard"
         case .overview: "Overview"
         case .docker: "Docker"
         case .updates: "Updates"
@@ -22,6 +28,7 @@ enum Screen: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .dashboard: "rectangle.3.group"
         case .overview: "square.grid.2x2"
         case .docker: "shippingbox"
         case .updates: "arrow.down.circle"
@@ -37,7 +44,7 @@ enum Screen: String, CaseIterable, Identifiable {
     /// Screens that exist today. The rest are shown as "Soon" so the layout matches the design.
     var isAvailable: Bool {
         switch self {
-        case .overview, .docker, .updates, .bookmarks, .files, .terminal, .command: true
+        case .dashboard, .overview, .docker, .updates, .bookmarks, .files, .terminal, .command: true
         default: false
         }
     }
@@ -73,6 +80,11 @@ struct Sidebar: View {
             // The screens scroll when the window is short; Safety and Appearance stay put at the bottom.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 4) {
+                    if servers.count > 0 {
+                        NavRow(screen: .dashboard, selected: selection == .dashboard) { selection = .dashboard }
+                            .help("Every server at once: health, servers, Docker and bookmarks (⌘0)")
+                            .padding(.bottom, 10)
+                    }
                     HStack(alignment: .firstTextBaseline) {
                         SectionLabel("Servers")
                         Spacer()
@@ -95,7 +107,7 @@ struct Sidebar: View {
                     if let name = selected?.name {
                         Divider().padding(.vertical, 12)
                         SectionLabel(name)
-                        ForEach(Screen.allCases) { screen in
+                        ForEach(Screen.serverScreens) { screen in
                             NavRow(screen: screen, selected: selection == screen,
                                    badge: screen == .updates ? updates : nil) {
                                 if screen.isAvailable { selection = screen }

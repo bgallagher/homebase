@@ -3,6 +3,18 @@ import RackoonCore
 import RackoonSSHSystem
 import Observation
 
+/// One server on the dashboard: its latest reading and recent history.
+struct FleetRow: Identifiable {
+    let server: Server
+    let state: ServerState
+    /// Why it is not polled (host key not trusted yet, or changed), if it isn't.
+    let blocked: String?
+    let history: HealthHistory
+    var id: String { server.id }
+
+    var isOnline: Bool { blocked == nil && state.error == nil && state.overview != nil && !state.isStale }
+}
+
 enum ConnectionPhase: Equatable {
     case idle
     case checkingHostKey
@@ -10,6 +22,15 @@ enum ConnectionPhase: Equatable {
     /// Host key changed: connecting is blocked until the user fixes known_hosts themselves.
     case blocked(String)
     case polling
+
+    /// Why the server is not being polled, for the dashboard.
+    var blockedReason: String? {
+        switch self {
+        case .needsTrust: "Waiting for you to trust its host key."
+        case .blocked(let message): message
+        default: nil
+        }
+    }
 }
 
 /// Canned answers for a fake reboot: the boot id changes about 12 seconds after the reboot command, and the
@@ -224,6 +245,19 @@ final class AppModel {
         persist()
     }
 
+    /// Every saved server's latest reading, in saved order, for the dashboard: the selected one's live state, the others'
+    /// once-a-minute ones, and each server's history.
+    var fleetRows: [FleetRow] {
+        servers.map { server in
+            if server.id == selectedID {
+                return FleetRow(server: server, state: state, blocked: phase.blockedReason, history: fleet.histories[server.id] ?? HealthHistory())
+            }
+            let entry = fleet.entries[server.id]
+            return FleetRow(server: server, state: entry?.state ?? ServerState(), blocked: entry?.blocked,
+                            history: fleet.histories[server.id] ?? HealthHistory())
+        }
+    }
+
     /// The status light of a server that is not selected (the selected one's comes from `phase` and `state`).
     func backgroundEntry(_ id: String) -> FleetEntry? { fleet.entries[id] }
 
@@ -399,6 +433,7 @@ final class AppModel {
         listener = Task { [weak self] in
             for await next in await session.updates() {
                 self?.state = next
+                self?.fleet.record(id, next)
                 if next.error == nil { self?.authAttempt = nil }   // logged in: the diagnosis is history
             }
         }
