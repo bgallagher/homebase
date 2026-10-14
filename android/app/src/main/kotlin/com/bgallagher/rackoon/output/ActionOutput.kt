@@ -25,7 +25,7 @@ import org.connectbot.terminal.TerminalEmulatorFactory
  * progress) matches it. Lives in the view-model, so leaving the screen or turning the phone does not lose it.
  */
 class ActionOutput(
-    /** What the run belongs to: a compose project name or "Standalone". The stack page shows only its own. */
+    /** What the run belongs to: a stack's [com.bgallagher.rackoon.core.DockerStack.id] (a compose project name or `standalone/<container>`). The stack page shows only its own. */
     val scope: String,
     val title: String,
     private val coroutines: CoroutineScope,

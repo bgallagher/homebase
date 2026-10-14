@@ -50,6 +50,7 @@ import com.bgallagher.rackoon.core.DockerContainer
 import com.bgallagher.rackoon.core.DockerStack
 import com.bgallagher.rackoon.core.Server
 import com.bgallagher.rackoon.core.StackSeverity
+import com.bgallagher.rackoon.core.StandaloneAction
 import com.bgallagher.rackoon.core.status
 import com.bgallagher.rackoon.core.usageText
 import com.bgallagher.rackoon.output.ActionOutput
@@ -69,8 +70,9 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
     val tab by vm.stackTab.collectAsStateWithLifecycle()
     val output by vm.output.collectAsStateWithLifecycle()
     val working by vm.working.collectAsStateWithLifecycle()
-    val blocked = vm.stackBlockedReason(stack)
-    val ownOutput = output?.takeIf { it.scope == stack.name }
+    // A standalone container (docker run) has its own actions; compose ones are refused for it.
+    val blocked = if (stack.isStandalone) vm.standaloneBlockedReason(stack) else vm.stackBlockedReason(stack)
+    val ownOutput = output?.takeIf { it.scope == stack.id }
     var logsFull by rememberSaveable { mutableStateOf(false) }
     val fullScreen = logsFull && tab == AppViewModel.StackTab.Logs
     androidx.activity.compose.BackHandler(enabled = fullScreen) { logsFull = false }
@@ -105,7 +107,7 @@ fun StackDetail(vm: AppViewModel, server: Server, stack: DockerStack, ui: Docker
                 items(stack.containers, key = { it.id }) { ct ->
                     Box(Modifier.padding(horizontal = 16.dp)) {
                         ContainerCard(
-                            ct, stack, busy = ct.id in ui.busy || stack.name in ui.busyStacks, readOnly = readOnly, anyRunning = working != null,
+                            ct, stack, busy = ct.id in ui.busy || stack.id in ui.busyStacks, readOnly = readOnly, anyRunning = working != null,
                             blocked = blocked, vm = vm,
                         )
                     }
@@ -147,7 +149,8 @@ private fun StackAppBar(vm: AppViewModel, server: Server, stack: DockerStack, re
         ReadOnlyChip(readOnly, vm::toggleReadOnly, small = true)
         Box {
             IconTap(RackoonIcons.More, "Stack actions", c.textPrimary, { menu = true })
-            StackMenu(menu, { menu = false }, vm, stack, blocked)
+            if (stack.isStandalone) StandaloneMenu(menu, { menu = false }, vm, stack, blocked)
+            else StackMenu(menu, { menu = false }, vm, stack, blocked)
         }
     }
 }
@@ -180,12 +183,68 @@ private fun StackMenu(open: Boolean, onDismiss: () -> Unit, vm: AppViewModel, st
         }
         if (stack.hasBookmark) DropdownMenuItem(
             text = { MenuText("Edit bookmark", "Change the link on Bookmarks", c.textPrimary) },
-            modifier = Modifier.heightIn(min = 56.dp), onClick = { onDismiss(); vm.openBookmarkSheet(stack.name) },
+            modifier = Modifier.heightIn(min = 56.dp), onClick = { onDismiss(); vm.openBookmarkSheet(stack.id) },
         )
         androidx.compose.material3.HorizontalDivider(color = c.border)
         DropdownMenuItem(
             text = { MenuText("Delete stack…", "Containers and networks; volumes optional", if (blocked != null) c.textMuted else c.danger) },
             modifier = Modifier.heightIn(min = 56.dp), enabled = blocked == null, onClick = { onDismiss(); vm.requestDelete(stack) },
+        )
+    }
+}
+
+/**
+ * The same menu for a container started with `docker run`: Pull Latest Image, Restart (or Start) Container and Delete Container.
+ * Update, Rebuild and Recreate need the definition a compose file holds, which such a container doesn't have, so they stay
+ * visible but disabled and say why.
+ */
+@Composable
+private fun StandaloneMenu(open: Boolean, onDismiss: () -> Unit, vm: AppViewModel, stack: DockerStack, blocked: String?) {
+    val c = Rackoon.colors
+    val image = StandaloneAction.pullableImage(stack)
+    val container = stack.containers.firstOrNull()
+    val ok = blocked == null
+    DropdownMenu(open, onDismiss, modifier = Modifier.width(280.dp), offset = androidx.compose.ui.unit.DpOffset((-8).dp, 0.dp), containerColor = c.selection) {
+        DropdownMenuItem(
+            text = { MenuText("Update", StandaloneAction.NEEDS_COMPOSE_REASON, c.textMuted) },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = false, onClick = {},
+        )
+        DropdownMenuItem(
+            text = {
+                MenuText(
+                    "Pull latest image",
+                    if (image == null) "The container runs an untagged image, so there is nothing to pull" else "Download a newer $image; the container keeps the image it has",
+                    if (ok && image != null) c.textPrimary else c.textMuted,
+                )
+            },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = ok && image != null, onClick = { onDismiss(); vm.requestPull(stack) },
+        )
+        DropdownMenuItem(
+            text = { MenuText("Rebuild", StandaloneAction.NEEDS_COMPOSE_REASON, c.textMuted) },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = false, onClick = {},
+        )
+        if (container != null) {
+            val restart = container.isRunning
+            DropdownMenuItem(
+                text = {
+                    MenuText(
+                        if (restart) "Restart container" else "Start container",
+                        if (restart) "Restart in place; its settings are not changed" else "Start it again with the settings it was created with",
+                        if (ok) c.textPrimary else c.textMuted,
+                    )
+                },
+                modifier = Modifier.heightIn(min = 56.dp), enabled = ok,
+                onClick = { onDismiss(); vm.requestContainerAction(stack, container, if (restart) DockerAction.RESTART else DockerAction.START) },
+            )
+        }
+        androidx.compose.material3.HorizontalDivider(color = c.border)
+        DropdownMenuItem(
+            text = { MenuText("Recreate…", StandaloneAction.NEEDS_COMPOSE_REASON, c.textMuted) },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = false, onClick = {},
+        )
+        DropdownMenuItem(
+            text = { MenuText("Delete container…", "Stop and remove it; anonymous volumes optional", if (ok) c.danger else c.textMuted) },
+            modifier = Modifier.heightIn(min = 56.dp), enabled = ok, onClick = { onDismiss(); vm.requestDelete(stack) },
         )
     }
 }

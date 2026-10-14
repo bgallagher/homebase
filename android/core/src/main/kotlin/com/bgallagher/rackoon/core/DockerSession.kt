@@ -84,8 +84,9 @@ data class DockerState(
     /** Containers with an action in flight. */
     val busy: Set<String> = emptySet(),
     /**
-     * Compose projects with a whole-stack action in flight. Keyed by name, not container id: `up -d` creates containers
-     * with new ids, and the poll keeps replacing the snapshot underneath a long action.
+     * Stacks with a whole-stack action in flight, by [DockerStack.id] (a compose project's name, or `standalone/<container>`).
+     * Not by container id: `up -d` creates containers with new ids, and the poll keeps replacing the snapshot underneath a
+     * long action.
      */
     val busyStacks: Set<String> = emptySet(),
     /** Why the last action failed, until the next action starts. */
@@ -178,7 +179,7 @@ class DockerSession(
         val intent = action.intent(stack) ?: return fail("Refusing to ${action.raw} ${stack.name}: it has no usable compose project.")
         try { policy.authorize(intent, confirmation) } catch (e: PolicyError) { return fail(e.message) }
         val ids = stack.containers.map { it.id }.toSet()
-        _state.update { it.copy(busy = it.busy + ids, busyStacks = it.busyStacks + stack.name, actionError = null) }
+        _state.update { it.copy(busy = it.busy + ids, busyStacks = it.busyStacks + stack.id, actionError = null) }
 
         var failure: String? = null
         try {
@@ -190,12 +191,12 @@ class DockerSession(
                 failure = tail.ifEmpty { "docker compose ${action.raw} failed (exit ${result.exitCode})" }
             }
         } catch (e: CancellationException) {
-            _state.update { it.copy(busy = it.busy - ids, busyStacks = it.busyStacks - stack.name) }
+            _state.update { it.copy(busy = it.busy - ids, busyStacks = it.busyStacks - stack.id) }
             throw e
         } catch (e: Exception) {
             failure = e.message ?: e.toString()
         }
-        _state.update { it.copy(busy = it.busy - ids, busyStacks = it.busyStacks - stack.name, actionError = failure) }
+        _state.update { it.copy(busy = it.busy - ids, busyStacks = it.busyStacks - stack.id, actionError = failure) }
         refresh()
     }
 
@@ -215,7 +216,7 @@ class DockerSession(
             return
         }
         val scoped = if (service == null) stack.containers else stack.containers.filter { it.service == service }
-        stream(intent, confirmation, scoped.map { it.id }.toSet(), stack.name, "docker compose ${action.raw}", cols, rows, onEvent)
+        stream(intent, confirmation, scoped.map { it.id }.toSet(), stack.id, "docker compose ${action.raw}", cols, rows, onEvent)
     }
 
     fun confirm(removal: StackRemoval, stack: DockerStack): Confirmation {
@@ -234,7 +235,33 @@ class DockerSession(
             onEvent(ActionStreamEvent.Finished(null))
             return
         }
-        stream(intent, confirmation, stack.containers.map { it.id }.toSet(), stack.name, "docker compose down", cols, rows, onEvent)
+        stream(intent, confirmation, stack.containers.map { it.id }.toSet(), stack.id, "docker compose down", cols, rows, onEvent)
+    }
+
+    fun confirm(action: StandaloneAction, stack: DockerStack): Confirmation {
+        val intent = action.intent(stack) ?: throw PolicyError.InvalidTarget
+        return policy.confirm(intent)
+    }
+
+    /**
+     * Pulls a standalone container's image or deletes the container, with live output, then refreshes. The stack is busy under
+     * its id (`standalone/<name>`), which can't clash with a compose project's name.
+     */
+    suspend fun performStreaming(
+        action: StandaloneAction, stack: DockerStack, confirmation: Confirmation?,
+        cols: Int, rows: Int, onEvent: (ActionStreamEvent) -> Unit,
+    ) {
+        val intent = action.intent(stack)
+        if (intent == null) {
+            fail("Refusing to change ${stack.name}: it is not a single standalone container with a usable id and image.")
+            onEvent(ActionStreamEvent.Finished(null))
+            return
+        }
+        val label = when (action) {
+            StandaloneAction.PullImage -> "docker pull"
+            is StandaloneAction.Remove -> "docker rm"
+        }
+        stream(intent, confirmation, stack.containers.map { it.id }.toSet(), stack.id, label, cols, rows, onEvent)
     }
 
     /** The same for one container's start, stop or restart, so every action shows up in the same live output. */
@@ -252,7 +279,7 @@ class DockerSession(
     }
 
     private suspend fun stream(
-        intent: Intent, confirmation: Confirmation?, ids: Set<String>, stackName: String?, label: String,
+        intent: Intent, confirmation: Confirmation?, ids: Set<String>, stackId: String?, label: String,
         cols: Int, rows: Int, onEvent: (ActionStreamEvent) -> Unit,
     ) {
         try {
@@ -262,11 +289,11 @@ class DockerSession(
             onEvent(ActionStreamEvent.Finished(null))
             return
         }
-        _state.update { it.copy(busy = it.busy + ids, busyStacks = if (stackName != null) it.busyStacks + stackName else it.busyStacks, actionError = null) }
+        _state.update { it.copy(busy = it.busy + ids, busyStacks = if (stackId != null) it.busyStacks + stackId else it.busyStacks, actionError = null) }
         val run = StreamRunner.run(transport, intent.command, cols, rows, onEvent)
         val failure = run.failureMessage(label)
         _state.update {
-            it.copy(busy = it.busy - ids, busyStacks = if (stackName != null) it.busyStacks - stackName else it.busyStacks, actionError = failure)
+            it.copy(busy = it.busy - ids, busyStacks = if (stackId != null) it.busyStacks - stackId else it.busyStacks, actionError = failure)
         }
         refresh()
     }

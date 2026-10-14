@@ -304,7 +304,9 @@ object DemoData {
             c(17, "paperless", "webserver", "ghcr.io/paperless-ngx/paperless-ngx:latest", "0.0.0.0:8000->8000/tcp", 0.8, 520.0, "healthy"),
             c(18, "paperless", "broker", "redis:7", "", 0.1, 12.0),
             c(19, "paperless", "db", "postgres:16", "", 0.2, 64.0),
+            // Started with docker run (no compose labels): each is its own Standalone card.
             c(20, null, "portainer_agent", "portainer/agent:latest", "", 0.0, 30.0),
+            c(21, null, "speedtest-tracker", "lscr.io/linuxserver/speedtest-tracker:0.24.2", "", 0.0, 95.0, state = "exited"),
         ),
     )
 

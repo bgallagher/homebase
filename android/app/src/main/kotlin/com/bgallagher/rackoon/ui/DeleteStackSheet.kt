@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.height
 import com.bgallagher.rackoon.core.DockerStack
 import com.bgallagher.rackoon.core.StackRemoval
+import com.bgallagher.rackoon.core.StandaloneAction
 import com.bgallagher.rackoon.ui.theme.Rackoon
 
 /**
@@ -108,6 +109,61 @@ fun DeleteStackSheet(stack: DockerStack, serverName: String, user: String, onCan
                     { onRun(removal) }, Modifier.weight(1f).height(48.dp), enabled = confirmed && command.isNotEmpty(), shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = c.danger, contentColor = Color.White, disabledContainerColor = c.selection, disabledContentColor = c.textMuted),
                 ) { Text("Delete stack", fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+}
+
+/**
+ * Deleting a standalone container (started with `docker run`): what is removed and what is kept, an opt-in for its anonymous
+ * volumes, the exact command, and always the name typed in, because nothing on the server can create the container again (its
+ * settings were only in the original command line). Mirrors the Mac's DeleteContainerSheet.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeleteContainerSheet(stack: DockerStack, user: String, onCancel: () -> Unit, onRun: (volumes: Boolean) -> Unit) {
+    val c = Rackoon.colors
+    var removeVolumes by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
+    val command = StandaloneAction.Remove(removeVolumes).command(stack).orEmpty()
+
+    ModalBottomSheet(
+        onDismissRequest = onCancel, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.sidebar, scrimColor = Color.Black.copy(alpha = 0.6f),
+    ) {
+        Column(Modifier.imePadding().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column {
+                Text("Delete ${stack.name}?", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+                Text(
+                    "Stops and removes the container. It was started with docker run, not Docker Compose, so it can't be created again from here: " +
+                        "that needs its original docker run command. Its image, named volumes and bind-mounted folders are kept.",
+                    color = c.textSecondary, lineHeight = 21.sp, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Option("Also delete its anonymous volumes", "Volumes Docker made for it without a name are lost for good. Named volumes are kept.", removeVolumes, true) { removeVolumes = it }
+            Column {
+                SectionLabel("Command, run as $user")
+                Text(
+                    command, fontFamily = MonoFamily, fontSize = 13.sp, lineHeight = 20.sp, color = c.textPrimary,
+                    modifier = Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.background)
+                        .border(1.dp, c.border, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row {
+                    Text("Type ", color = c.textSecondary, fontSize = 13.sp)
+                    Text(stack.name, color = c.textPrimary, fontSize = 13.sp, fontFamily = MonoFamily)
+                    Text(" to confirm", color = c.textSecondary, fontSize = 13.sp)
+                }
+                Field("", typed, stack.name, mono = true) { typed = it }
+                if (typed.isNotEmpty() && typed != stack.name) Text("Name does not match yet", color = c.danger, fontSize = 12.sp)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+                SecondaryButton("Cancel", onCancel, Modifier.weight(1f))
+                Button(
+                    { onRun(removeVolumes) }, Modifier.weight(1f).height(48.dp), enabled = typed == stack.name && command.isNotEmpty(), shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = c.danger, contentColor = Color.White, disabledContainerColor = c.selection, disabledContentColor = c.textMuted),
+                ) { Text("Delete container", fontWeight = FontWeight.SemiBold) }
             }
         }
     }

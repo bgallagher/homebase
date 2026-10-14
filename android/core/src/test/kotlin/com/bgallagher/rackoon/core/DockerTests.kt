@@ -29,14 +29,21 @@ class DockerParserTests {
         for (name in names) assertJsonEquals(Spec.expected("docker", name), golden(Spec.out("docker", name)), "docker/$name")
     }
 
-    @Test fun stacksGroupByProjectWithStandaloneLast() {
+    @Test fun stacksGroupByProjectAndEachStandaloneContainerIsItsOwnStack() {
         val stacks = DockerParser.parse(Spec.out("docker", "synthetic-mixed-states")).stacks
-        assertEquals(listOf("dockge", "monitoring", "shlink", "watchtower", "Standalone"), stacks.map { it.name })
+        assertEquals(listOf("dockge", "monitoring", "scratch", "shlink", "watchtower"), stacks.map { it.name }, "standalone containers sort in among the compose stacks")
         val monitoring = assertNotNull(stacks.firstOrNull { it.name == "monitoring" })
         assertEquals("compose.yaml", monitoring.configFileName)
+        assertEquals("Compose Stack", monitoring.kindLabel)
+        assertEquals("monitoring", monitoring.id)
         assertEquals(1, monitoring.stoppedCount, "grafana is exited in this fixture")
         assertEquals(1, monitoring.unhealthyCount, "prometheus is unhealthy in this fixture")
-        assertTrue(stacks.last().isStandalone)
+        val scratch = assertNotNull(stacks.firstOrNull { it.name == "scratch" })
+        assertTrue(scratch.isStandalone)
+        assertEquals("Standalone", scratch.kindLabel)
+        assertEquals("standalone/scratch", scratch.id)
+        assertEquals(listOf("scratch"), scratch.containers.map { it.name })
+        assertNull(scratch.workingDir)
     }
 
     @Test fun ports() {

@@ -146,8 +146,8 @@ fun BookmarksScreen(vm: AppViewModel, readOnly: Boolean, onBack: () -> Unit) {
                             if (rows.isEmpty()) continue
                             item(key = "h-$scope") { ScopeHeader(scope) }
                             items(rows, key = { it.id }) { item ->
-                                BookmarkRow(item, vm.favicons, readOnly, onEdit = { vm.openBookmarkSheet(item.stack.name, item.service) },
-                                    onRemove = { vm.requestBookmarkRemovalFor(item.stack.name, item.service) })
+                                BookmarkRow(item, vm.favicons, readOnly, onEdit = { vm.openBookmarkSheet(item.stack.id, item.service) },
+                                    onRemove = { vm.requestBookmarkRemovalFor(item.stack.id, item.service) })
                             }
                         }
                         if (shown.isEmpty()) item { Text("No bookmarks match “$query”.", color = c.textMuted, modifier = Modifier.padding(16.dp)) }
@@ -257,7 +257,7 @@ fun BookmarkSheet(vm: AppViewModel, form: BookmarkForm, readOnly: Boolean) {
     val c = Rackoon.colors
     val docker by vm.docker.collectAsStateWithLifecycle()
     val snapshot = (docker as? DockerUi.Ready)?.snapshot
-    val stack = snapshot?.stacks?.firstOrNull { it.name == form.stackName }
+    val stack = snapshot?.stacks?.firstOrNull { it.id == form.stackName }
     val choices = snapshot?.bookmarkableStacks.orEmpty()
     val groups = snapshot?.bookmarkGroups.orEmpty()
     val blocked = form.saveBlockedReason(readOnly, stack)
