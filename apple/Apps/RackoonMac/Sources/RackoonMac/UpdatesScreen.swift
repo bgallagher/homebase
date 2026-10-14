@@ -5,13 +5,20 @@ struct UpdatesScreen: View {
     let server: Server
     /// The terminal theme, so the live output matches the terminals.
     let theme: TerminalTheme
+    /// Asks to reboot the server (the same flow as the Overview: confirmation, sudo password, waiting for it to come back).
+    var reboot: () -> Void = {}
+    /// The reboot confirmation, shown on this screen so the user confirms where they pressed the button.
+    var rebootPending: Binding<PendingAction?> = .constant(nil)
     @State private var model: UpdatesModel
     @State private var securityOnly = false
     private let safety = SafetyStore.shared
 
-    init(server: Server, theme: TerminalTheme) {
+    init(server: Server, theme: TerminalTheme, reboot: @escaping () -> Void = {},
+         rebootPending: Binding<PendingAction?> = .constant(nil)) {
         self.server = server
         self.theme = theme
+        self.reboot = reboot
+        self.rebootPending = rebootPending
         _model = State(initialValue: UpdatesModel(server: server))
     }
 
@@ -30,7 +37,9 @@ struct UpdatesScreen: View {
                 if let notice = model.notice { ErrorBanner(message: notice) }
                 if let error = state.error { ErrorBanner(message: error) }
                 if let snapshot = state.snapshot {
-                    if snapshot.rebootRequired { RebootBanner() }
+                    if snapshot.rebootRequired {
+                        RebootBanner(readOnly: safety.readOnly, busy: model.working != nil, reboot: reboot)
+                    }
                     summary(snapshot)
                     packageList
                     if !snapshot.held.isEmpty { held(snapshot.held) }
@@ -42,6 +51,7 @@ struct UpdatesScreen: View {
             .padding(.horizontal, 28).padding(.top, Theme.pageTop).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .confirmAction(rebootPending)
         .foregroundStyle(Theme.textPrimary)
         // Re-reads the update list like the reload button; Refresh Lists (apt-get update) stays a deliberate button.
         .focusedSceneValue(\.screenRefresh, { model.load() })
@@ -210,10 +220,19 @@ private struct PackageRow: View {
 }
 
 private struct RebootBanner: View {
+    let readOnly: Bool
+    /// An update is running: rebooting in the middle of it would break the install.
+    let busy: Bool
+    let reboot: () -> Void
+
     var body: some View {
-        Label("A reboot is needed to finish applying earlier updates.", systemImage: "arrow.triangle.2.circlepath")
-            .foregroundStyle(Theme.warn)
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        NoticeRow(
+            icon: "arrow.triangle.2.circlepath", tint: Theme.warn,
+            message: "A reboot is needed to finish applying earlier updates.",
+            action: AttentionAction(
+                title: "Reboot…",
+                help: readOnly ? "Read-only mode is on" : busy ? "Wait for the update to finish" : "Reboot the server and wait for it to come back",
+                enabled: !(readOnly || busy), run: reboot))
+            .noticeSurface(.warn)
     }
 }

@@ -19,7 +19,9 @@ struct OverviewView: View {
                     if let flow = model.reboots[server.id] {
                         RebootProgressBanner(flow: flow, name: server.name) { model.dismissReboot(server) }
                     }
-                    if !state.attention.isEmpty { AttentionStrip(items: state.attention, open: openScreen) }
+                    if !state.attention.isEmpty {
+                        AttentionStrip(items: state.attention, open: openScreen, action: attentionAction)
+                    }
                     // While it reboots the failing polls are expected, not news.
                     if let error = state.error, model.reboots[server.id]?.isActive != true {
                         ConnectionProblem(raw: error, attempt: model.authAttempt, edit: editServer)
@@ -59,6 +61,18 @@ struct OverviewView: View {
             set: { shown in
                 if !shown, case .needsPassword = model.reboots[server.id]?.phase { model.dismissReboot(server) }
             })
+    }
+
+    /// A button next to a chip whose problem can be fixed from here. The reboot chip gets Reboot…, which goes through
+    /// the same confirmation (and Read-only check) as the header's button.
+    private func attentionAction(_ item: AttentionItem) -> AttentionAction? {
+        guard Attention.offersReboot(item) else { return nil }
+        let busy = model.reboots[server.id]?.isActive == true
+        return AttentionAction(
+            title: "Reboot…",
+            help: SafetyStore.shared.readOnly ? "Read-only mode is on" : "Reboot \(server.name) and wait for it to come back",
+            enabled: !SafetyStore.shared.readOnly && !busy,
+            run: { model.requestReboot(server) })
     }
 
     private func header(_ o: Overview, stale: Date?) -> some View {
@@ -173,28 +187,29 @@ struct RebootProgressBanner: View {
     var body: some View {
         switch flow.phase {
         case .requesting:
-            box(color: Theme.accent, symbol: nil, title: "Asking \(name) to reboot…", detail: nil, dismissible: false)
+            box(tone: .info, symbol: nil, title: "Asking \(name) to reboot…", detail: nil, dismissible: false)
         case .needsPassword:
-            box(color: Theme.accent, symbol: "key.fill", title: "\(name) needs a password for sudo",
+            box(tone: .info, symbol: "key.fill", title: "\(name) needs a password for sudo",
                 detail: "Enter it in the sheet to reboot, or dismiss this to leave the server running.", dismissible: true)
         case .waiting(let since):
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                box(color: Theme.accent, symbol: nil, title: "Rebooting \(name)…",
+                box(tone: .info, symbol: nil, title: "Rebooting \(name)…",
                     detail: "Waiting for it to come back · \(Format.duration(context.date.timeIntervalSince(since))) so far", dismissible: false)
             }
         case .back(let after):
-            box(color: Theme.ok, symbol: "checkmark.circle.fill", title: "\(name) is back",
+            box(tone: .ok, symbol: "checkmark.circle.fill", title: "\(name) is back",
                 detail: "It restarted and answered again after \(Format.duration(after)).", dismissible: true)
         case .timedOut:
-            box(color: Theme.warn, symbol: "exclamationmark.triangle.fill", title: "\(name) has not come back",
+            box(tone: .warn, symbol: "exclamationmark.triangle.fill", title: "\(name) has not come back",
                 detail: "No answer after 10 minutes. Check the machine or the provider's console.", dismissible: true)
         case .failed(let message):
-            box(color: Theme.danger, symbol: "xmark.octagon.fill", title: "Could not reboot \(name)", detail: message, dismissible: true)
+            box(tone: .danger, symbol: "xmark.octagon.fill", title: "Could not reboot \(name)", detail: message, dismissible: true)
         }
     }
 
-    private func box(color: Color, symbol: String?, title: String, detail: String?, dismissible: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+    private func box(tone: NoticeTone, symbol: String?, title: String, detail: String?, dismissible: Bool) -> some View {
+        let color = tone.tint
+        return HStack(alignment: .top, spacing: 10) {
             if let symbol { Image(systemName: symbol).foregroundStyle(color) } else { ProgressView().controlSize(.small) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).fontWeight(.medium)
@@ -208,7 +223,7 @@ struct RebootProgressBanner: View {
                 .buttonStyle(.pointer).foregroundStyle(Theme.textMuted).help("Dismiss")
             }
         }
-        .padding(12).background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .noticeSurface(tone)
     }
 }
 
@@ -252,61 +267,6 @@ struct StatCard: View {
     }
 }
 
-struct AttentionStrip: View {
-    let items: [AttentionItem]
-    let open: (String) -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 18)).foregroundStyle(Theme.warn)
-            Text("Needs attention").fontWeight(.semibold).foregroundStyle(Theme.warn)
-            FlowChips(items: items, open: open)
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .background(Theme.warnBackground, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.warnBorder))
-    }
-}
-
-private struct FlowChips: View {
-    let items: [AttentionItem]
-    let open: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(items) { item in
-                // Each chip jumps to the screen that helps fix it, when that screen exists.
-                let target = Screen(rawValue: item.fix)?.isAvailable == true
-                Button { open(item.fix) } label: {
-                    HStack(spacing: 6) {
-                        Text(item.message)
-                        if target { Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)) }
-                    }
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .foregroundStyle(item.severity == .critical ? Theme.danger : Theme.warnText)
-                    .background(Theme.warnChip, in: RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.pointer)
-                .disabled(!target)
-            }
-        }
-    }
-}
-
-struct ErrorBanner: View {
-    let message: String
-
-    var body: some View {
-        Label(message, systemImage: "wifi.exclamationmark")
-            .foregroundStyle(Theme.danger)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
 /// The connection failed: ssh's own message, what it means and what to do (`ConnectionFailure`, Core), with the way to
 /// the Edit Connection sheet. With `retry` it also offers Try Again (the page with nothing else on it).
 struct ConnectionProblem: View {
@@ -339,10 +299,7 @@ struct ConnectionProblem: View {
             }
             .controlSize(.large).padding(.top, 2)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.danger.opacity(0.35)))
+        .noticeSurface(.danger)
     }
 }
 

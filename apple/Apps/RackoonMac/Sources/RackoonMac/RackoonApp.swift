@@ -447,12 +447,15 @@ struct ContentView: View {
                 case .docker:
                     DockerScreen(server: server, theme: appearance.resolvedTheme, workspace: dockerWorkspace, openShell: { container in
                         guard let command = DockerSession.shellCommand(id: container.id) else { return }
-                        terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: command)
+                        // With Docker unlocked through sudo, the terminal asks for the password itself (sudo's prompt).
+                        let shell = DockerElevation.shared.isUnlocked(server) ? "sudo " + command : command
+                        terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: shell)
                         selection = .terminal
-                    }).id(server.id)
+                    }).id(DockerElevation.shared.key(server))
                 case .bookmarks:
                     BookmarksScreen(server: server, workspace: dockerWorkspace,
-                                    openStack: { name in dockerWorkspace.openStack[server.id] = name; selection = .docker }).id(server.id)
+                                    openStack: { name in dockerWorkspace.openStack[server.id] = name; selection = .docker })
+                        .id(DockerElevation.shared.key(server))
                 case .files:
                     FilesScreen(server: server, workspace: dockerWorkspace, openTerminal: { directory in
                         guard let command = RemoteFiles.terminalCommand(in: directory) else { return }
@@ -462,7 +465,12 @@ struct ContentView: View {
                 case .updates:
                     // Keyed by the connection, not just the id: after Edit Connection the model (and its transport)
                     // must be rebuilt, or a sudo password would go to the old address.
-                    UpdatesScreen(server: server, theme: appearance.resolvedTheme).id(server.connectionKey)
+                    // Reboot… is confirmed right here; once confirmed, the Overview (which shows the sudo password sheet
+                    // and the waiting and reconnect progress) takes over.
+                    UpdatesScreen(server: server, theme: appearance.resolvedTheme,
+                                  reboot: { model.requestReboot(server, then: { selection = .overview }) },
+                                  rebootPending: Binding(get: { model.pending }, set: { model.pending = $0 }))
+                        .id(server.connectionKey)
                 case .terminal:
                     TerminalScreen(store: terminals, server: server)
                 case .command:

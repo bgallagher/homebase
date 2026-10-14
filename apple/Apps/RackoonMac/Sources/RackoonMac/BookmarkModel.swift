@@ -148,7 +148,7 @@ final class BookmarkModel: Identifiable {
         Task {
             defer { busy = false }
             do {
-                let session = StackFileSession(transport: makeTransport(for: server), policy: SafetyStore.shared.policy, stack: stack)
+                let session = StackFileSession(transport: dockerTransport(for: server), policy: SafetyStore.shared.policy, stack: stack)
                 // The first compose file that defines the service (an override file may be the one that does).
                 var found: (file: EditableFile, remote: RemoteFile, text: String)?
                 var unreadable: [String] = []

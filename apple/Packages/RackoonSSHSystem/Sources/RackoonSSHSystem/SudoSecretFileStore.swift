@@ -63,16 +63,45 @@ public struct SecureEnclaveSealer: SudoSealer {
     }
 
     public func open(_ sealed: SealedSecret, authenticating aad: Data, reason: String) async throws -> Data {
-        // Ask for approval FIRST, for exactly the key's access rule, then use the key with that approval. Letting the key
-        // operation raise the prompt itself skipped the Apple Watch when the lid was closed (it went straight to the
-        // login password); this way macOS offers Touch ID, the Watch and the password like its own prompts do.
+        // 1. Approval, asked for explicitly and in the order macOS's own prompts use: Touch ID or the paired Apple Watch
+        //    (a double-click of the side button, which works with the lid closed), then the login password. Letting the
+        //    key operation raise its own prompt, or asking for the key's access rule, was found to offer only the
+        //    password with the lid closed.
+        let context = try await Self.approve(reason: reason)
+        // 2. Use the key with that approved context. If that still wants to prompt (it needed an approval the policy did
+        //    not give), fall back to approving for the key's own access rule, then try once more.
+        do {
+            return try Self.unwrap(sealed, aad: aad, context: context)
+        } catch where Self.needsApproval(error) {
+            let again = LAContext()
+            do {
+                _ = try await again.evaluateAccessControl(Self.accessControl(), operation: .useKeyKeyExchange, localizedReason: reason)
+            } catch {
+                throw SudoSecretError.cancelled
+            }
+            return try Self.unwrap(sealed, aad: aad, context: again)
+        }
+    }
+
+    /// macOS's own owner-approval prompt (`.deviceOwnerAuthentication`): Touch ID, the paired Apple Watch (double-click
+    /// the side button, works with the lid closed) or the login password, whichever is available, like its admin
+    /// prompts. Returns the approved context: the key must be used with the very context that was approved.
+    ///
+    /// Verified on a real Mac with the lid closed (`rackoon-probe local watch-check`, trial B): this policy offered the
+    /// Watch and the key then opened with no second prompt. Two alternatives did NOT work there and must not come back:
+    /// asking for the key's own access rule (`evaluateAccessControl`, cancelled without a Watch offer) and the explicit
+    /// Touch ID-or-Watch policy followed by a password fallback (failed outright).
+    static func approve(reason: String) async throws -> LAContext {
         let context = LAContext()
         do {
-            _ = try await context.evaluateAccessControl(Self.accessControl(), operation: .useKeyKeyExchange, localizedReason: reason)
+            _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            return context
         } catch {
-            // Cancelled, or approval failed (wrong password, lockout): nothing is opened and the record stays.
             throw SudoSecretError.cancelled
         }
+    }
+
+    private static func unwrap(_ sealed: SealedSecret, aad: Data, context: LAContext) throws -> Data {
         do {
             let key = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: sealed.key, authenticationContext: context)
             let ephemeral = try P256.KeyAgreement.PublicKey(x963Representation: sealed.ephemeral)
@@ -80,8 +109,18 @@ public struct SecureEnclaveSealer: SudoSealer {
             return try AES.GCM.open(AES.GCM.SealedBox(combined: sealed.box), using: symmetric, authenticating: aad)
         } catch {
             if Self.isCancellation(error) { throw SudoSecretError.cancelled }
+            if needsApproval(error) { throw error }
             throw SudoSecretError.unreadable
         }
+    }
+
+    /// The key operation wanted to prompt but the context did not carry an approval.
+    static func needsApproval(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == LAErrorDomain, [LAError.authenticationFailed.rawValue, LAError.notInteractive.rawValue].contains(ns.code) { return true }
+        if ns.domain == NSOSStatusErrorDomain, [Int(errSecAuthFailed), Int(errSecInteractionNotAllowed)].contains(ns.code) { return true }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error { return needsApproval(underlying) }
+        return false
     }
 
     /// CryptoKit reports a cancelled prompt as a wrapped LocalAuthentication or Security error.

@@ -60,6 +60,32 @@ if args.count > 2, args[2] == "watch-check" {
     await trial("C. approval for the key's own access rule") { context in
         _ = try await context.evaluateAccessControl(access, operation: .useKeyKeyExchange, localizedReason: "test approval C (Rackoon check)")
     }
+    // D. The app's own unlock path (RackoonSSHSystem.SecureEnclaveSealer): the one that matters.
+    print("\nD. Rackoon's real unlock path: approve with your Watch (lid closed) or Touch ID...")
+    do {
+        let sealer = SecureEnclaveSealer()
+        let sealed = try sealer.seal(Data("dummy".utf8), authenticating: Data("aad".utf8))
+        let started = Date()
+        let opened = try await sealer.open(sealed, authenticating: Data("aad".utf8), reason: "test Rackoon's real unlock path")
+        print("   \(String(decoding: opened, as: UTF8.self) == "dummy" ? "PASS" : "FAIL: wrong plaintext") in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+        print("   (how many prompts appeared, and was the Watch offered?)")
+    } catch {
+        print("   FAIL or cancelled: \(error)")
+    }
+    exit(0)
+}
+if args.count > 2, args[2] == "unlock-check" {
+    // Only the app's real unlock path (SecureEnclaveSealer): one prompt expected. usage: rackoon-probe local unlock-check
+    do {
+        let sealer = SecureEnclaveSealer()
+        let sealed = try sealer.seal(Data("dummy".utf8), authenticating: Data("aad".utf8))
+        print("approve with your Watch (lid closed), Touch ID or your password...")
+        let started = Date()
+        let opened = try await sealer.open(sealed, authenticating: Data("aad".utf8), reason: "test Rackoon's real unlock path")
+        print(String(decoding: opened, as: UTF8.self) == "dummy" ? "PASS" : "FAIL: wrong plaintext", "in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+    } catch {
+        print("FAIL or cancelled: \(error)")
+    }
     exit(0)
 }
 if args.count > 2, args[2] == "secure-enclave-check" {
@@ -133,6 +159,42 @@ if args.count > 2, args[2] == "hostkey" {
 // RACKOON_PROBE_KEY=~/.ssh/key picks the key file, like a saved server's key file (`user@host` works as the host).
 let transport = OpenSSHTransport(server: Server(name: args[1], host: args[1],
                                                 identityFile: ProcessInfo.processInfo.environment["RACKOON_PROBE_KEY"]))
+if args.count > 2, args[2] == "docker-sudo-check" || args[2] == "docker-sudo-reject-check" {
+    // Docker through sudo (SudoTransport), read-only: the Docker poll (`docker ps`/`stats`) and a short stream.
+    // docker-sudo-check asks for the real password on this terminal (not echoed, not stored); the reject variant uses a
+    // deliberately wrong one and must lock without running anything.
+    let password: String
+    if args[2] == "docker-sudo-check" {
+        var buffer = [CChar](repeating: 0, count: 1024)
+        guard let typed = readpassphrase("sudo password for \(args[1]) (not echoed, not stored): ", &buffer, buffer.count, RPP_REQUIRE_TTY) else { exit(2) }
+        password = String(cString: typed)
+        buffer.withUnsafeMutableBufferPointer { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) }
+    } else {
+        password = "rackoon-probe-not-the-password"
+    }
+    let locked = TypedCounter()
+    let sudo = SudoTransport(base: transport, password: password, validUntil: Date().addingTimeInterval(120), onRejected: { locked.add() })
+    let docker = DockerSession(transport: sudo)
+    await docker.refresh()
+    let state = await docker.state
+    print("1. poll through sudo  -> \(state.snapshot.map { "\($0.containers.count) containers" } ?? "error: \(state.error ?? "?")")")
+    var streamed = ""
+    var streamError: String?
+    do { for try await chunk in sudo.stream("docker ps --format '{{.Names}}' | head -3") { streamed += chunk } }
+    catch { streamError = (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+    let shownLines = ANSI.strip(streamed).replacingOccurrences(of: "\r", with: "").split(separator: "\n").joined(separator: " | ")
+    print("2. stream through sudo -> \(streamError ?? "ok"): \(shownLines)")
+    let leaked = streamed.contains(password) || streamed.contains("*") || streamed.contains("##rackoon-sudo")
+    let ok: Bool
+    if args[2] == "docker-sudo-check" {
+        ok = state.snapshot != nil && streamError == nil && locked.count == 0 && !leaked
+    } else {
+        ok = state.snapshot == nil && locked.count >= 1 && !leaked
+        print("   locked \(locked.count) time(s) (expected: at least once, nothing ran)")
+    }
+    print(ok ? "PASS" : "FAIL (leaked: \(leaked))")
+    exit(ok ? 0 : 1)
+}
 if args.count > 2, args[2] == "sudo-reject-check" || args[2] == "sudo-check" {
     // The sudo password path over a real pty, with harmless commands only (`true`, `id -u`).
     // sudo-reject-check: a deliberately WRONG password. sudo must prompt once, the password must be typed once and be

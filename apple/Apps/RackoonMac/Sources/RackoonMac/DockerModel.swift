@@ -68,7 +68,7 @@ final class DockerModel {
     @ObservationIgnored private var logGeneration = 0
 
     init(server: Server) {
-        let transport = makeTransport(for: server)
+        let transport = dockerTransport(for: server)
         self.transport = transport
         serverName = server.name
         serverUser = server.user
