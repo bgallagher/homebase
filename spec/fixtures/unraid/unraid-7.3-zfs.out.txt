@@ -1,0 +1,329 @@
+##unraid
+7.3.3
+##var
+sbSynced="1790453416"
+sbSyncErrs="0"
+sbSynced2="1790681911"
+sbSyncExit="0"
+mdNumDisks="6"
+mdNumDisabled="0"
+mdNumInvalid="0"
+mdNumMissing="0"
+mdResync="0"
+mdResyncPos="0"
+mdResyncDb="0"
+mdResyncDt="0"
+mdResyncAction="check P Q"
+mdResyncSize="25391267788"
+mdState="STARTED"
+fsState="Started"
+shareCount="17"
+##disks
+["parity"]
+name="parity"
+device="sdd"
+id="ST26000NM000C-3WE103_SERIAL01"
+size="25391267788"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="34"
+numErrors="0"
+type="Parity"
+["disk1"]
+name="disk1"
+device="sde"
+id="ST12000VN0007-2GS116_SERIAL02"
+size="11718885324"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="32"
+numErrors="0"
+type="Data"
+fsType="zfs"
+fsStatus="Mounted"
+fsMountpoint="/mnt/disk1"
+fsProfile=""
+devices="1"
+fsSize="11576279040"
+fsFree="4730322748"
+fsUsed="6845956292"
+["disk2"]
+name="disk2"
+device="sdf"
+id="ST12000VN0007-2GS116_SERIAL03"
+size="11718885324"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="33"
+numErrors="0"
+type="Data"
+fsType="zfs"
+fsStatus="Mounted"
+fsMountpoint="/mnt/disk2"
+fsProfile=""
+devices="1"
+fsSize="11576279040"
+fsFree="2959159520"
+fsUsed="8617119520"
+["disk3"]
+name="disk3"
+device="sdg"
+id="ST16000NM000J-2TW103_SERIAL04"
+size="15625879500"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="32"
+numErrors="0"
+type="Data"
+fsType="zfs"
+fsStatus="Mounted"
+fsMountpoint="/mnt/disk3"
+fsProfile=""
+devices="1"
+fsSize="15485370368"
+fsFree="7743686236"
+fsUsed="7741684132"
+["disk4"]
+name="disk4"
+device="sdh"
+id="ST12000VN0007-2GS116_SERIAL05"
+size="11718885324"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="31"
+numErrors="0"
+type="Data"
+fsType="zfs"
+fsStatus="Mounted"
+fsMountpoint="/mnt/disk4"
+fsProfile=""
+devices="1"
+fsSize="11576279040"
+fsFree="11410264724"
+fsUsed="166014316"
+["parity2"]
+name="parity2"
+device="sdc"
+id="ST26000NM000C-3WE103_SERIAL06"
+size="25391267788"
+transport="ata"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="34"
+numErrors="0"
+type="Parity"
+["cache"]
+name="cache"
+device="nvme0n1"
+id="CT1000P3PSSD8_SERIAL07"
+size="976761560"
+transport="nvme"
+rotational="0"
+spundown="0"
+status="DISK_OK"
+temp="31"
+numErrors="0"
+type="Cache"
+fsType="zfs"
+fsStatus="Mounted"
+fsMountpoint="/mnt/cache"
+fsProfile=""
+devices="2"
+fsSize="1885870048"
+fsFree="1809937676"
+fsUsed="75932372"
+["cache2"]
+name="cache2"
+device="nvme1n1"
+id="CT1000P3PSSD8_SERIAL08"
+size="976761560"
+transport="nvme"
+rotational="0"
+spundown="0"
+status="DISK_OK"
+temp="31"
+numErrors="0"
+type="Cache"
+["flash"]
+name="flash"
+device="sdb"
+id="SanDisk_Cruzer_Fit_SERIAL09"
+size="31263744"
+transport="usb"
+rotational="1"
+spundown="0"
+status="DISK_OK"
+temp="*"
+numErrors="0"
+type="Flash"
+fsType="vfat"
+fsStatus="Mounted"
+fsMountpoint="/boot"
+fsProfile=""
+devices="1"
+fsSize="31248464"
+fsFree="28496112"
+fsUsed="2752352"
+##shares
+["appdata"]
+name="appdata"
+comment=""
+useCache="only"
+cachePool="cache"
+free="1809937664"
+["backups"]
+name="backups"
+comment="application data"
+useCache="prefer"
+cachePool="cache"
+free="28653370624"
+["data"]
+name="data"
+comment="Backup files"
+useCache="no"
+cachePool=""
+free="26843432960"
+["domains"]
+name="domains"
+comment="Data share"
+useCache="yes"
+cachePool="cache"
+free="28653370624"
+["downloads"]
+name="downloads"
+comment="saved VM instances"
+useCache="prefer"
+cachePool="cache"
+free="28653370624"
+["isos"]
+name="isos"
+comment="Download folder"
+useCache="yes"
+cachePool="cache"
+free="28653370624"
+["media"]
+name="media"
+comment="ISO images"
+useCache="yes"
+cachePool="cache"
+free="28653370624"
+["cloud"]
+name="cloud"
+comment="Media files"
+useCache="no"
+cachePool=""
+free="26843432960"
+["cloud-backups"]
+name="cloud-backups"
+comment="Cloud storage"
+useCache="yes"
+cachePool="cache"
+free="28653370624"
+["config"]
+name="config"
+comment="Cloud backups"
+useCache="no"
+cachePool=""
+free="26843432960"
+["vm-one"]
+name="vm-one"
+comment="Package config"
+useCache="no"
+cachePool=""
+free="11410264704"
+["photos-import"]
+name="photos-import"
+comment="A VM"
+useCache="no"
+cachePool=""
+free="11410264704"
+["photos"]
+name="photos"
+comment="Photo imports"
+useCache="no"
+cachePool=""
+free="26843432960"
+["system"]
+name="system"
+comment="Photo library"
+useCache="no"
+cachePool=""
+free="26843432960"
+["timemachine"]
+name="timemachine"
+comment="system data"
+useCache="prefer"
+cachePool="cache"
+free="28653370624"
+["server-backups"]
+name="server-backups"
+comment="Time Machine backups"
+useCache="no"
+cachePool=""
+free="2959159424"
+["share17"]
+name="share17"
+comment="Server backups"
+useCache="no"
+cachePool=""
+free="26843432960"
+##zpool
+cache	1.81T	72.4G	1.74T	ONLINE
+disk1	10.9T	6.38T	4.53T	ONLINE
+disk2	10.9T	8.03T	2.88T	ONLINE
+disk3	14.5T	7.21T	7.34T	ONLINE
+disk4	10.9T	158G	10.8T	ONLINE
+##temps
+nvme|Composite|30850
+nvme|Sensor 1|30850
+nvme|Composite|30850
+nvme|Sensor 1|30850
+acpitz||27800
+spd5118||37500
+spd5118||39750
+eth0|PHY Temperature|36000
+eth0|MAC Temperature|36000
+eth1|PHY Temperature|40000
+eth1|MAC Temperature|40000
+coretemp|Core 8|60000
+coretemp|Core 9|60000
+coretemp|Core 10|61000
+coretemp|Core 11|61000
+coretemp|Core 12|59000
+coretemp|Core 13|59000
+coretemp|Core 14|59000
+coretemp|Core 15|59000
+coretemp|Package id 0|63000
+coretemp|Core 0|63000
+coretemp|Core 4|45000
+it8613||60000
+it8613||24000
+it8613||-128000
+##fans
+it8613||2766
+it8613||2537
+it8613||2500
+##cpu
+12th Gen Intel(R) Core(TM) i5-1235U
+##parity
+2025 Oct 21 13:26:37|232727|111721709|0|0|check P Q|25391267788
+2025 Nov  8 14:10:41|218673|118902005|0|0|check P Q|25391267788
+2026 Jan 20 10:22:09|217794|0|-4|0|check P Q|25391267788
+2026 Feb 12 13:16:04|170960|93594412|0|0|recon D3|15625879500
+2026 Feb 20 06:14:48|232980|111600387|0|0|check P Q|25391267788
+2026 Mar 22 10:52:01|225304|115402559|0|0|check P Q|25391267788
+2026 May  1 08:55:47|215024|120919796|0|0|check P Q|25391267788
+2026 May  3 15:43:28|190175|136719644|0|0|check P Q|25391267788
+2026 Jul 14 10:48:24|168307|154483522|0|0|check P Q|25391267788
+2026 Sep 29 12:38:31|228495|113790929|0|0|check P Q|25391267788

@@ -316,6 +316,10 @@
                 },
                 "description": "All compose files from the config_files label, in order. configFile is the first."
               },
+              "iconURL": {
+                "type": "string",
+                "description": "Unraid's net.unraid.docker.icon label (the icon its Docker template names), kept only when it is a valid http(s) URL. Shown as the container's icon unless the user chose another."
+              },
               "bookmark": {
                 "type": "object",
                 "description": "From the container's Homepage-convention labels (gethomepage.dev): homepage.href, homepage.name, homepage.group, homepage.icon, homepage.description. Present only when homepage.href is a valid http(s) URL; empty optional fields are omitted. Other homepage.* labels are ignored.",

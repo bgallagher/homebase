@@ -347,12 +347,14 @@ private struct StackTile: View {
     let bookmark: (() -> Void)?
     let open: () -> Void
     @State private var hovering = false
+    /// The app's logo, big enough to tell apps apart at a glance.
+    static let iconSize: CGFloat = 44
 
     var body: some View {
         card
             // Siblings of the card's button, not inside it, so a click on an icon never also opens the stack.
             .overlay(alignment: .topLeading) {
-                EditableIcon(stack: stack, serverID: serverID, webHost: webHost, size: 26).padding(.top, 16).padding(.leading, 18)
+                EditableIcon(stack: stack, serverID: serverID, webHost: webHost, size: Self.iconSize).padding(.top, 16).padding(.leading, 18)
             }
             .overlay(alignment: .bottomLeading) {
                 StackLink(links: stack.bookmarkLinks, font: 12)
@@ -392,15 +394,16 @@ private struct StackTile: View {
                     }
                 }
                 .padding(.trailing, bookmark == nil ? 0 : 26)   // room for the bookmark button
-                .padding(.leading, 36)   // and for the icon slot (site icon or letter tile)
+                .padding(.leading, Self.iconSize + 12)   // and for the icon slot (site icon or letter tile)
+                .frame(minHeight: Self.iconSize - 4, alignment: .leading)   // the name sits level with the icon's middle
                 // At most four services, so a big stack doesn't stretch every card (they all share the tallest height);
                 // its page lists them all.
                 let summary = stack.summaryContainers(limit: 4)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(summary.shown) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            ServiceIconView(container: c, stack: stack, serverID: serverID, webHost: webHost, size: 15)
-                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                            ServiceIconView(container: c, stack: stack, serverID: serverID, webHost: webHost, size: 22)
+                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
                             Text(c.service ?? c.name).lineLimit(1).truncationMode(.tail)
                                 .foregroundStyle(problem(c) ? Theme.danger : Theme.textPrimary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -551,14 +554,10 @@ private struct StackDetail: View {
                     // Starting Pull, Update, Restart... on this stack shows its live output.
                     if id != nil, model.output?.scope == stack.id { tab = .output }
                 }
-            if stack.containers.count == 1, let only = stack.containers.first {
-                ContainerStrip(container: only, stack: stack, busy: busy.contains(only.id), model: model, openShell: openShell)
+            // The same layout for every app, one service or many: the container list on the left, the panel on the right.
+            HStack(alignment: .top, spacing: 20) {
+                containers.frame(width: 320)
                 panel.frame(maxWidth: .infinity)
-            } else {
-                HStack(alignment: .top, spacing: 20) {
-                    containers.frame(width: 320)
-                    panel.frame(maxWidth: .infinity)
-                }
             }
         }
         // The logs follow every container of the stack, merged; follow the new ones when an update or rebuild replaces a
@@ -588,17 +587,35 @@ private struct StackDetail: View {
                 Text(stack.name).foregroundStyle(Theme.textSecondary)
             }
             .font(.system(size: 13))
-            HStack(alignment: .center, spacing: 10) {
-                EditableIcon(stack: stack, serverID: server.id, webHost: webHost, size: 30)
-                Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
-                // A pill, centred on the lowercase body of the title (its x-height), which is what the eye reads.
-                // Centring on the full text box puts it about 2 pt too high, because ascenders pull that centre up.
-                Badge(text: summary.text, color: summary.color).offset(y: 2)
-                StackLink(links: stack.bookmarkLinks, font: 13).padding(.leading, 6).offset(y: 2)
+            HStack(alignment: .center, spacing: 14) {
+                // The app's logo at a size it can be recognised by; click it to change it.
+                EditableIcon(stack: stack, serverID: server.id, webHost: webHost, size: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(stack.name).font(.system(size: 26, weight: .bold)).tracking(-0.4).lineLimit(1)
+                        // A pill, centred on the lowercase body of the title (its x-height), which is what the eye reads.
+                        // Centring on the full text box puts it about 2 pt too high, because ascenders pull that centre up.
+                        Badge(text: summary.text, color: summary.color).offset(y: 2)
+                        StackLink(links: stack.bookmarkLinks, font: 13).padding(.leading, 6).offset(y: 2)
+                    }
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                }
                 Spacer()
                 actions
             }
         }
+    }
+
+    /// "Compose Stack · 3 services · /opt/stacks/immich" or "Standalone · ghcr.io/…/image".
+    private var subtitle: String {
+        var parts = [stack.kindLabel]
+        if stack.isStandalone {
+            if let image = stack.containers.first?.image { parts.append(image) }
+        } else {
+            parts.append(stack.containers.count == 1 ? "1 service" : "\(stack.containers.count) services")
+            if let dir = stack.workingDir { parts.append(dir) }
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var summary: (text: String, color: Color) {
@@ -758,7 +775,7 @@ private struct ContainerCard: View {
         let showingLogs = model.logFocus == container.source
         HStack(spacing: 10) {
             Circle().fill(containerDot(container)).frame(width: 7, height: 7)
-            EditableIcon(stack: stack, container: container, serverID: serverID, webHost: webHost, size: 24)
+            EditableIcon(stack: stack, container: container, serverID: serverID, webHost: webHost, size: 38)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)
@@ -882,31 +899,6 @@ private struct ContainerMenuItems: View {
         }
         .disabled(readOnly || busy)
         if readOnly { Text("Read-only mode is on") }
-    }
-}
-
-/// A single-container stack has nothing to choose, so its container is one strip above the panel instead of a column.
-private struct ContainerStrip: View {
-    let container: DockerContainer
-    let stack: DockerStack
-    let busy: Bool
-    let model: DockerModel
-    let openShell: (DockerContainer) -> Void
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Circle().fill(containerDot(container)).frame(width: 7, height: 7)
-            Text(container.image).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
-            if let ports = containerPorts(container) {
-                Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Text(containerUsage(container)).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
-            ContainerButtons(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .card()
-        .contextMenu { ContainerMenuItems(container: container, stack: stack, busy: busy, model: model, openShell: openShell) }
     }
 }
 

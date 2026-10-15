@@ -17,7 +17,7 @@ public actor ServerSession {
     echo '##hostname'; hostname; echo '##os'; cat /etc/os-release; echo '##uptime'; cat /proc/uptime; \
     echo '##loadavg'; cat /proc/loadavg; echo '##nproc'; nproc; echo '##stat'; head -1 /proc/stat; \
     echo '##meminfo'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; \
-    echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null; \
+    echo '##df'; df -P -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null; \
     echo '##system'; echo "vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)"; echo "product=$(cat /sys/class/dmi/id/product_name 2>/dev/null)"; \
     echo "machine_id=$(cat /etc/machine-id 2>/dev/null)"; echo "kernel=$(uname -r)"; \
     echo "boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"; echo "time=$(date '+%s %z %Z')"; \

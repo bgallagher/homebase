@@ -71,6 +71,8 @@ struct Sidebar: View {
     let light: (Server) -> ServerLight
     let switcher: ServerSwitcherState
     var updates: UpdateBadge?
+    /// Screens that mean nothing on the selected server (Updates on Unraid, which has no apt).
+    var hiddenScreens: Set<String> = []
     let onAddServer: () -> Void
 
     private var selected: Server? { servers.first { $0.id == selectedID } }
@@ -107,7 +109,7 @@ struct Sidebar: View {
                     if let name = selected?.name {
                         Divider().padding(.vertical, 12)
                         SectionLabel(name)
-                        ForEach(Screen.serverScreens) { screen in
+                        ForEach(Screen.serverScreens.filter { !hiddenScreens.contains($0.rawValue) }) { screen in
                             NavRow(screen: screen, selected: selection == screen,
                                    badge: screen == .updates ? updates : nil) {
                                 if screen.isAvailable { selection = screen }
