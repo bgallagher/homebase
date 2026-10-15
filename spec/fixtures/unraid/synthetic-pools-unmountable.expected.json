@@ -1,0 +1,247 @@
+{
+  "array" : {
+    "disabled" : 0,
+    "fsState" : "Started",
+    "invalid" : 1,
+    "lastSyncErrors" : 0,
+    "lastSyncExit" : 0,
+    "missing" : 1,
+    "numDisks" : 3,
+    "shareCount" : 1,
+    "state" : "STARTED"
+  },
+  "cpuModel" : "AMD Ryzen 5 3600 6-Core Processor",
+  "devices" : [
+    {
+      "device" : "sdb",
+      "errors" : 0,
+      "identity" : "ST4000VN008-2DR166_SERIAL21",
+      "name" : "parity",
+      "role" : "parity",
+      "rotational" : true,
+      "sizeBytes" : 4000786976768,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 36,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdc",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 1950833471488,
+        "mount" : "\/mnt\/disk1",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 3998833471488,
+        "type" : "xfs",
+        "usedBytes" : 2048000000000
+      },
+      "identity" : "ST4000VN008-2DR166_SERIAL22",
+      "name" : "disk1",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 4000786976768,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 35,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdd",
+      "errors" : 0,
+      "identity" : "ST4000VN008-2DR166_SERIAL23",
+      "name" : "disk2",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 4000786976768,
+      "spunDown" : false,
+      "status" : "DISK_NP_MISSING",
+      "transport" : "ata"
+    },
+    {
+      "device" : "sde",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 0,
+        "mount" : "\/mnt\/disk3",
+        "profile" : "",
+        "status" : "Unmountable: Wrong or no file system",
+        "totalBytes" : 0,
+        "type" : "xfs",
+        "usedBytes" : 0
+      },
+      "identity" : "WDC_WD40EFRX-68N32N0_SERIAL24",
+      "name" : "disk3",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 4000786976768,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 37,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdf",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 2,
+        "freeBytes" : 397707829248,
+        "mount" : "\/mnt\/cache",
+        "profile" : "raid1",
+        "status" : "Mounted",
+        "totalBytes" : 500107829248,
+        "type" : "btrfs",
+        "usedBytes" : 102400000000
+      },
+      "identity" : "CT500MX500SSD1_SERIAL25",
+      "name" : "cache",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 500107829248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 33,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdg",
+      "errors" : 0,
+      "identity" : "CT500MX500SSD1_SERIAL26",
+      "name" : "cache2",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 500107829248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 34,
+      "transport" : "ata"
+    },
+    {
+      "device" : "nvme0n1",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 78604853248,
+        "mount" : "\/mnt\/fast",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 1000204853248,
+        "type" : "xfs",
+        "usedBytes" : 921600000000
+      },
+      "identity" : "WD_BLACK_SN770_1TB_SERIAL27",
+      "name" : "fast",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000204853248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 44,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "nvme1n1",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 897804853248,
+        "mount" : "\/mnt\/vms",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 1000204853248,
+        "type" : "zfs",
+        "usedBytes" : 102400000000
+      },
+      "identity" : "WD_BLACK_SN770_1TB_SERIAL28",
+      "name" : "vms",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000204853248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 46,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "sda",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 14336000000,
+        "mount" : "\/boot",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 15349760000,
+        "type" : "vfat",
+        "usedBytes" : 1013760000
+      },
+      "identity" : "Kingston_DataTraveler_SERIAL29-0:0",
+      "name" : "flash",
+      "role" : "flash",
+      "rotational" : true,
+      "sizeBytes" : 15360000000,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "transport" : "usb"
+    }
+  ],
+  "fans" : [
+    {
+      "chip" : "nct6775",
+      "label" : "CPU Fan",
+      "value" : 900
+    },
+    {
+      "chip" : "nct6775",
+      "label" : "",
+      "value" : 0
+    }
+  ],
+  "parityChecks" : [
+    {
+      "action" : "check P",
+      "bytesPerSecond" : 90000000,
+      "durationSeconds" : 43200,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2024 Dec 31 23:30:00",
+      "sizeKiB" : 0
+    }
+  ],
+  "shares" : [
+    {
+      "cachePool" : "vms",
+      "comment" : "",
+      "freeBytes" : 897804853248,
+      "name" : "vms",
+      "useCache" : "only"
+    }
+  ],
+  "temperatures" : [
+    {
+      "chip" : "zenpower",
+      "label" : "Tdie",
+      "value" : 91.5
+    },
+    {
+      "chip" : "zenpower",
+      "label" : "Tctl",
+      "value" : 101.5
+    },
+    {
+      "chip" : "nct6775",
+      "label" : "SYSTIN",
+      "value" : 31
+    }
+  ],
+  "version" : "7.0.1",
+  "zfsPools" : [
+    {
+      "health" : "DEGRADED",
+      "name" : "vms"
+    }
+  ]
+}

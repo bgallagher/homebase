@@ -24,10 +24,11 @@ final class AppIconStore {
     private(set) var catalog: IconCatalog?
     /// Icon id -> image, for icons fetched or imported this run (observed, so views redraw when one arrives).
     private(set) var images: [String: NSImage] = [:]
-    private(set) var fetching: Set<String> = []
-    /// "<server id>|<stack id>" -> icon id, or "" to show the letter instead of any icon.
-    /// "<server id>|<stack id>|<service>" -> icon id, or "" to use the app's icon.
-    private(set) var overrides: [String: String] = [:]
+    /// What to download and what failed (observed: a dead template URL falls back to the collection's guess).
+    private(set) var queue = IconFetchQueue()
+    var fetching: Set<String> { queue.fetching }
+    /// The user's choices, saved as choices.json.
+    private(set) var choices = IconChoices()
     /// The user's own images, newest first (ids `custom:<hex>`).
     private(set) var customIcons: [String] = []
 
@@ -38,9 +39,6 @@ final class AppIconStore {
     @ObservationIgnored private var diskCache: [String: NSImage] = [:]
     @ObservationIgnored private var catalogTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var catalogTriedAt: Date?
-    /// Icons whose download failed, and when (observed: a dead template URL falls back to the collection's guess).
-    private var failed: [String: Date] = [:]
-    @ObservationIgnored private var queue: [String] = []
     @ObservationIgnored private var workers = 0
     nonisolated private static let maxWorkers = 6
     private static let catalogMaxAge: TimeInterval = 7 * 24 * 3600
@@ -64,7 +62,7 @@ final class AppIconStore {
         if let data = try? Data(contentsOf: selfhstFile), let parsed = IconCatalog.parseSelfhstIndex(data) { selfhstNames = parsed }
         rebuildCatalog()
         if let data = try? Data(contentsOf: overridesFile), let loaded = try? JSONDecoder().decode([String: String].self, from: data) {
-            overrides = loaded.filter { $0.value.isEmpty || (AppIconRef(id: $0.value)?.isChoosable ?? false) }
+            choices = IconChoices(loaded)
         }
         let custom = (try? FileManager.default.contentsOfDirectory(at: customDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         customIcons = custom.filter { $0.pathExtension == "png" }
@@ -96,43 +94,18 @@ final class AppIconStore {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: choosing
+    // MARK: choosing (the rules are `IconChoices`, Core)
 
-    private func key(_ serverID: String, _ stack: DockerStack, _ service: String? = nil) -> String {
-        [serverID, stack.id, service].compactMap { $0 }.joined(separator: "|")
-    }
+    static func serviceKey(_ container: DockerContainer) -> String { IconChoices.serviceKey(container) }
 
-    /// What a service is called in the choices: its compose service, else its container name.
-    static func serviceKey(_ container: DockerContainer) -> String { container.service ?? container.name }
-
-    /// The icon the app is drawn with: the user's choice, else the automatic one. Nil: no icon (letter or site icon).
     func stackIcon(_ stack: DockerStack, server: String) -> String? {
-        if let chosen = overrides[key(server, stack)] { return chosen.isEmpty ? nil : chosen }
-        return automatic(AppIconGuess.iconID(for: stack, in: catalog)) { catalog.flatMap { AppIconGuess.forStack(stack, in: $0) } }
+        choices.stackIcon(stack, server: server, catalog: catalog, failed: queue.hasFailed)
     }
 
-    static func isMainService(_ container: DockerContainer, of stack: DockerStack, in catalog: IconCatalog?) -> Bool {
-        if stack.isStandalone || stack.containers.count == 1 { return true }
-        let own = AppIconGuess.iconID(for: container, in: catalog)
-        return own != nil && own == AppIconGuess.iconID(for: stack, in: catalog)
-    }
+    func prefersLetter(_ stack: DockerStack, server: String) -> Bool { choices.prefersLetter(stack, server: server) }
 
-    /// The automatic icon, unless it is a template URL that could not be fetched: then the collection's guess.
-    private func automatic(_ id: String?, fallback: () -> String?) -> String? {
-        if let id, case .remote = AppIconRef(id: id), failed[id] != nil { return fallback() }
-        return id
-    }
-
-    /// The user chose the letter for this app, so no icon is fetched or guessed for it.
-    func prefersLetter(_ stack: DockerStack, server: String) -> Bool { overrides[key(server, stack)] == "" }
-
-    /// The service's own icon, or nil to draw it with the app's icon (a part of the app itself, or the user said so).
     func serviceIcon(_ container: DockerContainer, in stack: DockerStack, server: String) -> String? {
-        if let chosen = overrides[key(server, stack, Self.serviceKey(container))] { return chosen.isEmpty ? nil : chosen }
-        // The user chose the app's icon: the service that IS the app (a standalone container, a one-service stack, or the
-        // service whose automatic icon was the app's) follows that choice instead of keeping its old automatic icon.
-        if overrides[key(server, stack)] != nil, Self.isMainService(container, of: stack, in: catalog) { return nil }
-        return automatic(AppIconGuess.iconID(for: container, in: catalog)) { catalog.flatMap { AppIconGuess.forService(container, in: $0) } }
+        choices.serviceIcon(container, in: stack, server: server, catalog: catalog, failed: queue.hasFailed)
     }
 
     /// The automatic choice, for the picker's "Automatic" row.
@@ -140,26 +113,23 @@ final class AppIconStore {
     func guessedServiceIcon(_ container: DockerContainer) -> String? { AppIconGuess.iconID(for: container, in: catalog) }
 
     func isChosen(_ stack: DockerStack, service: DockerContainer? = nil, server: String) -> Bool {
-        overrides[key(server, stack, service.map(Self.serviceKey))] != nil
+        choices.isChosen(stack, service: service, server: server)
     }
 
     /// `id`: an icon; "" for the letter (an app) or the app's icon (a service); nil to go back to the automatic choice.
     func choose(_ id: String?, for stack: DockerStack, service: DockerContainer? = nil, server: String) {
-        guard id.map({ $0.isEmpty || (AppIconRef(id: $0)?.isChoosable ?? false) }) ?? true else { return }
-        overrides[key(server, stack, service.map(Self.serviceKey))] = id
-        saveOverrides()
+        guard choices.choose(id, for: stack, service: service, server: server) else { return }
+        saveChoices()
         if let id, !id.isEmpty { ensure([id], urgent: true) }
     }
 
     /// A removed server's choices go with it (the user's own images stay, they may be used elsewhere).
     func forget(serverID: String) {
-        let before = overrides.count
-        overrides = overrides.filter { !$0.key.hasPrefix(serverID + "|") }
-        if overrides.count != before { saveOverrides() }
+        if choices.forget(serverID: serverID) { saveChoices() }
     }
 
-    private func saveOverrides() {
-        if let data = try? JSONEncoder().encode(overrides) { try? data.write(to: overridesFile, options: .atomic) }
+    private func saveChoices() {
+        if let data = try? JSONEncoder().encode(choices.overrides) { try? data.write(to: overridesFile, options: .atomic) }
     }
 
     // MARK: the user's own images
@@ -188,9 +158,7 @@ final class AppIconStore {
         customIcons.removeAll { $0 == id }
         images[id] = nil
         diskCache[id] = nil
-        let before = overrides.count
-        overrides = overrides.filter { $0.value != id }
-        if overrides.count != before { saveOverrides() }
+        if choices.removeUses(of: id) { saveChoices() }
     }
 
     // MARK: fetching
@@ -233,26 +201,19 @@ final class AppIconStore {
         }
     }
 
-    /// Fetches icons that are not on disk yet. `urgent` (what the picker is showing) goes to the front of the queue.
-    /// An icon that failed is left alone for a day.
+    /// Fetches icons that are not on disk yet (`IconFetchQueue` decides which and in what order). `urgent` (what the picker
+    /// or the screen is showing) goes to the front of the queue.
     func ensure(_ ids: [String], urgent: Bool = false) {
-        for id in ids {
-            guard let ref = AppIconRef(id: id), ref.downloadURL != nil, images[id] == nil, diskCache[id] == nil else { continue }
-            if fetching.contains(id) {
-                if urgent, let i = queue.firstIndex(of: id) { queue.remove(at: i); queue.insert(id, at: 0) }
-                continue
-            }
-            if let at = failed[id], Date().timeIntervalSince(at) < Self.retryAfter { continue }
-            if FileManager.default.fileExists(atPath: file(for: ref).path) { continue }
-            fetching.insert(id)
-            if urgent { queue.insert(id, at: 0) } else { queue.append(id) }
+        queue.request(ids, urgent: urgent) { id in
+            guard let ref = AppIconRef(id: id) else { return true }
+            return images[id] != nil || diskCache[id] != nil || FileManager.default.fileExists(atPath: file(for: ref).path)
         }
-        while workers < Self.maxWorkers, !queue.isEmpty {
+        while workers < Self.maxWorkers, !queue.waiting.isEmpty {
             workers += 1
             Task { [weak self] in
-                while let self, let id = self.nextQueued() {
-                    guard let ref = AppIconRef(id: id), let address = ref.downloadURL else { self.finish(id, nil); continue }
+                while let self, let id = self.queue.next() {
                     // Linked template icons can be any size and format; collection icons are already square PNGs.
+                    guard let address = AppIconRef(id: id)?.downloadURL else { self.finish(id, nil); continue }
                     let png = await Self.fetchPNG(address, side: 256)
                     self.finish(id, png)
                 }
@@ -261,15 +222,14 @@ final class AppIconStore {
         }
     }
 
-    private func nextQueued() -> String? { queue.isEmpty ? nil : queue.removeFirst() }
-
-    private func finish(_ id: String, _ png: Data?) {
-        fetching.remove(id)
+    /// Keeps a downloaded icon (or records the failure).
+    func finish(_ id: String, _ png: Data?) {
         if let png, let ref = AppIconRef(id: id), let image = NSImage(data: png) {
             try? png.write(to: file(for: ref), options: .atomic)
             images[id] = image
+            queue.finish(id, success: true)
         } else {
-            failed[id] = Date()
+            queue.finish(id, success: false)
         }
     }
 

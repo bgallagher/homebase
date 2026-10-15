@@ -141,3 +141,242 @@ final class UnraidTests: XCTestCase {
         XCTAssertEqual(state.error, "Connection refused")
     }
 }
+
+/// Edge cases of the NAS page's rules, beyond what the golden fixtures pin down.
+final class UnraidEdgeCaseTests: XCTestCase {
+    private func fixture(_ name: String) throws -> UnraidSnapshot {
+        try UnraidParser.parse(String(contentsOf: specDir.appendingPathComponent("fixtures/unraid/\(name).out.txt"), encoding: .utf8))
+    }
+
+    /// A minimal reading: a version, var.ini lines and disks.ini lines.
+    private func reading(_ vars: [String], disks: String = "", temps: [String] = []) throws -> UnraidSnapshot {
+        try UnraidParser.parse((["##unraid", "7.0.0", "##var"] + vars + ["##disks", disks, "##temps"] + temps).joined(separator: "\n"))
+    }
+
+    private let oneParityOneData = """
+    ["parity"]
+    name="parity"
+    device="sdb"
+    id="M_S1"
+    size="100"
+    status="DISK_OK"
+    type="Parity"
+    ["disk1"]
+    name="disk1"
+    device="sdc"
+    id="M_S2"
+    size="100"
+    status="DISK_OK"
+    type="Data"
+    """
+
+    private let dataOnly = """
+    ["disk1"]
+    name="disk1"
+    device="sdc"
+    id="M_S2"
+    size="100"
+    status="DISK_OK"
+    type="Data"
+    """
+
+    // MARK: pools
+
+    func testSeveralPoolsGroupByCountNotName() throws {
+        let s = try fixture("synthetic-pools-unmountable")
+        let pools = s.pools
+        XCTAssertEqual(pools.map(\.name), ["cache", "fast", "vms"])
+        XCTAssertEqual(pools.map { $0.devices.map(\.name) }, [["cache", "cache2"], ["fast"], ["vms"]],
+                       "a one-device pool doesn't swallow the next pool's first device")
+        XCTAssertEqual(pools.map(\.kind), ["BTRFS raid1", "XFS", "ZFS"])
+        XCTAssertEqual(pools.map(\.health), [nil, nil, "DEGRADED"], "only ZFS pools report health")
+        XCTAssertEqual(s.dataDisks.map(\.name), ["disk1", "disk2", "disk3"], "a missing disk still has its slot")
+    }
+
+    func testPoolKindWithoutProfile() throws {
+        let s = try fixture("unraid-7.3-zfs")
+        XCTAssertEqual(s.pools.first?.kind, "ZFS 2 devices", "no profile recorded: the device count says how it's built")
+        XCTAssertEqual(try fixture("synthetic-check-running-disabled").pools.first?.kind, "BTRFS raid1")
+    }
+
+    // MARK: alerts
+
+    func testUnmountableMissingInvalidAndDegradedZFS() throws {
+        let items = UnraidAttention.evaluate(try fixture("synthetic-pools-unmountable"))
+        let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        XCTAssertEqual(byID["array_missing"]?.severity, .critical)
+        XCTAssertEqual(byID["array_invalid"]?.severity, .warning)
+        XCTAssertEqual(byID["disk_status:disk2"]?.message, "disk2 is missing.")
+        XCTAssertEqual(byID["disk_unmountable:disk3"]?.severity, .critical)
+        XCTAssertEqual(byID["zfs_health:vms"]?.severity, .warning, "DEGRADED still works")
+        XCTAssertEqual(byID["disk_full:fast"]?.severity, .warning, "pools are judged like array disks (92%)")
+        XCTAssertEqual(byID["cpu_hot"]?.message, "The CPU is at 91 °C.", "Tdie, not Tctl's offset 101 °C")
+        XCTAssertNil(byID["disk_hot:fast"], "44 °C is fine for an NVMe drive")
+        XCTAssertTrue(items.allSatisfy { $0.fix.isEmpty }, "no screen link: the fix is on this page")
+    }
+
+    func testFaultedZFSIsCritical() throws {
+        var s = try fixture("unraid-7.3-zfs")
+        s.zfsPools[0].health = "FAULTED"
+        XCTAssertEqual(UnraidAttention.evaluate(s).first { $0.id == "zfs_health:cache" }?.severity, .critical)
+    }
+
+    func testStoppedArray() throws {
+        let s = try reading(["mdState=\"STOPPED\"", "fsState=\"Stopped\""], disks: oneParityOneData)
+        XCTAssertEqual(s.condition, .stopped("STOPPED"))
+        XCTAssertEqual(s.condition.title, "Stopped")
+        XCTAssertEqual(s.condition.level, .critical)
+        let items = UnraidAttention.evaluate(s)
+        XCTAssertEqual(items.first?.id, "array_stopped")
+        XCTAssertEqual(items.first?.message, "The array is stopped.")
+        XCTAssertEqual(try reading(["mdState=\"NEW_ARRAY\""]).condition.title, "New Array")
+        XCTAssertEqual(try reading([]).condition, .stopped(""), "no var.ini at all")
+        XCTAssertEqual(UnraidAttention.evaluate(try reading([])).first?.message, "The array is not started.")
+    }
+
+    func testWarmAndHotDrivesAtTheLimits() throws {
+        func drive(_ temp: Int, rotational: Bool) -> UnraidSnapshot.Device {
+            .init(name: "disk1", device: "sdc", identity: "M_S", sizeBytes: 1, transport: "ata", rotational: rotational, spunDown: false,
+                  status: "DISK_OK", temperature: temp, errors: 0, role: .data, filesystem: nil)
+        }
+        XCTAssertEqual(drive(44, rotational: true).temperatureLevel, .normal)
+        XCTAssertEqual(drive(45, rotational: true).temperatureLevel, .warning)
+        XCTAssertEqual(drive(55, rotational: true).temperatureLevel, .critical)
+        XCTAssertEqual(drive(59, rotational: false).temperatureLevel, .normal)
+        XCTAssertEqual(drive(60, rotational: false).temperatureLevel, .warning)
+        XCTAssertEqual(drive(70, rotational: false).temperatureLevel, .critical)
+    }
+
+    // MARK: array status
+
+    func testConditions() throws {
+        XCTAssertEqual(try reading(["mdState=\"STARTED\""], disks: oneParityOneData).condition, .protected)
+        let noParity = try reading(["mdState=\"STARTED\""], disks: dataOnly)
+        XCTAssertEqual(noParity.condition, .unprotected, "no parity disk must never read as protected")
+        XCTAssertEqual(noParity.condition.level, .warning)
+        XCTAssertEqual(try reading(["mdState=\"STARTED\"", "mdNumDisabled=\"1\""], disks: oneParityOneData).condition, .degraded)
+        XCTAssertEqual(try reading(["mdState=\"STARTED\"", "mdResync=\"100\"", "mdResyncPos=\"10\""], disks: oneParityOneData).condition,
+                       .checking)
+        XCTAssertEqual(try fixture("synthetic-check-running-disabled").condition, .degraded, "a disabled disk outranks a running check")
+    }
+
+    func testPausedOperationHasNoSpeedOrETA() throws {
+        let s = try reading(["mdState=\"STARTED\"", "mdResync=\"1000\"", "mdResyncPos=\"500\"", "mdResyncDt=\"0\"", "mdResyncDb=\"0\"",
+                             "mdResyncAction=\"recon P\"", "mdResyncSize=\"0\""])
+        let op = try XCTUnwrap(s.array.operation)
+        XCTAssertNil(op.bytesPerSecond)
+        XCTAssertNil(op.remainingSeconds)
+        XCTAssertEqual(op.sizeKiB, 1000, "no mdResyncSize: the size comes from mdResync")
+        XCTAssertEqual(op.fraction, 0.5)
+        XCTAssertEqual(op.label, "Parity sync")
+    }
+
+    func testFinishedOperationAndOverrun() {
+        let op = UnraidSnapshot.Operation(action: "check P", positionKiB: 120, sizeKiB: 100, bytesPerSecond: 1024)
+        XCTAssertEqual(op.fraction, 1, "never over 100%")
+        XCTAssertEqual(op.remainingSeconds, 0)
+        XCTAssertEqual(UnraidSnapshot.Operation(action: "", positionKiB: 1, sizeKiB: 0, bytesPerSecond: nil).fraction, 0)
+    }
+
+    // MARK: names and thresholds
+
+    func testSlotTitles() {
+        XCTAssertEqual(["parity", "parity2", "disk1", "disk12", "cache", "cache2", "fast", "nvme2pool", "flash", "pool10"]
+            .map(UnraidSnapshot.slotTitle),
+                       ["Parity", "Parity 2", "Disk 1", "Disk 12", "Cache", "Cache 2", "Fast", "Nvme2pool", "Flash", "Pool 10"])
+    }
+
+    func testThresholds() {
+        XCTAssertEqual(UnraidSnapshot.fillLevel(0.85), .normal, "the Overview's rule: over 85%")
+        XCTAssertEqual(UnraidSnapshot.fillLevel(0.86), .warning)
+        XCTAssertEqual(UnraidSnapshot.fillLevel(0.95), .critical)
+        XCTAssertEqual(UnraidSnapshot.cpuLevel(79.9), .normal)
+        XCTAssertEqual(UnraidSnapshot.cpuLevel(80), .warning)
+        XCTAssertEqual(UnraidSnapshot.cpuLevel(90), .critical)
+    }
+
+    func testSharePlacements() {
+        func share(_ use: String, _ pool: String = "cache") -> String {
+            UnraidSnapshot.Share(name: "s", comment: "", useCache: use, cachePool: pool, freeBytes: 0).placement
+        }
+        XCTAssertEqual(share("only", "vms"), "vms only")
+        XCTAssertEqual(share("prefer"), "cache, then array")
+        XCTAssertEqual(share("yes"), "cache, moved to array")
+        XCTAssertEqual(share("no"), "array")
+        XCTAssertEqual(share("only", ""), "cache only", "no pool named: Unraid's default pool")
+    }
+
+    // MARK: sensors
+
+    func testCPUTemperaturePreference() throws {
+        func cpu(_ temps: [String]) throws -> Double? { try reading([], temps: temps).cpuTemperature }
+        XCTAssertEqual(try cpu(["coretemp|Core 0|70000", "coretemp|Package id 0|65000"]), 65, "Intel package over a core")
+        XCTAssertEqual(try cpu(["k10temp|Tctl|80000", "k10temp|Tdie|70000"]), 70, "Tdie over Tctl, whatever the order")
+        XCTAssertEqual(try cpu(["k10temp|Tctl|80000", "k10temp|Tccd1|60000"]), 80, "Tctl when there is no Tdie")
+        XCTAssertEqual(try cpu(["cpu_thermal||48000"]), 48, "an ARM board's only reading")
+        XCTAssertEqual(try cpu(["coretemp|Core 0|-128000", "coretemp|Core 1|50000"]), 50, "impossible readings are ignored")
+        XCTAssertNil(try cpu(["nvme|Composite|40000", "acpitz||30000"]), "no CPU driver: no CPU temperature")
+    }
+
+    func testBoardSensorsAndFans() throws {
+        let s = try fixture("synthetic-pools-unmountable")
+        XCTAssertEqual(s.temperatures.count, 3, "an empty or non-numeric reading is dropped")
+        XCTAssertEqual(s.boardSensors.map(\.name), ["SYSTIN"], "Nuvoton chips keep their own labels")
+        XCTAssertEqual(s.spinningFans.map(\.label), ["CPU Fan"], "0 RPM is an unconnected header")
+        let amd = try fixture("synthetic-check-running-disabled")
+        XCTAssertFalse(amd.boardSensors.contains { $0.name == "Motherboard" }, "acpitz at -273 °C is not a reading")
+    }
+
+    // MARK: parity log
+
+    func testParityLogDatesAndOldFormat() throws {
+        let s = try fixture("synthetic-pools-unmountable")
+        let old = try XCTUnwrap(s.lastParityCheck)
+        XCTAssertEqual(old.action, "check P", "Unraid 6's five-field log has no action column")
+        XCTAssertEqual(old.sizeKiB, 0)
+        XCTAssertEqual(old.label, "Parity check")
+        // The log is in the server's local time: 23:30 on Dec 31 at UTC+2 is 21:30 UTC.
+        let date = try XCTUnwrap(old.finishedDate(utcOffsetSeconds: 7200))
+        XCTAssertEqual(date, ISO8601DateFormatter().date(from: "2024-12-31T21:30:00Z"))
+        XCTAssertNil(UnraidParser.parityCheck("garbage"))
+        XCTAssertNil(UnraidParser.parityCheck("2026 Jan 1 00:00:00|notanumber|0|0|0"))
+        XCTAssertNil(UnraidSnapshot.ParityCheck(finished: "yesterday", durationSeconds: 1, bytesPerSecond: 0, exitCode: 0, errors: 0,
+                                                action: "", sizeKiB: 0).finishedDate(utcOffsetSeconds: 0))
+    }
+
+    // MARK: attention on the Overview
+
+    func testMergeReplacesDfOnUnraidOnly() throws {
+        let base = [AttentionItem(id: "disk_high:/mnt/disk1", severity: .warning, message: "x", fix: "docker"),
+                    AttentionItem(id: "reboot_required", severity: .warning, message: "y", fix: "updates")]
+        let degraded = try fixture("synthetic-check-running-disabled")
+        XCTAssertEqual(UnraidAttention.merge(base, kind: .server, snapshot: degraded), base, "a plain server is left alone")
+        let merged = UnraidAttention.merge(base, kind: .unraid, snapshot: degraded)
+        XCTAssertFalse(merged.contains { $0.id.hasPrefix("disk_high:") })
+        XCTAssertEqual(merged.first?.id, "reboot_required", "other Overview items stay, first")
+        XCTAssertTrue(merged.contains { $0.id == "array_disabled" })
+        XCTAssertEqual(UnraidAttention.merge(base, kind: .unraid, snapshot: nil).map(\.id), ["reboot_required"],
+                       "before the first NAS reading, nothing misleading is shown")
+    }
+
+    // MARK: parsing details
+
+    func testIniSectionsWithAndWithoutQuotes() {
+        let sections = UnraidParser.iniSections(["[\"disk1\"]", "name=\"disk1\"", "[cache]", "fsType=zfs", "stray", "name=\"cache\""])
+        XCTAssertEqual(sections.map { $0["_section"] }, ["disk1", "cache"])
+        XCTAssertEqual(sections[1]["fsType"], "zfs")
+        XCTAssertEqual(UnraidParser.iniSections(["name=\"orphan\""]), [], "lines before any header belong to nothing")
+    }
+
+    func testDeviceModelAndEmptySlot() throws {
+        let s = try fixture("synthetic-check-running-disabled")
+        XCTAssertEqual(s.dataDisks.first?.model, "WDC WD80EFAX-68KNBN0", "underscores inside the model read as spaces")
+        let disk4 = try XCTUnwrap(s.devices.first { $0.name == "disk4" })
+        XCTAssertTrue(disk4.isEmptySlot)
+        XCTAssertFalse(disk4.isHealthy)
+        XCTAssertEqual(disk4.statusDescription, "not assigned")
+        XCTAssertEqual(s.devices.first { $0.name == "disk3" }?.statusDescription, "disabled")
+        XCTAssertEqual(UnraidAttention.evaluate(s).first { $0.id == "disk_status:disk3" }?.message, "disk3 is disabled.")
+        XCTAssertEqual(s.flash?.model, "Samsung Flash Drive FIT")
+    }
+}

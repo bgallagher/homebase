@@ -73,9 +73,7 @@ struct OverviewView: View {
     /// On a NAS, `df`'s view of the array (one line per ZFS dataset, each "1%" full) is replaced by the array's own
     /// checks: disk status, errors, temperatures, fill and pool health.
     private func attentionItems(_ base: [AttentionItem], kind: ServerKind) -> [AttentionItem] {
-        guard kind == .unraid else { return base }
-        let nas = NASStore.shared.model(for: server).snapshot.map(UnraidAttention.evaluate) ?? []
-        return base.filter { !$0.id.hasPrefix("disk_high:") } + nas
+        UnraidAttention.merge(base, kind: kind, snapshot: kind == .unraid ? NASStore.shared.model(for: server).snapshot : nil)
     }
 
     /// A button next to a chip whose problem can be fixed from here. The reboot chip gets Reboot…, which goes through

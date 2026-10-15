@@ -53,6 +53,12 @@ let package = Package(
             path: "Packages/RackoonSSHSystem/Tests/RackoonSSHSystemTests"
         ),
         .testTarget(
+            // The Mac app's own logic that needs AppKit (icon images on disk, uploads) or its models.
+            name: "RackoonMacTests",
+            dependencies: ["RackoonMac", "RackoonCore"],
+            path: "Apps/RackoonMac/Tests/RackoonMacTests"
+        ),
+        .testTarget(
             name: "RackoonCoreTests",
             dependencies: ["RackoonCore"],
             path: "Packages/RackoonCore/Tests/RackoonCoreTests"

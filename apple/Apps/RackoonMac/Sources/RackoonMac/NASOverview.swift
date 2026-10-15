@@ -14,6 +14,7 @@ final class NASModel {
     @ObservationIgnored private let session: UnraidSession
 
     init(server: Server) { session = UnraidSession(transport: makeTransport(for: server)) }
+    init(transport: SSHTransport) { session = UnraidSession(transport: transport) }
 
     func refresh() async {
         guard !loading else { return }
@@ -40,10 +41,14 @@ final class NASModel {
 final class NASStore {
     static let shared = NASStore()
     private var models: [String: NASModel] = [:]
+    /// How a model is made; tests pass a fake transport.
+    private let make: (Server) -> NASModel
+
+    init(make: @escaping (Server) -> NASModel = { NASModel(server: $0) }) { self.make = make }
 
     func model(for server: Server) -> NASModel {
         if let model = models[server.connectionKey] { return model }
-        let model = NASModel(server: server)
+        let model = make(server)
         models[server.connectionKey] = model
         return model
     }
@@ -105,7 +110,7 @@ struct NASSections: View {
                 let used = fs?.usedFraction ?? 0
                 StatCard(title: "Pool \(pool.name)", trailing: fs.map { Format.storage($0.totalBytes) } ?? "",
                          value: Format.percent(used * 100), unit: "used", valueTint: fillTint(used),
-                         detail: [fs.map { "\(Format.storage($0.freeBytes)) free" }, poolKind(pool), pool.health]
+                         detail: [fs.map { "\(Format.storage($0.freeBytes)) free" }, pool.kind, pool.health]
                             .compactMap { $0 }.joined(separator: " · "),
                          fraction: used, tint: fillTint(used) ?? Theme.accent)
             }
@@ -134,22 +139,15 @@ struct NASSections: View {
                  detail: "\(Format.bytes(o.memory.availableBytes)) available",
                  fraction: o.memory.usedFraction)
     }
-
-    private func poolKind(_ pool: UnraidSnapshot.Pool) -> String? {
-        guard let fs = pool.filesystem else { return nil }
-        let profile = fs.profile.isEmpty ? (pool.devices.count > 1 ? "\(pool.devices.count) devices" : nil) : fs.profile
-        return [fs.type.uppercased(), profile].compactMap { $0 }.joined(separator: " ")
-    }
 }
 
-/// Fill colour: accent below 85%, warn to 95%, danger above. Nil means "normal" (the caller's own colour).
+/// Fill colour (`UnraidSnapshot.fillLevel`). Nil means "normal" (the caller's own colour).
 @MainActor private func fillTint(_ fraction: Double) -> Color? {
-    fraction * 100 > Double(Attention.diskThresholdPercent) ? (fraction >= 0.95 ? Theme.danger : Theme.warn) : nil
+    let level = UnraidSnapshot.fillLevel(fraction)
+    return level == .normal ? nil : levelTint(level)
 }
 
-@MainActor private func cpuTint(_ celsius: Double) -> Color {
-    celsius >= 90 ? Theme.danger : celsius >= 80 ? Theme.warn : Theme.ok
-}
+@MainActor private func cpuTint(_ celsius: Double) -> Color { levelTint(UnraidSnapshot.cpuLevel(celsius)) }
 
 @MainActor private func levelTint(_ level: UnraidSnapshot.Level) -> Color {
     switch level {
@@ -159,19 +157,7 @@ struct NASSections: View {
     }
 }
 
-/// "Parity", "Parity 2", "Disk 1", "Cache 2": how Unraid's own UI names the slots.
-private func slotTitle(_ name: String) -> String {
-    if name == "parity" { return "Parity" }
-    if name.hasPrefix("parity"), let n = Int(name.dropFirst(6)) { return "Parity \(n)" }
-    if name.hasPrefix("disk"), let n = Int(name.dropFirst(4)) { return "Disk \(n)" }
-    if name == "flash" { return "Flash" }
-    // A pool member: name plus number ("cache2" -> "Cache 2").
-    if let digits = name.lastIndex(where: { !$0.isNumber }), name.index(after: digits) < name.endIndex {
-        let base = name[...digits], n = name[name.index(after: digits)...]
-        return base.prefix(1).uppercased() + base.dropFirst() + " " + n
-    }
-    return name.prefix(1).uppercased() + name.dropFirst()
-}
+private func slotTitle(_ name: String) -> String { UnraidSnapshot.slotTitle(name) }
 
 /// Started/stopped, protection and the last parity check, in one tile.
 private struct ArrayStateTile: View {
@@ -179,14 +165,10 @@ private struct ArrayStateTile: View {
     let utcOffset: Int
 
     var body: some View {
-        let a = s.array
-        let (value, tint): (String, Color) =
-            !a.isStarted ? (a.state.isEmpty ? "Unknown" : a.state.capitalized.replacingOccurrences(of: "_", with: " "), Theme.danger)
-            : a.hasProblem ? ("Degraded", Theme.danger)
-            : a.operation != nil ? ("Checking", Theme.accent)
-            : ("Protected", Theme.ok)
+        let condition = s.condition
+        let tint = condition == .checking ? Theme.accent : (condition.level == .normal ? Theme.ok : levelTint(condition.level))
         StatCard(title: "Array status", trailing: "\(s.parityDisks.count) parity",
-                 value: value, valueTint: tint, detail: detail)
+                 value: condition.title, valueTint: tint, detail: detail)
     }
 
     private var detail: String {
@@ -194,7 +176,8 @@ private struct ArrayStateTile: View {
         if a.disabled > 0 { return "\(a.disabled) disk(s) disabled, running on parity" }
         if a.missing > 0 { return "\(a.missing) disk(s) missing" }
         if let op = a.operation { return "\(op.label) \(Format.percent(op.fraction * 100))" }
-        guard let last = s.lastParityCheck else { return s.parityDisks.isEmpty ? "No parity disk" : "No parity check recorded" }
+        if s.parityDisks.isEmpty { return "No parity disk: a failed disk loses its data" }
+        guard let last = s.lastParityCheck else { return "No parity check recorded" }
         let result = last.completed ? (last.errors == 0 ? "0 errors" : "\(last.errors) errors") : "cancelled"
         let when = last.finishedDate(utcOffsetSeconds: utcOffset)?.formatted(.relative(presentation: .named)) ?? last.finished
         return "Last check \(when) · \(result)"
@@ -358,9 +341,8 @@ private struct PoolsCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text(slotTitle(pool.name)).fontWeight(.semibold)
-                        if let fs = pool.filesystem {
-                            Text([fs.type.uppercased(), fs.profile].filter { !$0.isEmpty }.joined(separator: " "))
-                                .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                        if let kind = pool.kind {
+                            Text(kind).font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                         }
                         if let health = pool.health {
                             Badge(text: health, color: health == "ONLINE" ? Theme.ok : Theme.danger)

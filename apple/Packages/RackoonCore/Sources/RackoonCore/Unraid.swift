@@ -106,6 +106,21 @@ public struct UnraidSnapshot: Sendable, Codable, Equatable {
         public var id: String { name }
         public var isEmptySlot: Bool { status == "DISK_NP" || (device.isEmpty && identity.isEmpty) }
         public var isHealthy: Bool { status == "DISK_OK" && errors == 0 }
+        /// Unraid's status code in words: DISK_NP_MISSING -> "missing", DISK_DSBL -> "disabled".
+        public var statusDescription: String {
+            switch status {
+            case "DISK_OK": "healthy"
+            case "DISK_NP": "not assigned"
+            case "DISK_NP_MISSING": "missing"
+            case "DISK_NP_DSBL": "missing and disabled"
+            case "DISK_DSBL": "disabled"
+            case "DISK_DSBL_NEW": "new and disabled"
+            case "DISK_INVALID": "invalid"
+            case "DISK_WRONG": "the wrong disk"
+            case "DISK_NEW": "new"
+            default: status.replacingOccurrences(of: "DISK_", with: "").replacingOccurrences(of: "_", with: " ").lowercased()
+            }
+        }
         /// "ST12000VN0007-2GS116" from "ST12000VN0007-2GS116_ZJV16MMX": the serial is dropped.
         public var model: String {
             guard let underscore = identity.lastIndex(of: "_") else { return identity }
@@ -236,10 +251,13 @@ public struct UnraidSnapshot: Sendable, Codable, Equatable {
         return out
     }
 
-    /// The CPU package temperature: Intel's coretemp package, AMD's Tctl/Tdie, else the hottest core.
+    /// The CPU package temperature: Intel's coretemp package, else AMD's Tdie (the real die temperature), else Tctl (which
+    /// many Ryzens report 10 °C high, for fan control), else the hottest reading of a CPU driver.
     public var cpuTemperature: Double? {
-        let cpu = temperatures.filter { ["coretemp", "k10temp", "zenpower", "cpu_thermal"].contains($0.chip) }
-        if let package = cpu.first(where: { ["Package id 0", "Tctl", "Tdie"].contains($0.label) }) { return package.value }
+        let cpu = temperatures.filter { ["coretemp", "k10temp", "zenpower", "cpu_thermal"].contains($0.chip) && Self.plausible($0.value) }
+        for label in ["Package id 0", "Tdie", "Tctl"] {
+            if let reading = cpu.first(where: { $0.label == label }) { return reading.value }
+        }
         return cpu.map(\.value).max()
     }
 
@@ -416,7 +434,7 @@ public enum UnraidAttention {
         if s.array.invalid > 0 { add("array_invalid", .warning, "\(s.array.invalid) disk(s) have invalid contents (parity is not in sync).") }
         for d in s.devices where !d.isEmptySlot && d.role != .flash {
             if d.status != "DISK_OK" {
-                add("disk_status:\(d.name)", .critical, "\(d.name) reports \(d.status.replacingOccurrences(of: "DISK_", with: "").lowercased()).")
+                add("disk_status:\(d.name)", .critical, "\(d.name) is \(d.statusDescription).")
             } else if d.errors > 0 {
                 add("disk_errors:\(d.name)", .warning, "\(d.name) has \(d.errors) read/write error(s).")
             }
@@ -487,5 +505,92 @@ public actor UnraidSession {
     private struct UnraidFailure: Error, LocalizedError {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
+    }
+}
+
+// MARK: - What the NAS page shows (pure, so it is tested here rather than in the views)
+
+extension UnraidSnapshot {
+    /// The array's state in one word, for the Array status tile.
+    public enum Condition: Equatable, Sendable {
+        /// Not started: carries Unraid's own state word (STOPPED, NEW_ARRAY...).
+        case stopped(String)
+        /// Started with a disk disabled, missing or invalid: data is at risk.
+        case degraded
+        /// A parity check, sync, rebuild or clear is running.
+        case checking
+        /// Started, healthy, with parity.
+        case protected
+        /// Started and healthy, but no parity disk is assigned: a failed disk loses its data.
+        case unprotected
+
+        public var title: String {
+            switch self {
+            case .stopped(let state):
+                state.isEmpty ? "Unknown" : state.replacingOccurrences(of: "_", with: " ").capitalized
+            case .degraded: "Degraded"
+            case .checking: "Checking"
+            case .protected: "Protected"
+            case .unprotected: "No parity"
+            }
+        }
+
+        public var level: Level {
+            switch self {
+            case .stopped, .degraded: .critical
+            case .unprotected: .warning
+            case .checking, .protected: .normal
+            }
+        }
+    }
+
+    public var condition: Condition {
+        if !array.isStarted { return .stopped(array.state) }
+        if array.hasProblem { return .degraded }
+        if array.operation != nil { return .checking }
+        return parityDisks.isEmpty ? .unprotected : .protected
+    }
+
+    /// "Parity", "Parity 2", "Disk 1", "Cache 2", "Fast": how Unraid's own UI names the slots.
+    public static func slotTitle(_ name: String) -> String {
+        if name == "parity" { return "Parity" }
+        if name.hasPrefix("parity"), let n = Int(name.dropFirst(6)) { return "Parity \(n)" }
+        if name.hasPrefix("disk"), let n = Int(name.dropFirst(4)) { return "Disk \(n)" }
+        // A numbered pool member: "cache2" -> "Cache 2".
+        if let last = name.lastIndex(where: { !$0.isNumber }), name.index(after: last) < name.endIndex {
+            let base = name[...last], n = name[name.index(after: last)...]
+            return base.prefix(1).uppercased() + base.dropFirst() + " " + n
+        }
+        return name.prefix(1).uppercased() + name.dropFirst()
+    }
+
+    /// How full is too full, with the same thresholds as the Overview's disk alerts.
+    public static func fillLevel(_ fraction: Double) -> Level {
+        let percent = fraction * 100
+        if percent >= 95 { return .critical }
+        return percent > Double(Attention.diskThresholdPercent) ? .warning : .normal
+    }
+
+    /// CPU package temperature: warm from 80 °C, critical from 90 °C (where most desktop and NAS CPUs start to throttle).
+    public static func cpuLevel(_ celsius: Double) -> Level {
+        celsius >= 90 ? .critical : celsius >= 80 ? .warning : .normal
+    }
+}
+
+extension UnraidSnapshot.Pool {
+    /// "ZFS raid1", "BTRFS 2 devices", "XFS": the filesystem and how its devices are combined.
+    public var kind: String? {
+        guard let fs = filesystem else { return nil }
+        let layout = fs.profile.isEmpty ? (devices.count > 1 ? "\(devices.count) devices" : nil) : fs.profile
+        return [fs.type.uppercased(), layout].compactMap { $0 }.joined(separator: " ")
+    }
+}
+
+extension UnraidAttention {
+    /// The Overview's attention items for a server of this kind. On Unraid, `df`'s disk-full items are dropped (every ZFS
+    /// dataset reads about 1%, and array disks are judged from emhttp's own numbers instead) and the NAS items added.
+    public static func merge(_ base: [AttentionItem], kind: ServerKind, snapshot: UnraidSnapshot?) -> [AttentionItem] {
+        guard kind == .unraid else { return base }
+        return base.filter { !$0.id.hasPrefix("disk_high:") } + (snapshot.map(evaluate) ?? [])
     }
 }
