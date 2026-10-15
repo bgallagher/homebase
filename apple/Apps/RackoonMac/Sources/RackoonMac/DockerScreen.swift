@@ -554,15 +554,10 @@ private struct StackDetail: View {
                     // Starting Pull, Update, Restart... on this stack shows its live output.
                     if id != nil, model.output?.scope == stack.id { tab = .output }
                 }
-            if stack.containers.count == 1, let only = stack.containers.first {
-                ContainerStrip(container: only, stack: stack, serverID: server.id, webHost: webHost, busy: busy.contains(only.id),
-                               model: model, openShell: openShell)
+            // The same layout for every app, one service or many: the container list on the left, the panel on the right.
+            HStack(alignment: .top, spacing: 20) {
+                containers.frame(width: 320)
                 panel.frame(maxWidth: .infinity)
-            } else {
-                HStack(alignment: .top, spacing: 20) {
-                    containers.frame(width: 320)
-                    panel.frame(maxWidth: .infinity)
-                }
             }
         }
         // The logs follow every container of the stack, merged; follow the new ones when an update or rebuild replaces a
@@ -904,38 +899,6 @@ private struct ContainerMenuItems: View {
         }
         .disabled(readOnly || busy)
         if readOnly { Text("Read-only mode is on") }
-    }
-}
-
-/// A single-container stack has nothing to choose, so its container is one strip above the panel instead of a column.
-private struct ContainerStrip: View {
-    let container: DockerContainer
-    let stack: DockerStack
-    let serverID: String
-    let webHost: String?
-    let busy: Bool
-    let model: DockerModel
-    let openShell: (DockerContainer) -> Void
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Circle().fill(containerDot(container)).frame(width: 7, height: 7)
-            // The one service's own icon, editable here too (a one-service app has no container list to click in).
-            EditableIcon(stack: stack, container: container, serverID: serverID, webHost: webHost, size: 38)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(container.service ?? container.name).fontWeight(.semibold).lineLimit(1)
-                Text(container.image).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.middle)
-            }
-            if let ports = containerPorts(container) {
-                Text(ports).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Text(containerUsage(container)).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textMuted)
-            ContainerButtons(container: container, stack: stack, busy: busy, model: model, openShell: openShell)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .card()
-        .contextMenu { ContainerMenuItems(container: container, stack: stack, busy: busy, model: model, openShell: openShell) }
     }
 }
 
