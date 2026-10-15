@@ -36,7 +36,8 @@ public enum DockerParser {
                 workingDir: labels["com.docker.compose.project.working_dir"],
                 configFile: configFiles.first, configFiles: configFiles,
                 cpuPercent: s?.cpu, memoryUsedBytes: s?.used, memoryLimitBytes: s?.limit,
-                bookmark: Bookmark.from(labels: labels)))
+                bookmark: Bookmark.from(labels: labels),
+                iconURL: labels["net.unraid.docker.icon"].map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { Bookmark.isValidURL($0) ? $0 : nil }))
         }
         return DockerSnapshot(containers: containers)
     }

@@ -1,0 +1,282 @@
+{
+  "array" : {
+    "disabled" : 1,
+    "fsState" : "Started",
+    "invalid" : 0,
+    "lastSyncEnd" : 1780050000,
+    "lastSyncErrors" : 3,
+    "lastSyncExit" : 0,
+    "lastSyncStart" : 1780000000,
+    "missing" : 0,
+    "numDisks" : 4,
+    "operation" : {
+      "action" : "check P",
+      "bytesPerSecond" : 102400000,
+      "positionKiB" : 1953506633,
+      "sizeKiB" : 7814026532
+    },
+    "shareCount" : 3,
+    "state" : "STARTED"
+  },
+  "cpuModel" : "AMD Ryzen 7 5700G with Radeon Graphics",
+  "devices" : [
+    {
+      "device" : "sdb",
+      "errors" : 0,
+      "identity" : "WDC_WD80EFAX-68KNBN0_SERIAL11",
+      "name" : "parity",
+      "role" : "parity",
+      "rotational" : true,
+      "sizeBytes" : 8001563168768,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 41,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdc",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 399971308544,
+        "mount" : "\/mnt\/disk1",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 7999426170880,
+        "type" : "xfs",
+        "usedBytes" : 7599454862336
+      },
+      "identity" : "WDC_WD80EFAX-68KNBN0_SERIAL12",
+      "name" : "disk1",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 8001563168768,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 47,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdd",
+      "errors" : 12,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 5951426170880,
+        "mount" : "\/mnt\/disk2",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 7999426170880,
+        "type" : "xfs",
+        "usedBytes" : 2048000000000
+      },
+      "identity" : "ST8000VN004-2M2101_SERIAL13",
+      "name" : "disk2",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 8001563168768,
+      "spunDown" : true,
+      "status" : "DISK_OK",
+      "transport" : "ata"
+    },
+    {
+      "device" : "sde",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 7998464000000,
+        "mount" : "\/mnt\/disk3",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 7999426170880,
+        "type" : "xfs",
+        "usedBytes" : 962170880
+      },
+      "identity" : "ST8000VN004-2M2101_SERIAL14",
+      "name" : "disk3",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 8001563168768,
+      "spunDown" : false,
+      "status" : "DISK_DSBL",
+      "temperature" : 38,
+      "transport" : "ata"
+    },
+    {
+      "device" : "",
+      "errors" : 0,
+      "identity" : "",
+      "name" : "disk4",
+      "role" : "data",
+      "rotational" : false,
+      "sizeBytes" : 0,
+      "spunDown" : false,
+      "status" : "DISK_NP",
+      "transport" : ""
+    },
+    {
+      "device" : "",
+      "errors" : 0,
+      "identity" : "",
+      "name" : "parity2",
+      "role" : "parity",
+      "rotational" : false,
+      "sizeBytes" : 0,
+      "spunDown" : false,
+      "status" : "DISK_NP_DSBL",
+      "transport" : ""
+    },
+    {
+      "device" : "nvme0n1",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 2,
+        "freeBytes" : 693004853248,
+        "mount" : "\/mnt\/cache",
+        "profile" : "raid1",
+        "status" : "Mounted",
+        "totalBytes" : 1000204853248,
+        "type" : "btrfs",
+        "usedBytes" : 307200000000
+      },
+      "identity" : "Samsung_SSD_980_1TB_SERIAL15",
+      "name" : "cache",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000204853248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 52,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "nvme1n1",
+      "errors" : 0,
+      "identity" : "Samsung_SSD_980_1TB_SERIAL16",
+      "name" : "cache2",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000204853248,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 72,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "sda",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 30720000000,
+        "mount" : "\/boot",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 31998427136,
+        "type" : "vfat",
+        "usedBytes" : 1278427136
+      },
+      "identity" : "Samsung_Flash_Drive_FIT_SERIAL17-0:0",
+      "name" : "flash",
+      "role" : "flash",
+      "rotational" : true,
+      "sizeBytes" : 32017219584,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "transport" : "usb"
+    }
+  ],
+  "fans" : [
+    {
+      "chip" : "nct6798",
+      "label" : "fan1",
+      "value" : 1150
+    },
+    {
+      "chip" : "nct6798",
+      "label" : "fan2",
+      "value" : 0
+    }
+  ],
+  "parityChecks" : [
+    {
+      "action" : "check P",
+      "bytesPerSecond" : 127600000,
+      "durationSeconds" : 61234,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Jan 4 03:12:45",
+      "sizeKiB" : 7814026532
+    },
+    {
+      "action" : "check P",
+      "bytesPerSecond" : 0,
+      "durationSeconds" : 1500,
+      "errors" : 0,
+      "exitCode" : -4,
+      "finished" : "2026 Feb 1 03:10:02",
+      "sizeKiB" : 7814026532
+    },
+    {
+      "action" : "check P",
+      "bytesPerSecond" : 130000000,
+      "durationSeconds" : 60100,
+      "errors" : 3,
+      "exitCode" : 0,
+      "finished" : "2026 Mar 1 02:59:59",
+      "sizeKiB" : 7814026532
+    }
+  ],
+  "shares" : [
+    {
+      "cachePool" : "cache",
+      "comment" : "application data",
+      "freeBytes" : 693004853248,
+      "name" : "appdata",
+      "useCache" : "prefer"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "",
+      "freeBytes" : 14336000000000,
+      "name" : "media",
+      "useCache" : "yes"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "ISO images",
+      "freeBytes" : 14336000000000,
+      "name" : "isos",
+      "useCache" : "no"
+    }
+  ],
+  "temperatures" : [
+    {
+      "chip" : "k10temp",
+      "label" : "Tctl",
+      "value" : 58.25
+    },
+    {
+      "chip" : "k10temp",
+      "label" : "Tccd1",
+      "value" : 51
+    },
+    {
+      "chip" : "nvme",
+      "label" : "Composite",
+      "value" : 52.850000000000001
+    },
+    {
+      "chip" : "acpitz",
+      "label" : "",
+      "value" : -273
+    },
+    {
+      "chip" : "nct6798",
+      "label" : "SYSTIN",
+      "value" : 33
+    }
+  ],
+  "version" : "6.12.13",
+  "zfsPools" : [
+
+  ]
+}

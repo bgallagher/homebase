@@ -100,3 +100,85 @@ final class AppIconsTests: XCTestCase {
         XCTAssertEqual(catalog.search("e", limit: 3).count, 3)
     }
 }
+
+final class IconSourcesTests: XCTestCase {
+    private let catalog = IconCatalog(
+        names: ["jellyfin", "deluge", "plex", "sabnzbd", "prowlarr", "postgresql", "redis", "nextcloud", "arch-linux", "arch", "home-assistant"],
+        selfhst: ["jellyfin", "2fauth", "home-assistant", "homeassistant", "super-productivity", "bad name", "convertx"])
+
+    private func container(_ image: String, icon: String? = nil, name: String = "c") -> DockerContainer {
+        DockerContainer(id: "abcdef012345", name: name, image: image, state: "running", health: "none", status: "Up", ports: [],
+                        iconURL: icon)
+    }
+
+    func testSelfhstOnlyFillsGaps() {
+        XCTAssertTrue(catalog.names.contains("sh:2fauth"))
+        XCTAssertTrue(catalog.names.contains("sh:super-productivity"))
+        XCTAssertFalse(catalog.names.contains("sh:jellyfin"), "dashboard-icons already has it")
+        XCTAssertFalse(catalog.names.contains("sh:homeassistant"), "same app as home-assistant, dashes ignored")
+        XCTAssertFalse(catalog.names.contains { $0.contains(" ") })
+        XCTAssertEqual(catalog.lookup("2fauth"), "sh:2fauth")
+        XCTAssertEqual(catalog.lookup("superproductivity"), "sh:super-productivity")
+        XCTAssertEqual(catalog.lookup("jellyfin"), "jellyfin")
+        XCTAssertEqual(catalog.search("super"), ["sh:super-productivity"])
+        XCTAssertEqual(catalog.search("conv"), ["sh:convertx"])
+    }
+
+    func testSelfhstIndexParsing() {
+        let index = #"[{"Name":"2FAuth","Reference":"2fauth","PNG":"Yes"},{"Reference":"svg-only","PNG":"No"},{"Reference":"../x","PNG":"Yes"}]"#
+        XCTAssertEqual(IconCatalog.parseSelfhstIndex(Data(index.utf8)), ["2fauth"])
+        XCTAssertNil(IconCatalog.parseSelfhstIndex(Data("{}".utf8)))
+    }
+
+    func testIconRefRoundTripsAndRejectsJunk() {
+        for id in ["jellyfin", "sh:2fauth", "custom:0123456789abcdef", "url:https://example.com/a.png"] {
+            XCTAssertEqual(AppIconRef(id: id)?.id, id)
+        }
+        XCTAssertEqual(AppIconRef(id: "sh:2fauth")?.downloadURL, "\(AppIconRef.selfhstCDN)/png/2fauth.png")
+        XCTAssertEqual(AppIconRef(id: "jellyfin")?.downloadURL, "\(AppIconRef.dashboardCDN)/png/jellyfin.png")
+        XCTAssertNil(AppIconRef(id: "custom:0123")?.downloadURL)
+        XCTAssertNil(AppIconRef(id: "custom:../../etc"))
+        XCTAssertNil(AppIconRef(id: "custom:0123456789ABCDEF"), "lowercase hex only")
+        XCTAssertNil(AppIconRef(id: "sh:../x"))
+        XCTAssertNil(AppIconRef(id: "url:file:///etc/passwd"))
+        XCTAssertNil(AppIconRef(id: "url:javascript:alert(1)"))
+        XCTAssertNil(AppIconRef(id: "Bad Name"))
+        XCTAssertFalse(AppIconRef.remote("https://x.y/i.png").isChoosable)
+    }
+
+    func testBinhexAndBundledImages() {
+        XCTAssertEqual(AppIconGuess.forImage("binhex/arch-delugevpn", in: catalog), "deluge", "not the Arch Linux logo")
+        XCTAssertEqual(AppIconGuess.forImage("ghcr.io/binhex/arch-plexpass", in: catalog), "plex")
+        XCTAssertEqual(AppIconGuess.forImage("binhex/arch-sabnzbdvpn", in: catalog), "sabnzbd")
+        XCTAssertEqual(AppIconGuess.forImage("binhex/arch-prowlarr", in: catalog), "prowlarr")
+        XCTAssertEqual(AppIconGuess.forImage("ghcr.io/nextcloud-releases/aio-postgresql:beta", in: catalog), "postgresql")
+        XCTAssertEqual(AppIconGuess.forImage("ghcr.io/nextcloud-releases/aio-talk:beta", in: catalog), "nextcloud", "falls back to the organisation")
+        XCTAssertEqual(AppIconGuess.forImage("nextcloud/all-in-one:beta", in: catalog), "nextcloud")
+        XCTAssertEqual(AppIconGuess.forImage("johannesjo/super-productivity:latest", in: catalog), "sh:super-productivity")
+    }
+
+    func testUnraidTemplateIconWinsOverTheGuessButNotAHomepageLabel() {
+        let url = "https://raw.githubusercontent.com/binhex/docker-templates/master/binhex/images/deluge-icon.png"
+        let delugeC = container("binhex/arch-delugevpn", icon: url, name: "binhex-delugevpn")
+        let stack = DockerStack(name: "binhex-delugevpn", workingDir: nil, configFile: nil, configFiles: [], containers: [delugeC], isStandalone: true)
+        XCTAssertEqual(AppIconGuess.iconID(for: stack, in: catalog), "url:" + url)
+        XCTAssertEqual(AppIconGuess.iconID(for: stack, in: nil), "url:" + url, "works before the catalog has loaded")
+        XCTAssertEqual(AppIconGuess.iconID(for: delugeC, in: catalog), "url:" + url)
+        XCTAssertEqual(AppIconGuess.iconID(for: container("redis:7"), in: catalog), "redis")
+
+        var labelled = delugeC
+        labelled.bookmark = Bookmark(href: "http://nas:8112", icon: "plex.png")
+        let withLabel = DockerStack(name: "d", workingDir: nil, configFile: nil, configFiles: [], containers: [labelled], isStandalone: true)
+        XCTAssertEqual(AppIconGuess.iconID(for: withLabel, in: catalog), "plex", "an explicit homepage.icon label still wins")
+    }
+
+    func testDockerParserKeepsOnlyWebIconLabels() throws {
+        func row(_ label: String) -> String {
+            #"{"ID":"abcdef012345","Names":"x","Image":"i","State":"running","Status":"Up","Labels":"net.unraid.docker.icon=\#(label)"}"#
+        }
+        for (label, expected) in [("https://a.b/x.png", "https://a.b/x.png"), ("file:///mnt/user/a.png", nil), ("", nil)] as [(String, String?)] {
+            let snapshot = try DockerParser.parse("##docker\nok\n##ps\n\(row(label))\n##stats\n")
+            XCTAssertEqual(snapshot.containers.first?.iconURL, expected, label)
+        }
+    }
+}

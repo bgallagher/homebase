@@ -76,6 +76,8 @@ public struct DockerContainer: Sendable, Codable, Equatable, Identifiable {
     public var memoryLimitBytes: Int64?
     /// From the container's `homepage.*` labels (the Homepage dashboard convention); nil when it has no valid `homepage.href`.
     public var bookmark: Bookmark?
+    /// Unraid's `net.unraid.docker.icon` label (the icon its Docker template names), only when it is an http(s) URL.
+    public var iconURL: String?
 
     public var isRunning: Bool { state == "running" || state == "restarting" }
     public var isUnhealthy: Bool { health == "unhealthy" }

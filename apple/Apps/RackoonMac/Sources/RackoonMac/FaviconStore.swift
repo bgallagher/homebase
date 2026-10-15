@@ -145,10 +145,12 @@ final class FaviconStore {
         }
     }
 
-    /// Decodes whatever image format arrived (PNG, ICO, JPEG, GIF, WebP, SVG...) and re-draws it as a 128 px PNG.
-    nonisolated static func renderPNG(_ data: Data) -> Data? {
+    /// Decodes whatever image format arrived (PNG, ICO, JPEG, GIF, WebP, SVG...) and re-draws it as a square PNG
+    /// (128 px unless asked otherwise).
+    nonisolated static func renderPNG(_ data: Data) -> Data? { renderPNG(data, side: 128) }
+
+    nonisolated static func renderPNG(_ data: Data, side: Int) -> Data? {
         guard let source = NSImage(data: data), source.size.width >= 1, source.size.height >= 1 else { return nil }
-        let side = 128
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
                                          hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
               let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }

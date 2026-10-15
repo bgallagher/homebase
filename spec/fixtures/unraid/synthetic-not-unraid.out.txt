@@ -1,0 +1,11 @@
+##unraid
+##var
+##disks
+##shares
+##zpool
+##temps
+coretemp|Package id 0|45000
+##fans
+##cpu
+Intel(R) Xeon(R)
+##parity

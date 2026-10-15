@@ -1,0 +1,574 @@
+{
+  "array" : {
+    "disabled" : 0,
+    "fsState" : "Started",
+    "invalid" : 0,
+    "lastSyncEnd" : 1790681911,
+    "lastSyncErrors" : 0,
+    "lastSyncExit" : 0,
+    "lastSyncStart" : 1790453416,
+    "missing" : 0,
+    "numDisks" : 6,
+    "shareCount" : 17,
+    "state" : "STARTED"
+  },
+  "cpuModel" : "12th Gen Intel(R) Core(TM) i5-1235U",
+  "devices" : [
+    {
+      "device" : "sdd",
+      "errors" : 0,
+      "identity" : "ST26000NM000C-3WE103_SERIAL01",
+      "name" : "parity",
+      "role" : "parity",
+      "rotational" : true,
+      "sizeBytes" : 26000658214912,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 34,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sde",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 4843850493952,
+        "mount" : "\/mnt\/disk1",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 11854109736960,
+        "type" : "zfs",
+        "usedBytes" : 7010259243008
+      },
+      "identity" : "ST12000VN0007-2GS116_SERIAL02",
+      "name" : "disk1",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 12000138571776,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 32,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdf",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 3030179348480,
+        "mount" : "\/mnt\/disk2",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 11854109736960,
+        "type" : "zfs",
+        "usedBytes" : 8823930388480
+      },
+      "identity" : "ST12000VN0007-2GS116_SERIAL03",
+      "name" : "disk2",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 12000138571776,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 33,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdg",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 7929534705664,
+        "mount" : "\/mnt\/disk3",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 15857019256832,
+        "type" : "zfs",
+        "usedBytes" : 7927484551168
+      },
+      "identity" : "ST16000NM000J-2TW103_SERIAL04",
+      "name" : "disk3",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 16000900608000,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 32,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdh",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 11684111077376,
+        "mount" : "\/mnt\/disk4",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 11854109736960,
+        "type" : "zfs",
+        "usedBytes" : 169998659584
+      },
+      "identity" : "ST12000VN0007-2GS116_SERIAL05",
+      "name" : "disk4",
+      "role" : "data",
+      "rotational" : true,
+      "sizeBytes" : 12000138571776,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 31,
+      "transport" : "ata"
+    },
+    {
+      "device" : "sdc",
+      "errors" : 0,
+      "identity" : "ST26000NM000C-3WE103_SERIAL06",
+      "name" : "parity2",
+      "role" : "parity",
+      "rotational" : true,
+      "sizeBytes" : 26000658214912,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 34,
+      "transport" : "ata"
+    },
+    {
+      "device" : "nvme0n1",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 2,
+        "freeBytes" : 1853376180224,
+        "mount" : "\/mnt\/cache",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 1931130929152,
+        "type" : "zfs",
+        "usedBytes" : 77754748928
+      },
+      "identity" : "CT1000P3PSSD8_SERIAL07",
+      "name" : "cache",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000203837440,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 31,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "nvme1n1",
+      "errors" : 0,
+      "identity" : "CT1000P3PSSD8_SERIAL08",
+      "name" : "cache2",
+      "role" : "pool",
+      "rotational" : false,
+      "sizeBytes" : 1000203837440,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "temperature" : 31,
+      "transport" : "nvme"
+    },
+    {
+      "device" : "sdb",
+      "errors" : 0,
+      "filesystem" : {
+        "devices" : 1,
+        "freeBytes" : 29180018688,
+        "mount" : "\/boot",
+        "profile" : "",
+        "status" : "Mounted",
+        "totalBytes" : 31998427136,
+        "type" : "vfat",
+        "usedBytes" : 2818408448
+      },
+      "identity" : "SanDisk_Cruzer_Fit_SERIAL09",
+      "name" : "flash",
+      "role" : "flash",
+      "rotational" : true,
+      "sizeBytes" : 32014073856,
+      "spunDown" : false,
+      "status" : "DISK_OK",
+      "transport" : "usb"
+    }
+  ],
+  "fans" : [
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : 2766
+    },
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : 2537
+    },
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : 2500
+    }
+  ],
+  "parityChecks" : [
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 111721709,
+      "durationSeconds" : 232727,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2025 Oct 21 13:26:37",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 118902005,
+      "durationSeconds" : 218673,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2025 Nov 8 14:10:41",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 0,
+      "durationSeconds" : 217794,
+      "errors" : 0,
+      "exitCode" : -4,
+      "finished" : "2026 Jan 20 10:22:09",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "recon D3",
+      "bytesPerSecond" : 93594412,
+      "durationSeconds" : 170960,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Feb 12 13:16:04",
+      "sizeKiB" : 15625879500
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 111600387,
+      "durationSeconds" : 232980,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Feb 20 06:14:48",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 115402559,
+      "durationSeconds" : 225304,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Mar 22 10:52:01",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 120919796,
+      "durationSeconds" : 215024,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 May 1 08:55:47",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 136719644,
+      "durationSeconds" : 190175,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 May 3 15:43:28",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 154483522,
+      "durationSeconds" : 168307,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Jul 14 10:48:24",
+      "sizeKiB" : 25391267788
+    },
+    {
+      "action" : "check P Q",
+      "bytesPerSecond" : 113790929,
+      "durationSeconds" : 228495,
+      "errors" : 0,
+      "exitCode" : 0,
+      "finished" : "2026 Sep 29 12:38:31",
+      "sizeKiB" : 25391267788
+    }
+  ],
+  "shares" : [
+    {
+      "cachePool" : "cache",
+      "comment" : "",
+      "freeBytes" : 1853376167936,
+      "name" : "appdata",
+      "useCache" : "only"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "application data",
+      "freeBytes" : 29341051518976,
+      "name" : "backups",
+      "useCache" : "prefer"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Backup files",
+      "freeBytes" : 27487675351040,
+      "name" : "data",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "Data share",
+      "freeBytes" : 29341051518976,
+      "name" : "domains",
+      "useCache" : "yes"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "saved VM instances",
+      "freeBytes" : 29341051518976,
+      "name" : "downloads",
+      "useCache" : "prefer"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "Download folder",
+      "freeBytes" : 29341051518976,
+      "name" : "isos",
+      "useCache" : "yes"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "ISO images",
+      "freeBytes" : 29341051518976,
+      "name" : "media",
+      "useCache" : "yes"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Media files",
+      "freeBytes" : 27487675351040,
+      "name" : "cloud",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "Cloud storage",
+      "freeBytes" : 29341051518976,
+      "name" : "cloud-backups",
+      "useCache" : "yes"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Cloud backups",
+      "freeBytes" : 27487675351040,
+      "name" : "config",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Package config",
+      "freeBytes" : 11684111056896,
+      "name" : "vm-one",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "A VM",
+      "freeBytes" : 11684111056896,
+      "name" : "photos-import",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Photo imports",
+      "freeBytes" : 27487675351040,
+      "name" : "photos",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Photo library",
+      "freeBytes" : 27487675351040,
+      "name" : "system",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "cache",
+      "comment" : "system data",
+      "freeBytes" : 29341051518976,
+      "name" : "timemachine",
+      "useCache" : "prefer"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Time Machine backups",
+      "freeBytes" : 3030179250176,
+      "name" : "server-backups",
+      "useCache" : "no"
+    },
+    {
+      "cachePool" : "",
+      "comment" : "Server backups",
+      "freeBytes" : 27487675351040,
+      "name" : "share17",
+      "useCache" : "no"
+    }
+  ],
+  "temperatures" : [
+    {
+      "chip" : "nvme",
+      "label" : "Composite",
+      "value" : 30.850000000000001
+    },
+    {
+      "chip" : "nvme",
+      "label" : "Sensor 1",
+      "value" : 30.850000000000001
+    },
+    {
+      "chip" : "nvme",
+      "label" : "Composite",
+      "value" : 30.850000000000001
+    },
+    {
+      "chip" : "nvme",
+      "label" : "Sensor 1",
+      "value" : 30.850000000000001
+    },
+    {
+      "chip" : "acpitz",
+      "label" : "",
+      "value" : 27.800000000000001
+    },
+    {
+      "chip" : "spd5118",
+      "label" : "",
+      "value" : 37.5
+    },
+    {
+      "chip" : "spd5118",
+      "label" : "",
+      "value" : 39.75
+    },
+    {
+      "chip" : "eth0",
+      "label" : "PHY Temperature",
+      "value" : 36
+    },
+    {
+      "chip" : "eth0",
+      "label" : "MAC Temperature",
+      "value" : 36
+    },
+    {
+      "chip" : "eth1",
+      "label" : "PHY Temperature",
+      "value" : 40
+    },
+    {
+      "chip" : "eth1",
+      "label" : "MAC Temperature",
+      "value" : 40
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 8",
+      "value" : 60
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 9",
+      "value" : 60
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 10",
+      "value" : 61
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 11",
+      "value" : 61
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 12",
+      "value" : 59
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 13",
+      "value" : 59
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 14",
+      "value" : 59
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 15",
+      "value" : 59
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Package id 0",
+      "value" : 63
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 0",
+      "value" : 63
+    },
+    {
+      "chip" : "coretemp",
+      "label" : "Core 4",
+      "value" : 45
+    },
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : 60
+    },
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : 24
+    },
+    {
+      "chip" : "it8613",
+      "label" : "",
+      "value" : -128
+    }
+  ],
+  "version" : "7.3.3",
+  "zfsPools" : [
+    {
+      "health" : "ONLINE",
+      "name" : "cache"
+    },
+    {
+      "health" : "ONLINE",
+      "name" : "disk1"
+    },
+    {
+      "health" : "ONLINE",
+      "name" : "disk2"
+    },
+    {
+      "health" : "ONLINE",
+      "name" : "disk3"
+    },
+    {
+      "health" : "ONLINE",
+      "name" : "disk4"
+    }
+  ]
+}

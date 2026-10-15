@@ -329,7 +329,9 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, light: light,
-                    switcher: switcher, updates: updateBadge, onAddServer: { showingAdd = true })
+                    switcher: switcher, updates: updateBadge,
+                    hiddenScreens: model.state.overview.map { ServerKind.detect($0.os).hiddenScreens } ?? [],
+                    onAddServer: { showingAdd = true })
             Divider()
             // The pane takes all the room that is left, whatever it shows. Without this an empty state shrank the whole row to
             // its own size and floated it in the middle of a wider window, with the window background showing at both sides.

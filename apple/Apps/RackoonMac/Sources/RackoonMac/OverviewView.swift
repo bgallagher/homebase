@@ -19,15 +19,22 @@ struct OverviewView: View {
                     if let flow = model.reboots[server.id] {
                         RebootProgressBanner(flow: flow, name: server.name) { model.dismissReboot(server) }
                     }
-                    if !state.attention.isEmpty {
-                        AttentionStrip(items: state.attention, open: openScreen, action: attentionAction)
+                    let kind = ServerKind.detect(o.os)
+                    let attention = attentionItems(state.attention, kind: kind)
+                    if !attention.isEmpty {
+                        AttentionStrip(items: attention, open: openScreen, action: attentionAction)
                     }
                     // While it reboots the failing polls are expected, not news.
                     if let error = state.error, model.reboots[server.id]?.isActive != true {
                         ConnectionProblem(raw: error, attempt: model.authAttempt, edit: editServer)
                     }
-                    cards(o, cpu: state.cpuPercent)
-                    SystemInfoCard(o: o, polledAt: state.updatedAt)
+                    if kind == .unraid {
+                        NASSections(o: o, cpu: state.cpuPercent, nas: NASStore.shared.model(for: server), polledAt: state.updatedAt)
+                            .task(id: server.connectionKey) { await NASStore.shared.model(for: server).poll() }
+                    } else {
+                        cards(o, cpu: state.cpuPercent)
+                        SystemInfoCard(o: o, polledAt: state.updatedAt)
+                    }
                 } else if let error = state.error {
                     // Never connected (or nothing cached): the problem is the whole page, with the way out of it.
                     Text(server.name).font(.system(size: 26, weight: .bold)).tracking(-0.4)
@@ -63,6 +70,14 @@ struct OverviewView: View {
             })
     }
 
+    /// On a NAS, `df`'s view of the array (one line per ZFS dataset, each "1%" full) is replaced by the array's own
+    /// checks: disk status, errors, temperatures, fill and pool health.
+    private func attentionItems(_ base: [AttentionItem], kind: ServerKind) -> [AttentionItem] {
+        guard kind == .unraid else { return base }
+        let nas = NASStore.shared.model(for: server).snapshot.map(UnraidAttention.evaluate) ?? []
+        return base.filter { !$0.id.hasPrefix("disk_high:") } + nas
+    }
+
     /// A button next to a chip whose problem can be fixed from here. The reboot chip gets Reboot…, which goes through
     /// the same confirmation (and Read-only check) as the header's button.
     private func attentionAction(_ item: AttentionItem) -> AttentionAction? {
@@ -78,7 +93,12 @@ struct OverviewView: View {
     private func header(_ o: Overview, stale: Date?) -> some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(o.hostname).font(.system(size: 26, weight: .bold)).tracking(-0.4)
+                HStack(spacing: 10) {
+                    Text(o.hostname).font(.system(size: 26, weight: .bold)).tracking(-0.4)
+                    if ServerKind.detect(o.os) == .unraid {
+                        Badge(text: "Unraid NAS", color: Theme.accent).offset(y: 2)
+                    }
+                }
                 Text("\(o.os.prettyName) · up \(Format.uptime(o.uptimeSeconds)) · \(o.cores) cores")
                     .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
                 if let stale {
@@ -135,6 +155,7 @@ struct OverviewView: View {
 struct SystemInfoCard: View {
     let o: Overview
     let polledAt: Date?
+    var cpuModel: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -144,6 +165,7 @@ struct SystemInfoCard: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 28, alignment: .top)], alignment: .leading, spacing: 12) {
                     if !o.modelName.isEmpty { row("Model", o.modelName) }
                     row("Hostname", o.hostname)
+                    if let cpuModel, !cpuModel.isEmpty { row("CPU", cpuModel) }
                     if let ip = o.ipAddress { row("IP address", ip, mono: true, copy: ip) }
                     // Only when the server has Tailscale up: nothing is shown or mentioned otherwise.
                     if let ts = o.tailscaleIP { row("Tailscale IP", ts, mono: true, copy: ts) }
@@ -230,6 +252,7 @@ struct RebootProgressBanner: View {
 struct StatCard: View {
     let title: String
     var trailing: String = ""
+    var trailingTint: Color?
     let value: String
     var unit: String?
     var valueTint: Color?
@@ -242,7 +265,7 @@ struct StatCard: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text(trailing)
+                Text(trailing).foregroundStyle(trailingTint ?? Theme.textMuted).fontWeight(trailingTint == nil ? .regular : .semibold)
             }
             .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -329,6 +352,11 @@ enum Format {
     static func bytes(_ b: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: b, countStyle: .binary)
     }
+    /// Drive and array sizes in decimal units ("12 TB"), as drives are sold and as Unraid shows them.
+    static func storage(_ b: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: b, countStyle: .decimal)
+    }
+    static func celsius(_ v: Double) -> String { String(format: "%.0f °C", v) }
 }
 
 /// A small copy-to-clipboard button: the icon turns into a tick for a moment after copying.
