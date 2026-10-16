@@ -1,0 +1,8 @@
+a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1	immich_server	running	Up 2 days (healthy)	immich	https://photos.example.com
+b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2	immich_redis	restarting	Restarting (1) 12 seconds ago	immich	
+c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3	paperless-worker	exited	Exited (1) 3 hours ago	paperless	
+d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4	nightly-migrate	exited	Exited (0) 5 hours ago	paperless	
+e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5	uptime-kuma	exited	Exited (137) 1 day ago		http://192.168.1.20:3001
+f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6	old-thing	dead	Dead		
+a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7	never-started	created	Created		
+b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8	jellyfin	running	Up 4 hours (unhealthy)		https://jellyfin.example.com:8920/web

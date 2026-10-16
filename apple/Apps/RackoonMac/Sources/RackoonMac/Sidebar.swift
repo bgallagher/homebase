@@ -46,7 +46,7 @@ enum Screen: String, CaseIterable, Identifiable {
     /// Screens that exist today. The rest are shown as "Soon" so the layout matches the design.
     var isAvailable: Bool {
         switch self {
-        case .dashboard, .overview, .docker, .services, .updates, .bookmarks, .files, .terminal, .command: true
+        case .dashboard, .overview, .docker, .services, .updates, .bookmarks, .files, .terminal, .command, .alerts: true
         default: false
         }
     }
@@ -73,6 +73,9 @@ struct Sidebar: View {
     let light: (Server) -> ServerLight
     let switcher: ServerSwitcherState
     var updates: UpdateBadge?
+    /// Unseen alerts on the selected server, and on every server (beside Dashboard).
+    var alerts: AlertBadge?
+    var allAlerts: AlertBadge?
     /// Screens that mean nothing on the selected server (Updates on Unraid, which has no apt).
     var hiddenScreens: Set<String> = []
     let onAddServer: () -> Void
@@ -85,8 +88,8 @@ struct Sidebar: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 4) {
                     if servers.count > 0 {
-                        NavRow(screen: .dashboard, selected: selection == .dashboard) { selection = .dashboard }
-                            .help("Every server at once: health, servers, Docker, services and bookmarks (⌘0)")
+                        NavRow(screen: .dashboard, selected: selection == .dashboard, alerts: allAlerts) { selection = .dashboard }
+                            .help("Every server at once: health, servers, Docker, services, alerts and bookmarks (⌘0)")
                             .padding(.bottom, 10)
                     }
                     HStack(alignment: .firstTextBaseline) {
@@ -113,7 +116,7 @@ struct Sidebar: View {
                         SectionLabel(name)
                         ForEach(Screen.serverScreens.filter { !hiddenScreens.contains($0.rawValue) }) { screen in
                             NavRow(screen: screen, selected: selection == screen,
-                                   badge: screen == .updates ? updates : nil) {
+                                   badge: screen == .updates ? updates : nil, alerts: screen == .alerts ? alerts : nil) {
                                 if screen.isAvailable { selection = screen }
                             }
                         }
@@ -225,6 +228,7 @@ private struct NavRow: View {
     let screen: Screen
     let selected: Bool
     var badge: UpdateBadge?
+    var alerts: AlertBadge?
     let action: () -> Void
 
     var body: some View {
@@ -241,6 +245,14 @@ private struct NavRow: View {
                         .frame(width: 8, height: 8)
                         .help(badge.help)
                         .accessibilityLabel(badge.help)
+                }
+                if let alerts, alerts.count > 0 {
+                    Text("\(alerts.count)").font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).frame(minWidth: 18, minHeight: 16)
+                        .background(alerts.critical ? Theme.danger : Theme.warn, in: Capsule())
+                        .help("\(alerts.count) alert\(alerts.count == 1 ? "" : "s") not seen yet")
+                        .accessibilityLabel("\(alerts.count) alerts not seen yet")
                 }
                 if !screen.isAvailable {
                     Text("Soon").font(.system(size: 10, weight: .medium))

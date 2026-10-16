@@ -180,7 +180,7 @@ struct GoCommands: Commands {
     @FocusedValue(\.appActions) private var actions
 
     private static let screens: [(Screen, KeyEquivalent)] = [
-        (.dashboard, "0"), (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"), (.services, "8"),
+        (.dashboard, "0"), (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"), (.services, "8"), (.alerts, "9"),
     ]
 
     var body: some Commands {
@@ -330,6 +330,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             Sidebar(selection: $selection, servers: model.servers, selectedID: model.selectedID, light: light,
                     switcher: switcher, updates: updateBadge,
+                    alerts: alertBadge(server: model.selectedID), allAlerts: alertBadge(server: nil),
                     hiddenScreens: model.state.overview.map { ServerKind.detect($0.os).hiddenScreens } ?? [],
                     onAddServer: { showingAdd = true })
             Divider()
@@ -355,6 +356,7 @@ struct ContentView: View {
                         AppIconStore.shared.forget(serverID: server.id)
                         ServicesStore.shared.forget(serverID: server.id)
                         ServiceVisibilityStore.shared.forget(serverID: server.id)
+                        AlertMonitor.shared.forget(serverID: server.id)
                         model.remove(server)
                     },
                     onReorder: { model.reorder($0) },
@@ -371,11 +373,22 @@ struct ContentView: View {
         .onAppear {
             appearance.applyWindowAppearance()
             model.start()
+            AlertMonitor.shared.start(fleet: { [model] in model.fleetRows })
             // With no server saved the window shows the welcome page, whose Add Server button opens the sheet.
             // The app was started by the checkout's redirect: this view did not exist yet when the link arrived.
             if LicenceStore.shared.purchaseReturned { openWindow(id: LicenceSheetWindow.id) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .rackoonShowLicence)) { _ in openWindow(id: LicenceSheetWindow.id) }
+        // A notification was clicked: that server's Alerts (or every server's, on the Dashboard).
+        .onReceive(NotificationCenter.default.publisher(for: .rackoonShowAlerts)) { note in
+            if let id = note.object as? String, let server = model.servers.first(where: { $0.id == id }) {
+                if server.id != model.selectedID { model.select(server) }
+                selection = .alerts
+            } else {
+                UserDefaults.standard.set(DashboardScreen.Page.alerts.rawValue, forKey: "dashboardPage")
+                selection = .dashboard
+            }
+        }
         .focusedSceneValue(\.terminalActions, terminalActions)
         .focusedSceneValue(\.appActions, appActions)
         .sheet(isPresented: $showingAdd) {
@@ -442,6 +455,20 @@ struct ContentView: View {
             tailscaleIP: model.state.overview?.tailscaleIP)
     }
 
+    private func alertBadge(server: String?) -> AlertBadge? {
+        let book = AlertMonitor.shared.book
+        let count = book.unseenCount(server: server)
+        return count > 0 ? AlertBadge(count: count, critical: book.worstUnseen(server: server) == .critical) : nil
+    }
+
+    /// Goes where an alert can be dealt with: its server, then the screen (and the stack) it names.
+    private func openAlert(_ alert: ServerAlert) {
+        guard let server = model.servers.first(where: { $0.id == alert.serverID }), let fix = alert.fix else { return }
+        if server.id != model.selectedID { model.select(server) }
+        if fix.screen == "docker", let stack = fix.target { dockerWorkspace.openStack[server.id] = stack }
+        selection = Screen(rawValue: fix.screen).flatMap { $0.isAvailable ? $0 : nil } ?? .overview
+    }
+
     private var updateBadge: UpdateBadge? {
         // RACKOON_DEMO_UPDATES=1 pretends there are updates (see UpdatesModel), so the dot can be seen.
         if ProcessInfo.processInfo.environment["RACKOON_DEMO_UPDATES"] != nil { return UpdateBadge(total: 5, security: 2) }
@@ -481,7 +508,7 @@ struct ContentView: View {
 
     @ViewBuilder private var detail: some View {
         if selection == .dashboard, !model.servers.isEmpty {
-            DashboardScreen(model: model, workspace: dockerWorkspace, theme: appearance.resolvedTheme,
+            DashboardScreen(model: model, workspace: dockerWorkspace, theme: appearance.resolvedTheme, openAlert: openAlert,
                             openServer: { server, screen in
                                 model.select(server)
                                 selection = screen
@@ -507,6 +534,8 @@ struct ContentView: View {
                         terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: shell)
                         selection = .terminal
                     }).id(DockerElevation.shared.key(server))
+                case .alerts:
+                    AlertsScreen(server: server, open: openAlert)
                 case .services:
                     ServicesScreen(server: server, theme: appearance.resolvedTheme,
                                    webHost: model.state.overview?.tailscaleIP ?? model.state.overview?.ipAddress,

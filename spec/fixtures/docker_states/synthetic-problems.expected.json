@@ -1,0 +1,68 @@
+{
+  "containers" : [
+    {
+      "href" : "https:\/\/photos.example.com",
+      "id" : "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "name" : "immich_server",
+      "project" : "immich",
+      "state" : "running",
+      "status" : "Up 2 days (healthy)"
+    },
+    {
+      "href" : "",
+      "id" : "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "name" : "immich_redis",
+      "project" : "immich",
+      "state" : "restarting",
+      "status" : "Restarting (1) 12 seconds ago"
+    },
+    {
+      "href" : "",
+      "id" : "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "name" : "paperless-worker",
+      "project" : "paperless",
+      "state" : "exited",
+      "status" : "Exited (1) 3 hours ago"
+    },
+    {
+      "href" : "",
+      "id" : "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+      "name" : "nightly-migrate",
+      "project" : "paperless",
+      "state" : "exited",
+      "status" : "Exited (0) 5 hours ago"
+    },
+    {
+      "href" : "http:\/\/192.168.1.20:3001",
+      "id" : "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+      "name" : "uptime-kuma",
+      "project" : "",
+      "state" : "exited",
+      "status" : "Exited (137) 1 day ago"
+    },
+    {
+      "href" : "",
+      "id" : "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+      "name" : "old-thing",
+      "project" : "",
+      "state" : "dead",
+      "status" : "Dead"
+    },
+    {
+      "href" : "",
+      "id" : "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7",
+      "name" : "never-started",
+      "project" : "",
+      "state" : "created",
+      "status" : "Created"
+    },
+    {
+      "href" : "https:\/\/jellyfin.example.com:8920\/web",
+      "id" : "b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8",
+      "name" : "jellyfin",
+      "project" : "",
+      "state" : "running",
+      "status" : "Up 4 hours (unhealthy)"
+    }
+  ]
+}
