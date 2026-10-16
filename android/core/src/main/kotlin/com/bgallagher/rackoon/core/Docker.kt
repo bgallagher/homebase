@@ -119,3 +119,11 @@ sealed class DockerParseError(message: String) : Exception(message) {
 
     class Malformed(val detail: String) : DockerParseError("Unexpected docker output: $detail")
 }
+
+object DockerAccess {
+    /** docker is installed but this ssh user may not use it directly (its socket answered "permission denied"). */
+    fun isPermissionProblem(message: String): Boolean {
+        val m = message.lowercase()
+        return m.contains("permission denied") && (m.contains("docker") || m.contains("/var/run/docker.sock"))
+    }
+}

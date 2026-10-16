@@ -70,6 +70,18 @@ data class LibraryCommand(
         if (needs != null) out.append("command -v $needs >/dev/null 2>&1 || { echo '$needs is not installed on this server.'; exit 0; }; ")
         return out.toString() + Template.fill(body ?: script, filled)
     }
+
+    /**
+     * What the entry runs, for reading before it runs: no PATH or `needs` guards, `$S` shown as `sudo`, parameters quoted or
+     * shown as `<label>`. Never executed.
+     */
+    fun readableScript(body: String? = null, params: Map<String, String> = emptyMap()): String {
+        val filled = HashMap<String, String>()
+        for (p in this.params) filled[p.id] = p.quoted(params[p.id] ?: "") ?: "<${p.label.lowercase()}>"
+        var text = body ?: script
+        if (root) text = text.replace("${'$'}S ", "sudo ")
+        return Template.fill(text, filled)
+    }
 }
 
 object CommandLibrary {
