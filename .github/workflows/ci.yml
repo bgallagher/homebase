@@ -105,12 +105,16 @@ jobs:
       - run: tools/lab up
       - name: Android (sshj) lab checks
         run: |
-          eval "$(tools/lab env)"
+          # An assignment fails the step if `tools/lab env` fails; a bare eval "$(...)" would carry on with no lab
+          # settings and every check would quietly skip itself.
+          labenv="$(../tools/lab env)"
+          eval "$labenv"
           ./gradlew :ssh:test --tests 'com.bgallagher.rackoon.ssh.LabIntegrationTests'
         working-directory: android
       - name: Mac (OpenSSHTransport, on Linux) lab checks
         run: |
-          eval "$(tools/lab env)"
+          labenv="$(tools/lab env)"
+          eval "$labenv"
           docker run --rm --network host -v "$PWD:$PWD" -w "$PWD/apple" \
             -e RACKOON_LAB -e RACKOON_LAB_HOST -e RACKOON_LAB_PORT -e RACKOON_LAB_USER -e RACKOON_LAB_SUDO_USER \
             -e RACKOON_LAB_SUDO_PASSWORD -e RACKOON_LAB_KEY -e RACKOON_LAB_KNOWN_HOSTS \
