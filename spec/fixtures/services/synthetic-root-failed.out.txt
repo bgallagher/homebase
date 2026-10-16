@@ -1,0 +1,196 @@
+##uptime
+86400.25
+##uid
+0
+##system
+Id=tailscaled.service
+Description=Tailscale node agent
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/tailscaled.service
+UnitFileState=enabled
+Type=notify
+MainPID=812
+ActiveEnterTimestampMonotonic=12000000
+NRestarts=0
+MemoryCurrent=41943040
+
+Id=pihole-FTL.service
+Description=Pi-hole FTL
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/etc/systemd/system/pihole-FTL.service
+UnitFileState=enabled
+Type=simple
+MainPID=901
+ActiveEnterTimestampMonotonic=15000000
+NRestarts=0
+MemoryCurrent=52428800
+
+Id=nginx.service
+Description=A high performance web server and a reverse proxy server
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/nginx.service
+UnitFileState=enabled
+Type=forking
+MainPID=1001
+ActiveEnterTimestampMonotonic=16000000
+NRestarts=0
+MemoryCurrent=8388608
+
+Id=backup-sync.service
+Description=Nightly offsite backup
+LoadState=loaded
+ActiveState=failed
+SubState=failed
+Result=exit-code
+FragmentPath=/etc/systemd/system/backup-sync.service
+UnitFileState=enabled
+Type=simple
+MainPID=0
+ActiveEnterTimestampMonotonic=0
+NRestarts=5
+MemoryCurrent=[not set]
+
+Id=beszel-agent.service
+Description=Beszel Agent Service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+Result=success
+FragmentPath=/etc/systemd/system/beszel-agent.service
+UnitFileState=enabled
+Type=simple
+MainPID=0
+ActiveEnterTimestampMonotonic=0
+NRestarts=0
+MemoryCurrent=[not set]
+
+Id=cron.service
+Description=Regular background program processing daemon
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/cron.service
+UnitFileState=enabled
+Type=simple
+MainPID=700
+ActiveEnterTimestampMonotonic=10000000
+NRestarts=0
+MemoryCurrent=540672
+
+Id=ssh.service
+Description=OpenBSD Secure Shell server
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/ssh.service
+UnitFileState=enabled
+Type=notify
+MainPID=720
+ActiveEnterTimestampMonotonic=11000000
+NRestarts=0
+MemoryCurrent=6385664
+
+Id=code-server@alice.service
+Description=code-server
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/code-server@.service
+UnitFileState=enabled
+Type=simple
+MainPID=1500
+ActiveEnterTimestampMonotonic=20000000
+NRestarts=2
+MemoryCurrent=209715200
+
+Id=cloudflared.service
+Description=cloudflared
+LoadState=loaded
+ActiveState=activating
+SubState=auto-restart
+Result=exit-code
+FragmentPath=/etc/systemd/system/cloudflared.service
+UnitFileState=enabled
+Type=notify
+MainPID=0
+ActiveEnterTimestampMonotonic=0
+NRestarts=14
+MemoryCurrent=[not set]
+
+Id=ufw.service
+Description=Uncomplicated firewall
+LoadState=loaded
+ActiveState=active
+SubState=exited
+Result=success
+FragmentPath=/usr/lib/systemd/system/ufw.service
+UnitFileState=enabled
+Type=oneshot
+MainPID=0
+ActiveEnterTimestampMonotonic=9000000
+NRestarts=0
+MemoryCurrent=[not set]
+
+Id=old-thing.service
+Description=old-thing.service
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+Result=success
+FragmentPath=
+UnitFileState=
+Type=simple
+MainPID=0
+ActiveEnterTimestampMonotonic=0
+NRestarts=0
+MemoryCurrent=[not set]
+
+Id=docker.service
+Description=Docker Application Container Engine
+LoadState=loaded
+ActiveState=active
+SubState=running
+Result=success
+FragmentPath=/usr/lib/systemd/system/docker.service
+UnitFileState=enabled
+Type=notify
+MainPID=1100
+ActiveEnterTimestampMonotonic=18000000
+NRestarts=0
+MemoryCurrent=62914560
+
+##user
+##listen
+LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=1003,fd=6),("nginx",pid=1002,fd=6),("nginx",pid=1001,fd=6))
+LISTEN 0      511          0.0.0.0:443       0.0.0.0:*    users:(("nginx",pid=1003,fd=7),("nginx",pid=1002,fd=7),("nginx",pid=1001,fd=7))
+LISTEN 0      32           0.0.0.0:53        0.0.0.0:*    users:(("pihole-FTL",pid=901,fd=5))
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=720,fd=3))
+LISTEN 0      4096       127.0.0.1:8080      0.0.0.0:*    users:(("node",pid=1500,fd=20))
+LISTEN 0      4096     100.64.0.10:41641     0.0.0.0:*    users:(("tailscaled",pid=812,fd=9))
+LISTEN 0      4096         0.0.0.0:9000      0.0.0.0:*    users:(("docker-proxy",pid=1200,fd=4))
+LISTEN 0      4096         0.0.0.0:7000      0.0.0.0:*    users:(("frps",pid=2100,fd=3))
+LISTEN 0      4096               *:8123            *:*    users:(("python3",pid=2200,fd=12))
+LISTEN 0      4096            [::]:22           [::]:*    users:(("sshd",pid=720,fd=4))
+##procs
+720	sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups 	/system.slice/ssh.service
+812	/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641 	/system.slice/tailscaled.service
+901	/usr/bin/pihole-FTL -f 	/system.slice/pihole-FTL.service
+1001	nginx: master process /usr/sbin/nginx -g daemon on; master_process on; 	/system.slice/nginx.service
+1002	nginx: worker process 	/system.slice/nginx.service
+1003	nginx: worker process 	/system.slice/nginx.service
+1200	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9000 -container-ip 172.17.0.2 -container-port 9000 	/system.slice/docker.service
+1500	/usr/lib/code-server/lib/node /usr/lib/code-server --bind-addr 127.0.0.1:8080 	/system.slice/system-code\x2dserver.slice/code-server@alice.service
+2100	/opt/frp/frps -c /opt/frp/frps.toml 	/
+2200	python3 -m homeassistant --config /config 	/system.slice/docker-4f1c2a9e8b7d.scope

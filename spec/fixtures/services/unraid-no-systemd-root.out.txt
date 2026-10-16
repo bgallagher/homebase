@@ -1,0 +1,216 @@
+##uptime
+126802.28
+##uid
+0
+##system
+##user
+##listen
+LISTEN 0      4096                                  0.0.0.0:2283  0.0.0.0:* users:(("docker-proxy",pid=153470,fd=8))
+LISTEN 0      50                                  127.0.0.1:445   0.0.0.0:* users:(("smbd",pid=10650,fd=31))
+LISTEN 0      511                                 127.0.0.1:443   0.0.0.0:* users:(("nginx",pid=170203,fd=11),("nginx",pid=11318,fd=11))
+LISTEN 0      4096                                  0.0.0.0:3500  0.0.0.0:* users:(("docker-proxy",pid=3323446,fd=8))
+LISTEN 0      4096                                  0.0.0.0:3478  0.0.0.0:* users:(("docker-proxy",pid=1913841,fd=8))
+LISTEN 0      511                                 127.0.0.1:80    0.0.0.0:* users:(("nginx",pid=170203,fd=8),("nginx",pid=11318,fd=8))
+LISTEN 0      50                                  127.0.0.1:139   0.0.0.0:* users:(("smbd",pid=10650,fd=32))
+LISTEN 0      4096                                  0.0.0.0:3200  0.0.0.0:* users:(("docker-proxy",pid=153600,fd=8))
+LISTEN 0      4096                                  0.0.0.0:3875  0.0.0.0:* users:(("docker-proxy",pid=162618,fd=8))
+LISTEN 0      4096                                  0.0.0.0:4000  0.0.0.0:* users:(("docker-proxy",pid=153267,fd=8))
+LISTEN 0      5                          0.0.0.0%tailscale1:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=35))
+LISTEN 0      5                            0.0.0.0%shim-br0:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=34))
+LISTEN 0      5                     0.0.0.0%br-22686992a774:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=33))
+LISTEN 0      5                     0.0.0.0%br-6d590680030d:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=32))
+LISTEN 0      5                     0.0.0.0%br-5a28470599d7:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=31))
+LISTEN 0      5                     0.0.0.0%br-138f6cb1204d:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=30))
+LISTEN 0      5                     0.0.0.0%br-04d521240b2a:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=29))
+LISTEN 0      5                     0.0.0.0%br-e9a846ed54fe:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=28))
+LISTEN 0      5                     0.0.0.0%br-3eeb8d0c698d:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=27))
+LISTEN 0      5                     0.0.0.0%br-2bd9c24ff484:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=26))
+LISTEN 0      5                                 0.0.0.0%br0:3702  0.0.0.0:* users:(("wsdd2",pid=10686,fd=25))
+LISTEN 0      32                              192.168.122.1:53    0.0.0.0:* users:(("dnsmasq",pid=160607,fd=6))
+LISTEN 0      4096                                  0.0.0.0:6789  0.0.0.0:* users:(("docker-proxy",pid=3871188,fd=8))
+LISTEN 0      4096                                  0.0.0.0:7282  0.0.0.0:* users:(("docker-proxy",pid=1938027,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8040  0.0.0.0:* users:(("docker-proxy",pid=3324818,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8011  0.0.0.0:* users:(("docker-proxy",pid=3316267,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8191  0.0.0.0:* users:(("docker-proxy",pid=166277,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8096  0.0.0.0:* users:(("docker-proxy",pid=3856448,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8112  0.0.0.0:* users:(("docker-proxy",pid=3875820,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8119  0.0.0.0:* users:(("docker-proxy",pid=3871215,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8118  0.0.0.0:* users:(("docker-proxy",pid=3875845,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8083  0.0.0.0:* users:(("docker-proxy",pid=3318638,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8082  0.0.0.0:* users:(("docker-proxy",pid=3317229,fd=8))
+LISTEN 0      4096                                  0.0.0.0:7878  0.0.0.0:* users:(("docker-proxy",pid=3868572,fd=8))
+LISTEN 0      128                                 127.0.0.1:40885 0.0.0.0:* users:(("Plex Script Hos",pid=3776010,fd=4))
+LISTEN 0      4096                                  0.0.0.0:5055  0.0.0.0:* users:(("docker-proxy",pid=3298915,fd=8))
+LISTEN 0      4096                                  0.0.0.0:5432  0.0.0.0:* users:(("docker-proxy",pid=3313937,fd=8))
+LISTEN 0      5                          0.0.0.0%tailscale1:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=75))
+LISTEN 0      5                            0.0.0.0%shim-br0:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=74))
+LISTEN 0      5                     0.0.0.0%br-22686992a774:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=73))
+LISTEN 0      5                     0.0.0.0%br-6d590680030d:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=72))
+LISTEN 0      5                     0.0.0.0%br-5a28470599d7:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=71))
+LISTEN 0      5                     0.0.0.0%br-138f6cb1204d:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=70))
+LISTEN 0      5                     0.0.0.0%br-04d521240b2a:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=69))
+LISTEN 0      5                     0.0.0.0%br-e9a846ed54fe:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=68))
+LISTEN 0      5                     0.0.0.0%br-3eeb8d0c698d:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=67))
+LISTEN 0      5                     0.0.0.0%br-2bd9c24ff484:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=66))
+LISTEN 0      5                                 0.0.0.0%br0:5355  0.0.0.0:* users:(("wsdd2",pid=10686,fd=65))
+LISTEN 0      4096                                  0.0.0.0:11000 0.0.0.0:* users:(("docker-proxy",pid=1917106,fd=8))
+LISTEN 0      4096                                  0.0.0.0:9001  0.0.0.0:* users:(("docker-proxy",pid=3357344,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8989  0.0.0.0:* users:(("docker-proxy",pid=3861497,fd=8))
+LISTEN 0      4096                                  0.0.0.0:9119  0.0.0.0:* users:(("docker-proxy",pid=3871243,fd=8))
+LISTEN 0      4096                                  0.0.0.0:9118  0.0.0.0:* users:(("docker-proxy",pid=3875873,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8787  0.0.0.0:* users:(("docker-proxy",pid=3315655,fd=8))
+LISTEN 0      4096                                  0.0.0.0:8920  0.0.0.0:* users:(("docker-proxy",pid=3856471,fd=8))
+LISTEN 0      4096                                  0.0.0.0:9696  0.0.0.0:* users:(("docker-proxy",pid=3858225,fd=8))
+LISTEN 0      4096                                  0.0.0.0:9897  0.0.0.0:* users:(("docker-proxy",pid=3861520,fd=8))
+LISTEN 0      4096                100.64.0.30%tailscale1:57437 0.0.0.0:* users:(("tailscaled",pid=3719842,fd=27))
+LISTEN 0      4096                100.64.0.30%tailscale1:5252  0.0.0.0:* users:(("tailscaled",pid=3719842,fd=30))
+LISTEN 0      1000                                127.0.0.1:16509 0.0.0.0:* users:(("libvirtd",pid=160289,fd=14))
+LISTEN 0      511                            100.64.0.30:443   0.0.0.0:* users:(("nginx",pid=170203,fd=13),("nginx",pid=11318,fd=13))
+LISTEN 0      50                             100.64.0.30:445   0.0.0.0:* users:(("smbd",pid=10650,fd=29))
+LISTEN 0      50                             100.64.0.30:139   0.0.0.0:* users:(("smbd",pid=10650,fd=30))
+LISTEN 0      128                            100.64.0.30:22    0.0.0.0:* users:(("sshd",pid=171802,fd=7))
+LISTEN 0      511                            100.64.0.30:80    0.0.0.0:* users:(("nginx",pid=170203,fd=10),("nginx",pid=11318,fd=10))
+LISTEN 0      4096                                  0.0.0.0:58846 0.0.0.0:* users:(("docker-proxy",pid=3875900,fd=8))
+LISTEN 0      4096                                  0.0.0.0:58946 0.0.0.0:* users:(("docker-proxy",pid=3875927,fd=8))
+LISTEN 0      128                                 127.0.0.1:32600 0.0.0.0:* users:(("Plex Tuner Serv",pid=3776620,fd=9))
+LISTEN 0      1024                                127.0.0.1:32401 0.0.0.0:* users:(("Plex Media Serv",pid=3774593,fd=52))
+LISTEN 0      511                             192.168.1.30:80    0.0.0.0:* users:(("nginx",pid=170203,fd=9),("nginx",pid=11318,fd=9))
+LISTEN 0      128                             192.168.1.30:22    0.0.0.0:* users:(("sshd",pid=171802,fd=8))
+LISTEN 0      50                              192.168.1.30:139   0.0.0.0:* users:(("smbd",pid=10650,fd=34))
+LISTEN 0      511                             192.168.1.30:443   0.0.0.0:* users:(("nginx",pid=170203,fd=12),("nginx",pid=11318,fd=12))
+LISTEN 0      50                              192.168.1.30:445   0.0.0.0:* users:(("smbd",pid=10650,fd=33))
+LISTEN 0      4096                                     [::]:2283     [::]:* users:(("docker-proxy",pid=153478,fd=8))
+LISTEN 0      4096                                     [::]:3500     [::]:* users:(("docker-proxy",pid=3323454,fd=8))
+LISTEN 0      4096                                     [::]:3478     [::]:* users:(("docker-proxy",pid=1913849,fd=8))
+LISTEN 0      4096                                     [::]:3200     [::]:* users:(("docker-proxy",pid=153606,fd=8))
+LISTEN 0      511               [fd7a:115c:a1e0::30]:80       [::]:* users:(("nginx",pid=170203,fd=15),("nginx",pid=11318,fd=15))
+LISTEN 0      128               [fd7a:115c:a1e0::30]:22       [::]:* users:(("sshd",pid=171802,fd=6))
+LISTEN 0      4096                                     [::]:3875     [::]:* users:(("docker-proxy",pid=162625,fd=8))
+LISTEN 0      4096                                     [::]:4000     [::]:* users:(("docker-proxy",pid=153278,fd=8))
+LISTEN 0      50                [fd7a:115c:a1e0::30]:139      [::]:* users:(("smbd",pid=10650,fd=28))
+LISTEN 0      5                        [::]%br-2bd9c24ff484:3702     [::]:* users:(("wsdd2",pid=10686,fd=36))
+LISTEN 0      5                        [::]%br-3eeb8d0c698d:3702     [::]:* users:(("wsdd2",pid=10686,fd=37))
+LISTEN 0      5                        [::]%br-e9a846ed54fe:3702     [::]:* users:(("wsdd2",pid=10686,fd=38))
+LISTEN 0      5                        [::]%br-04d521240b2a:3702     [::]:* users:(("wsdd2",pid=10686,fd=39))
+LISTEN 0      5                        [::]%br-138f6cb1204d:3702     [::]:* users:(("wsdd2",pid=10686,fd=40))
+LISTEN 0      5                        [::]%br-5a28470599d7:3702     [::]:* users:(("wsdd2",pid=10686,fd=41))
+LISTEN 0      5                        [::]%br-6d590680030d:3702     [::]:* users:(("wsdd2",pid=10686,fd=42))
+LISTEN 0      5                        [::]%br-22686992a774:3702     [::]:* users:(("wsdd2",pid=10686,fd=43))
+LISTEN 0      5                             [::]%tailscale1:3702     [::]:* users:(("wsdd2",pid=10686,fd=44))
+LISTEN 0      50                [fd7a:115c:a1e0::30]:445      [::]:* users:(("smbd",pid=10650,fd=27))
+LISTEN 0      511               [fd7a:115c:a1e0::30]:443      [::]:* users:(("nginx",pid=170203,fd=17),("nginx",pid=11318,fd=17))
+LISTEN 0      4096   [fd7a:115c:a1e0::30]%tailscale1:5252     [::]:* users:(("tailscaled",pid=3719842,fd=29))
+LISTEN 0      4096                                     [::]:6789     [::]:* users:(("docker-proxy",pid=3871194,fd=8))
+LISTEN 0      4096                                     [::]:7282     [::]:* users:(("docker-proxy",pid=1938035,fd=8))
+LISTEN 0      4096                                     [::]:8040     [::]:* users:(("docker-proxy",pid=3324825,fd=8))
+LISTEN 0      4096                                     [::]:8011     [::]:* users:(("docker-proxy",pid=3316274,fd=8))
+LISTEN 0      4096                                     [::]:8191     [::]:* users:(("docker-proxy",pid=166287,fd=8))
+LISTEN 0      4096                                     [::]:8096     [::]:* users:(("docker-proxy",pid=3856454,fd=8))
+LISTEN 0      4096                                     [::]:8112     [::]:* users:(("docker-proxy",pid=3875827,fd=8))
+LISTEN 0      4096                                     [::]:8119     [::]:* users:(("docker-proxy",pid=3871220,fd=8))
+LISTEN 0      4096                                     [::]:8118     [::]:* users:(("docker-proxy",pid=3875851,fd=8))
+LISTEN 0      4096                                     [::]:8083     [::]:* users:(("docker-proxy",pid=3318648,fd=8))
+LISTEN 0      4096                                     [::]:8082     [::]:* users:(("docker-proxy",pid=3317236,fd=8))
+LISTEN 0      4096                                     [::]:7878     [::]:* users:(("docker-proxy",pid=3868579,fd=8))
+LISTEN 0      4096                                     [::]:5055     [::]:* users:(("docker-proxy",pid=3298922,fd=8))
+LISTEN 0      4096                                     [::]:5432     [::]:* users:(("docker-proxy",pid=3313944,fd=8))
+LISTEN 0      5                        [::]%br-2bd9c24ff484:5355     [::]:* users:(("wsdd2",pid=10686,fd=76))
+LISTEN 0      5                        [::]%br-3eeb8d0c698d:5355     [::]:* users:(("wsdd2",pid=10686,fd=77))
+LISTEN 0      5                        [::]%br-e9a846ed54fe:5355     [::]:* users:(("wsdd2",pid=10686,fd=78))
+LISTEN 0      5                        [::]%br-04d521240b2a:5355     [::]:* users:(("wsdd2",pid=10686,fd=79))
+LISTEN 0      5                        [::]%br-138f6cb1204d:5355     [::]:* users:(("wsdd2",pid=10686,fd=80))
+LISTEN 0      5                        [::]%br-5a28470599d7:5355     [::]:* users:(("wsdd2",pid=10686,fd=81))
+LISTEN 0      5                        [::]%br-6d590680030d:5355     [::]:* users:(("wsdd2",pid=10686,fd=82))
+LISTEN 0      5                        [::]%br-22686992a774:5355     [::]:* users:(("wsdd2",pid=10686,fd=83))
+LISTEN 0      5                             [::]%tailscale1:5355     [::]:* users:(("wsdd2",pid=10686,fd=84))
+LISTEN 0      4096                                     [::]:11000    [::]:* users:(("docker-proxy",pid=1917113,fd=8))
+LISTEN 0      4096                                     [::]:9001     [::]:* users:(("docker-proxy",pid=3357351,fd=8))
+LISTEN 0      4096                                     [::]:8989     [::]:* users:(("docker-proxy",pid=3861504,fd=8))
+LISTEN 0      4096                                     [::]:9119     [::]:* users:(("docker-proxy",pid=3871253,fd=8))
+LISTEN 0      4096                                     [::]:9118     [::]:* users:(("docker-proxy",pid=3875881,fd=8))
+LISTEN 0      4096                                     [::]:8787     [::]:* users:(("docker-proxy",pid=3315662,fd=8))
+LISTEN 0      4096                                     [::]:8920     [::]:* users:(("docker-proxy",pid=3856477,fd=8))
+LISTEN 0      4096                                     [::]:9696     [::]:* users:(("docker-proxy",pid=3858234,fd=8))
+LISTEN 0      4096                                     [::]:9897     [::]:* users:(("docker-proxy",pid=3861527,fd=8))
+LISTEN 0      511                                     [::1]:80       [::]:* users:(("nginx",pid=170203,fd=14),("nginx",pid=11318,fd=14))
+LISTEN 0      511                                     [::1]:443      [::]:* users:(("nginx",pid=170203,fd=16),("nginx",pid=11318,fd=16))
+LISTEN 0      4096                                        *:45876       *:* users:(("agent",pid=3283881,fd=7))
+LISTEN 0      4096   [fd7a:115c:a1e0::30]%tailscale1:59909    [::]:* users:(("tailscaled",pid=3719842,fd=28))
+LISTEN 0      4096                                     [::]:58846    [::]:* users:(("docker-proxy",pid=3875907,fd=8))
+LISTEN 0      4096                                     [::]:58946    [::]:* users:(("docker-proxy",pid=3875934,fd=8))
+LISTEN 0      1024                                        *:32400       *:* users:(("Plex Media Serv",pid=3774593,fd=51))
+##procs
+10650	/usr/sbin/smbd -D 	/
+10686	/usr/sbin/wsdd2 -d -4 -6 	/
+11318	nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf 	/
+153267	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 4000 -container-ip 172.18.0.2 -container-port 4000 -use-listen-fd 	/
+153278	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 4000 -container-ip 172.18.0.2 -container-port 4000 -use-listen-fd 	/
+153470	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 2283 -container-ip 172.27.0.3 -container-port 2283 -use-listen-fd 	/
+153478	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 2283 -container-ip 172.27.0.3 -container-port 2283 -use-listen-fd 	/
+153600	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 3200 -container-ip 172.18.0.3 -container-port 3000 -use-listen-fd 	/
+153606	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 3200 -container-ip 172.18.0.3 -container-port 3000 -use-listen-fd 	/
+160289	libvirtd -d -l -f /etc/libvirt/libvirtd.conf -p /var/run/libvirt/libvirtd.pid 	/
+160607	/usr/sbin/dnsmasq --conf-file=/var/lib/libvirt/dnsmasq/default.conf --leasefile-ro --dhcp-script=/usr/libexec/libvirt_leaseshelper 	/
+162618	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 3875 -container-ip 172.22.0.2 -container-port 3875 -use-listen-fd 	/
+162625	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 3875 -container-ip 172.22.0.2 -container-port 3875 -use-listen-fd 	/
+166277	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8191 -container-ip 172.29.0.10 -container-port 8191 -use-listen-fd 	/
+166287	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8191 -container-ip 172.29.0.10 -container-port 8191 -use-listen-fd 	/
+170203	nginx: worker process                    	/
+171802	sshd: /usr/sbin/sshd [listener] 0 of 10-100 startups 	/
+1913841	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 3478 -container-ip 172.19.0.3 -container-port 3478 -use-listen-fd 	/
+1913849	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 3478 -container-ip 172.19.0.3 -container-port 3478 -use-listen-fd 	/
+1917106	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 11000 -container-ip 172.19.0.12 -container-port 11000 -use-listen-fd 	/
+1917113	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 11000 -container-ip 172.19.0.12 -container-port 11000 -use-listen-fd 	/
+1938027	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 7282 -container-ip 172.19.0.13 -container-port 8080 -use-listen-fd 	/
+1938035	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 7282 -container-ip 172.19.0.13 -container-port 8080 -use-listen-fd 	/
+3283881	/agent 	/docker/726513e5d451c57c16f55dbb024deb6ae3f615f5cd0a36d996d666f8817dc043
+3298915	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 5055 -container-ip 172.29.0.2 -container-port 5055 -use-listen-fd 	/
+3298922	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 5055 -container-ip 172.29.0.2 -container-port 5055 -use-listen-fd 	/
+3313937	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 5432 -container-ip 172.23.0.3 -container-port 5432 -use-listen-fd 	/
+3313944	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 5432 -container-ip 172.23.0.3 -container-port 5432 -use-listen-fd 	/
+3315655	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8787 -container-ip 172.29.0.3 -container-port 8787 -use-listen-fd 	/
+3315662	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8787 -container-ip 172.29.0.3 -container-port 8787 -use-listen-fd 	/
+3316267	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8011 -container-ip 172.21.0.2 -container-port 80 -use-listen-fd 	/
+3316274	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8011 -container-ip 172.21.0.2 -container-port 80 -use-listen-fd 	/
+3317229	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8082 -container-ip 172.21.0.4 -container-port 80 -use-listen-fd 	/
+3317236	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8082 -container-ip 172.21.0.4 -container-port 80 -use-listen-fd 	/
+3318638	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8083 -container-ip 172.20.0.2 -container-port 8080 -use-listen-fd 	/
+3318648	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8083 -container-ip 172.20.0.2 -container-port 8080 -use-listen-fd 	/
+3323446	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 3500 -container-ip 172.21.0.3 -container-port 3000 -use-listen-fd 	/
+3323454	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 3500 -container-ip 172.21.0.3 -container-port 3000 -use-listen-fd 	/
+3324818	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8040 -container-ip 172.17.0.4 -container-port 8080 -use-listen-fd 	/
+3324825	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8040 -container-ip 172.17.0.4 -container-port 8080 -use-listen-fd 	/
+3357344	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9001 -container-ip 172.17.0.3 -container-port 9001 -use-listen-fd 	/
+3357351	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9001 -container-ip 172.17.0.3 -container-port 9001 -use-listen-fd 	/
+3719842	/usr/local/sbin/tailscaled -statedir /boot/config/plugins/tailscale/state -tun tailscale1 -encrypt-state=false -hardware-attestation=false 	/
+3774593	/usr/lib/plexmediaserver/Plex Media Server 	/docker/26809355cce40c6955d503ebeeea570af56769439efbb8d56317365de16b0a16
+3776010	Plex Plug-in [com.plexapp.system] /usr/lib/plexmediaserver/Resources/Plug-ins-6bf8af3f0/Framework.bundle/Contents/Resources/Versions/2/Python/bootstrap.py --server-version 1.43.5.11029-6bf8af3f0 /usr/lib/plexmediaserver/Resources/Plug-ins-6bf8af3f0/System.bundle 	/docker/26809355cce40c6955d503ebeeea570af56769439efbb8d56317365de16b0a16
+3776620	/usr/lib/plexmediaserver/Plex Tuner Service /usr/lib/plexmediaserver/Resources/Tuner/Private /usr/lib/plexmediaserver/Resources/Tuner/Shared 1.43.5.11029-6bf8af3f0 32600 	/docker/26809355cce40c6955d503ebeeea570af56769439efbb8d56317365de16b0a16
+3856448	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8096 -container-ip 172.29.0.4 -container-port 8096 -use-listen-fd 	/
+3856454	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8096 -container-ip 172.29.0.4 -container-port 8096 -use-listen-fd 	/
+3856471	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8920 -container-ip 172.29.0.4 -container-port 8920 -use-listen-fd 	/
+3856477	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8920 -container-ip 172.29.0.4 -container-port 8920 -use-listen-fd 	/
+3858225	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9696 -container-ip 172.29.0.8 -container-port 9696 -use-listen-fd 	/
+3858234	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9696 -container-ip 172.29.0.8 -container-port 9696 -use-listen-fd 	/
+3861497	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8989 -container-ip 172.29.0.7 -container-port 8989 -use-listen-fd 	/
+3861504	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8989 -container-ip 172.29.0.7 -container-port 8989 -use-listen-fd 	/
+3861520	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9897 -container-ip 172.29.0.7 -container-port 9897 -use-listen-fd 	/
+3861527	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9897 -container-ip 172.29.0.7 -container-port 9897 -use-listen-fd 	/
+3868572	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 7878 -container-ip 172.29.0.6 -container-port 7878 -use-listen-fd 	/
+3868579	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 7878 -container-ip 172.29.0.6 -container-port 7878 -use-listen-fd 	/
+3871188	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 6789 -container-ip 172.29.0.5 -container-port 8080 -use-listen-fd 	/
+3871194	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 6789 -container-ip 172.29.0.5 -container-port 8080 -use-listen-fd 	/
+3871215	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8119 -container-ip 172.29.0.5 -container-port 8118 -use-listen-fd 	/
+3871220	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8119 -container-ip 172.29.0.5 -container-port 8118 -use-listen-fd 	/
+3871243	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9119 -container-ip 172.29.0.5 -container-port 9118 -use-listen-fd 	/
+3871253	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9119 -container-ip 172.29.0.5 -container-port 9118 -use-listen-fd 	/
+3875820	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8112 -container-ip 172.29.0.9 -container-port 8112 -use-listen-fd 	/
+3875827	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8112 -container-ip 172.29.0.9 -container-port 8112 -use-listen-fd 	/
+3875845	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 8118 -container-ip 172.29.0.9 -container-port 8118 -use-listen-fd 	/
+3875851	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 8118 -container-ip 172.29.0.9 -container-port 8118 -use-listen-fd 	/
+3875873	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9118 -container-ip 172.29.0.9 -container-port 9118 -use-listen-fd 	/
+3875881	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9118 -container-ip 172.29.0.9 -container-port 9118 -use-listen-fd 	/
+3875900	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 58846 -container-ip 172.29.0.9 -container-port 58846 -use-listen-fd 	/
+3875907	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 58846 -container-ip 172.29.0.9 -container-port 58846 -use-listen-fd 	/
+3875927	/usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 58946 -container-ip 172.29.0.9 -container-port 58946 -use-listen-fd 	/
+3875934	/usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 58946 -container-ip 172.29.0.9 -container-port 58946 -use-listen-fd 	/

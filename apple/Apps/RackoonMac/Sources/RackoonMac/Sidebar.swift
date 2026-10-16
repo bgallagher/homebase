@@ -4,7 +4,7 @@ import SwiftUI
 enum Screen: String, CaseIterable, Identifiable {
     /// Every server at once; not one of a server's screens.
     case dashboard
-    case overview, docker, updates, bookmarks, files, terminal, command, alerts, security
+    case overview, docker, services, updates, bookmarks, files, terminal, command, alerts, security
 
     /// The screens listed under the selected server.
     static var serverScreens: [Screen] { allCases.filter { $0 != .dashboard } }
@@ -16,6 +16,7 @@ enum Screen: String, CaseIterable, Identifiable {
         case .dashboard: "Dashboard"
         case .overview: "Overview"
         case .docker: "Docker"
+        case .services: "Services"
         case .updates: "Updates"
         case .bookmarks: "Bookmarks"
         case .files: "Files"
@@ -31,6 +32,7 @@ enum Screen: String, CaseIterable, Identifiable {
         case .dashboard: "rectangle.3.group"
         case .overview: "square.grid.2x2"
         case .docker: "shippingbox"
+        case .services: "gearshape.2"
         case .updates: "arrow.down.circle"
         case .bookmarks: "bookmark"
         case .files: "folder"
@@ -44,7 +46,7 @@ enum Screen: String, CaseIterable, Identifiable {
     /// Screens that exist today. The rest are shown as "Soon" so the layout matches the design.
     var isAvailable: Bool {
         switch self {
-        case .dashboard, .overview, .docker, .updates, .bookmarks, .files, .terminal, .command: true
+        case .dashboard, .overview, .docker, .services, .updates, .bookmarks, .files, .terminal, .command: true
         default: false
         }
     }
@@ -84,7 +86,7 @@ struct Sidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if servers.count > 0 {
                         NavRow(screen: .dashboard, selected: selection == .dashboard) { selection = .dashboard }
-                            .help("Every server at once: health, servers, Docker and bookmarks (⌘0)")
+                            .help("Every server at once: health, servers, Docker, services and bookmarks (⌘0)")
                             .padding(.bottom, 10)
                     }
                     HStack(alignment: .firstTextBaseline) {

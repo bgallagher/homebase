@@ -1,0 +1,237 @@
+{
+  "hasSystemd" : true,
+  "isRoot" : true,
+  "services" : [
+    {
+      "detail" : "Nightly offsite backup",
+      "enabledAtBoot" : true,
+      "id" : "system\/backup-sync.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "name" : "backup-sync",
+      "path" : "\/etc\/systemd\/system\/backup-sync.service",
+      "ports" : [
+
+      ],
+      "restarts" : 5,
+      "result" : "exit-code",
+      "status" : "failed",
+      "subState" : "failed",
+      "unit" : "backup-sync.service",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "Beszel Agent Service",
+      "enabledAtBoot" : true,
+      "id" : "system\/beszel-agent.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "name" : "Beszel agent",
+      "path" : "\/etc\/systemd\/system\/beszel-agent.service",
+      "ports" : [
+
+      ],
+      "product" : "beszel-agent",
+      "restarts" : 0,
+      "status" : "stopped",
+      "subState" : "dead",
+      "unit" : "beszel-agent.service",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "cloudflared",
+      "enabledAtBoot" : true,
+      "id" : "system\/cloudflared.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "name" : "Cloudflare Tunnel",
+      "path" : "\/etc\/systemd\/system\/cloudflared.service",
+      "ports" : [
+
+      ],
+      "product" : "cloudflared",
+      "restarts" : 14,
+      "result" : "exit-code",
+      "status" : "restarting",
+      "subState" : "auto-restart",
+      "unit" : "cloudflared.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 86380.25,
+      "detail" : "code-server",
+      "enabledAtBoot" : true,
+      "id" : "system\/code-server@alice.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 209715200,
+      "name" : "code-server",
+      "path" : "\/usr\/lib\/systemd\/system\/code-server@.service",
+      "ports" : [
+        {
+          "address" : "127.0.0.1",
+          "port" : 8080
+        }
+      ],
+      "product" : "code-server",
+      "restarts" : 2,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "code-server@alice.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 86390.25,
+      "detail" : "Regular background program processing daemon",
+      "enabledAtBoot" : true,
+      "id" : "system\/cron.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 540672,
+      "name" : "cron",
+      "path" : "\/usr\/lib\/systemd\/system\/cron.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "cron.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 86382.25,
+      "detail" : "Docker Application Container Engine",
+      "enabledAtBoot" : true,
+      "id" : "system\/docker.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 62914560,
+      "name" : "Docker Engine",
+      "path" : "\/usr\/lib\/systemd\/system\/docker.service",
+      "ports" : [
+
+      ],
+      "product" : "docker",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "docker.service",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "\/opt\/frp\/frps -c \/opt\/frp\/frps.toml",
+      "id" : "process\/frps",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "frps",
+      "path" : "\/opt\/frp\/frps",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 7000
+        }
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 86384.25,
+      "detail" : "A high performance web server and a reverse proxy server",
+      "enabledAtBoot" : true,
+      "id" : "system\/nginx.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 8388608,
+      "name" : "nginx",
+      "path" : "\/usr\/lib\/systemd\/system\/nginx.service",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 80
+        },
+        {
+          "address" : "0.0.0.0",
+          "port" : 443
+        }
+      ],
+      "product" : "nginx",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "nginx.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 86389.25,
+      "detail" : "OpenBSD Secure Shell server",
+      "enabledAtBoot" : true,
+      "id" : "system\/ssh.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 6385664,
+      "name" : "OpenSSH server",
+      "path" : "\/usr\/lib\/systemd\/system\/ssh.service",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 22
+        }
+      ],
+      "product" : "ssh",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "ssh.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 86385.25,
+      "detail" : "Pi-hole FTL",
+      "enabledAtBoot" : true,
+      "id" : "system\/pihole-FTL.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 52428800,
+      "name" : "Pi-hole",
+      "path" : "\/etc\/systemd\/system\/pihole-FTL.service",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 53
+        }
+      ],
+      "product" : "pi-hole",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "pihole-FTL.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 86388.25,
+      "detail" : "Tailscale node agent",
+      "enabledAtBoot" : true,
+      "id" : "system\/tailscaled.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 41943040,
+      "name" : "Tailscale",
+      "path" : "\/usr\/lib\/systemd\/system\/tailscaled.service",
+      "ports" : [
+        {
+          "address" : "100.64.0.10",
+          "port" : 41641
+        }
+      ],
+      "product" : "tailscale",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "tailscaled.service",
+      "visibleByDefault" : true
+    }
+  ]
+}

@@ -85,6 +85,16 @@
       ]
     },
     {
+      "id": "services",
+      "description": "Read-only discovery of what runs on a server outside Docker: every loaded systemd service unit (system, and the ssh user's own `systemctl --user` units) with its state, boot setting, unit file, main PID, start time (monotonic, against ##uptime), memory and restart count; listening TCP sockets with their processes (ss -p shows only the ssh user's own processes unless it is root); and for each listening process its command line and cgroup, which ties a port to its unit or marks it as a process started by hand (a login session scope). Docker containers are left to the Docker screen. Ends with true: a server without systemd or ss prints empty sections.",
+      "script": "echo '##uptime'; cut -d' ' -f1 /proc/uptime; echo '##uid'; id -u; P=Id,Description,LoadState,ActiveState,SubState,Result,UnitFileState,FragmentPath,Type,MainPID,ActiveEnterTimestampMonotonic,MemoryCurrent,NRestarts; echo '##system'; systemctl show --no-pager -p \"$P\" '*.service' 2>/dev/null; echo '##user'; systemctl --user show --no-pager -p \"$P\" '*.service' 2>/dev/null; echo '##listen'; ss -H -tlnp 2>/dev/null; echo '##procs'; for p in $(ss -H -tlnp 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -un); do printf '%s\\t%s\\t%s\\n' \"$p\" \"$(head -c 300 /proc/$p/cmdline 2>/dev/null | tr '\\0\\n\\t' '   ')\" \"$(grep -m1 -E '^0::|name=systemd:' /proc/$p/cgroup 2>/dev/null | cut -d: -f3)\"; done; true",
+      "timeoutSeconds": 15,
+      "distros": [
+        "debian",
+        "ubuntu"
+      ]
+    },
+    {
       "id": "compose_pull",
       "kind": "action",
       "description": "docker compose pull for one stack: downloads newer images, changes no containers. {project} must match ^[a-z0-9][a-z0-9_-]*$. {dir} is the project's working directory, and {files} is `-f <path>` once per compose file, in label order (compose merges them in that order). All paths are absolute, from the project's labels, single-quoted for the shell (' becomes '\\'').",

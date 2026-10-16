@@ -1,0 +1,16 @@
+##uptime
+3600.00
+##uid
+0
+##system
+##user
+##listen
+LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=3001,fd=6))
+LISTEN 0      50           0.0.0.0:445       0.0.0.0:*    users:(("smbd",pid=3100,fd=30))
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=3200,fd=3))
+LISTEN 0      4096         0.0.0.0:8384      0.0.0.0:*    users:(("syncthing",pid=3300,fd=9))
+##procs
+3001	nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf 	/
+3100	/usr/sbin/smbd -D 	/
+3200	/usr/sbin/sshd 	/
+3300	/usr/local/bin/syncthing serve --no-browser 	/

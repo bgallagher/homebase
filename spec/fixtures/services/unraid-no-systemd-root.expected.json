@@ -1,0 +1,156 @@
+{
+  "hasSystemd" : false,
+  "isRoot" : true,
+  "services" : [
+    {
+      "detail" : "\/usr\/sbin\/dnsmasq --conf-file=\/var\/lib\/libvirt\/dnsmasq\/default.conf --leasefile-ro --dhcp-script=\/usr\/libexec\/libvirt_leaseshelper",
+      "id" : "process\/dnsmasq",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "dnsmasq",
+      "path" : "\/usr\/sbin\/dnsmasq",
+      "ports" : [
+        {
+          "address" : "192.168.122.1",
+          "port" : 53
+        }
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    },
+    {
+      "detail" : "libvirtd -d -l -f \/etc\/libvirt\/libvirtd.conf -p \/var\/run\/libvirt\/libvirtd.pid",
+      "id" : "process\/libvirtd",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "libvirtd",
+      "path" : "libvirtd",
+      "ports" : [
+        {
+          "address" : "127.0.0.1",
+          "port" : 16509
+        }
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    },
+    {
+      "detail" : "nginx: master process \/usr\/sbin\/nginx -c \/etc\/nginx\/nginx.conf",
+      "id" : "process\/nginx",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "nginx",
+      "path" : "nginx:",
+      "ports" : [
+        {
+          "address" : "100.64.0.30",
+          "port" : 80
+        },
+        {
+          "address" : "100.64.0.30",
+          "port" : 443
+        }
+      ],
+      "product" : "nginx",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "sshd: \/usr\/sbin\/sshd [listener] 0 of 10-100 startups",
+      "id" : "process\/sshd",
+      "isPlumbing" : true,
+      "kind" : "process",
+      "name" : "OpenSSH server",
+      "path" : "sshd:",
+      "ports" : [
+        {
+          "address" : "100.64.0.30",
+          "port" : 22
+        }
+      ],
+      "product" : "ssh",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    },
+    {
+      "detail" : "\/usr\/sbin\/smbd -D",
+      "id" : "process\/smbd",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "Samba",
+      "path" : "\/usr\/sbin\/smbd",
+      "ports" : [
+        {
+          "address" : "100.64.0.30",
+          "port" : 139
+        },
+        {
+          "address" : "100.64.0.30",
+          "port" : 445
+        }
+      ],
+      "product" : "samba",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "\/usr\/local\/sbin\/tailscaled -statedir \/boot\/config\/plugins\/tailscale\/state -tun tailscale1 -encrypt-state=false -hardware-attestation=false",
+      "id" : "process\/tailscaled",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "Tailscale",
+      "path" : "\/usr\/local\/sbin\/tailscaled",
+      "ports" : [
+        {
+          "address" : "100.64.0.30",
+          "port" : 5252
+        },
+        {
+          "address" : "100.64.0.30",
+          "port" : 57437
+        },
+        {
+          "address" : "[fd7a:115c:a1e0::30]",
+          "port" : 59909
+        }
+      ],
+      "product" : "tailscale",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "\/usr\/sbin\/wsdd2 -d -4 -6",
+      "id" : "process\/wsdd2",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "wsdd2",
+      "path" : "\/usr\/sbin\/wsdd2",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 3702
+        },
+        {
+          "address" : "0.0.0.0",
+          "port" : 5355
+        }
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    }
+  ]
+}

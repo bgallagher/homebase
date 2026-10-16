@@ -22,6 +22,7 @@ enum Demo {
 
     static var favicons: URL { directory.appendingPathComponent("favicons", isDirectory: true) }
     static var appIcons: URL { directory.appendingPathComponent("app-icons", isDirectory: true) }
+    static var serviceSettings: URL { directory.appendingPathComponent("services", isDirectory: true) }
 
     /// A store holding just the demo servers, in a temporary folder (never the real `servers.json`).
     static func store() -> ServerStore {
@@ -254,6 +255,8 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
     func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult {
         if command == ServerSession.overviewCommand { return CommandResult(stdout: overview()) }
         if command == DockerSession.command { return CommandResult(stdout: docker()) }
+        if command == ServicesSession.command { return CommandResult(stdout: DemoServices.output(for: profile)) }
+        if let status = DemoServices.read(command) { return CommandResult(stdout: status) }
         if command == UpdatesSession.command || command.contains("apt-get") && !command.contains("autoremove") { return try await updates.run(command, timeout: timeout) }
         if command.contains("/proc/sys/kernel/random/boot_id") && command.count < 80 { return CommandResult(stdout: "demo-boot-1\n") }
         if command.hasPrefix("F='") || command.contains("F='") && command.contains("##meta") { return fileRead(command) }
@@ -276,7 +279,7 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
             lines = DemoLibrary.logLines(count: 90)
             live = true
         } else {
-            lines = DemoLibrary.streamLines(for: command, profile: profile)
+            lines = DemoServices.streamLines(command) ?? DemoLibrary.streamLines(for: command, profile: profile)
             live = false
         }
         let wrapped = command.contains(StreamedCommand.marker)
