@@ -802,6 +802,24 @@ if args.count > 2, args[2] == "apt-stream-check" {
     print(failures == 0 ? "apt-stream-check: all passed" : "apt-stream-check: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "services" {
+    // Read-only: the Services screen's scan, shown the way the screen sorts it (shown first, then hidden).
+    let session = ServicesSession(transport: transport)
+    let t0 = Date()
+    let result = await session.refresh()
+    print("services scan: \(String(format: "%.2f", Date().timeIntervalSince(t0)))s")
+    if let e = result.error { print("error: \(e)"); exit(1) }
+    guard let snap = result.snapshot else { exit(1) }
+    print("root: \(snap.isRoot), systemd: \(snap.hasSystemd), \(snap.services.count) services")
+    for shown in [true, false] {
+        print(shown ? "SHOWN" : "HIDDEN")
+        for s in snap.services where s.visibleByDefault == shown {
+            let ports = s.ports.map { "\($0.address):\($0.port)" }.joined(separator: " ")
+            print("   \(s.name) [\(s.kind.rawValue), \(s.status.rawValue)] \(s.unit ?? s.detail.prefix(60).description) \(ports)")
+        }
+    }
+    exit(0)
+}
 if args.count > 2, args[2] == "updates" {
     let session = UpdatesSession(transport: transport)
     let t0 = Date()

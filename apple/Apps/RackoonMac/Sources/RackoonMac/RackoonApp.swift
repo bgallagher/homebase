@@ -180,7 +180,7 @@ struct GoCommands: Commands {
     @FocusedValue(\.appActions) private var actions
 
     private static let screens: [(Screen, KeyEquivalent)] = [
-        (.dashboard, "0"), (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"),
+        (.dashboard, "0"), (.overview, "1"), (.docker, "2"), (.updates, "3"), (.bookmarks, "4"), (.files, "5"), (.terminal, "6"), (.command, "7"), (.services, "8"),
     ]
 
     var body: some Commands {
@@ -349,7 +349,14 @@ struct ContentView: View {
                         model.select(server)
                     },
                     onEdit: { editing = $0 },
-                    onRemove: { terminals.closeAll(for: $0); dockerWorkspace.forget(serverID: $0.id); AppIconStore.shared.forget(serverID: $0.id); model.remove($0) },
+                    onRemove: { server in
+                        terminals.closeAll(for: server)
+                        dockerWorkspace.forget(serverID: server.id)
+                        AppIconStore.shared.forget(serverID: server.id)
+                        ServicesStore.shared.forget(serverID: server.id)
+                        ServiceVisibilityStore.shared.forget(serverID: server.id)
+                        model.remove(server)
+                    },
                     onReorder: { model.reorder($0) },
                     onAddServer: { showingAdd = true })
             }
@@ -395,6 +402,7 @@ struct ContentView: View {
         if model.update(server) {
             terminals.closeAll(for: server)
             dockerWorkspace.forget(serverID: server.id)
+            ServicesStore.shared.forget(serverID: server.id)
         }
     }
 
@@ -499,6 +507,13 @@ struct ContentView: View {
                         terminals.newTab(for: server, title: "Shell · \(container.service ?? container.name)", command: shell)
                         selection = .terminal
                     }).id(DockerElevation.shared.key(server))
+                case .services:
+                    ServicesScreen(server: server, theme: appearance.resolvedTheme,
+                                   webHost: model.state.overview?.tailscaleIP ?? model.state.overview?.ipAddress,
+                                   openInTerminal: { title, command in
+                                       terminals.newTab(for: server, title: title, command: command)
+                                       selection = .terminal
+                                   }).id(server.connectionKey)
                 case .bookmarks:
                     BookmarksScreen(server: server, workspace: dockerWorkspace,
                                     openStack: { id in dockerWorkspace.openStack[server.id] = id; selection = .docker })

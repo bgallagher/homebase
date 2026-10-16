@@ -3,8 +3,8 @@ import Charts
 import RackoonCore
 import SwiftUI
 
-/// Every server at once, as a carousel of four pages: Health (uptime and resource history), Servers (one tile each),
-/// Docker (every stack, grouped by server) and Bookmarks (grouped by server). Reads what the polls already have: the
+/// Every server at once, as a carousel of pages: Health (uptime and resource history), Servers (one tile each),
+/// Docker (every stack, grouped by server), Services (what runs outside Docker) and Bookmarks (grouped by server). Reads what the polls already have: the
 /// selected server's live poll, the others' once-a-minute poll (`FleetMonitor`), and, while the Docker or Bookmarks page
 /// is showing, each answering server's Docker poll.
 struct DashboardScreen: View {
@@ -15,13 +15,14 @@ struct DashboardScreen: View {
     let openStack: (Server, String) -> Void
 
     enum Page: String, CaseIterable, Identifiable {
-        case health, servers, docker, bookmarks
+        case health, servers, docker, services, bookmarks
         var id: String { rawValue }
         var title: String {
             switch self {
             case .health: "Health"
             case .servers: "Servers"
             case .docker: "Docker"
+            case .services: "Services"
             case .bookmarks: "Bookmarks"
             }
         }
@@ -30,6 +31,7 @@ struct DashboardScreen: View {
             case .health: "waveform.path.ecg"
             case .servers: "server.rack"
             case .docker: "shippingbox"
+            case .services: "gearshape.2"
             case .bookmarks: "bookmark"
             }
         }
@@ -137,6 +139,7 @@ struct DashboardScreen: View {
                 case .health: HealthPage(rows: rows, openServer: { openServer($0, .overview) })
                 case .servers: ServersPage(rows: rows, openServer: openServer)
                 case .docker: DockerPage(rows: rows, workspace: workspace, openServer: openServer, openStack: openStack)
+                case .services: ServicesPage(rows: rows, openServer: openServer)
                 case .bookmarks: BookmarksPage(rows: rows, workspace: workspace)
                 }
             }
@@ -788,6 +791,116 @@ private struct AppTile: View {
         let mem = stack.containers.compactMap(\.memoryUsedBytes).reduce(0, +)
         guard !cpu.isEmpty else { return "" }
         return "\(Format.percent(cpu.reduce(0, +))) · \(Format.bytes(mem))"
+    }
+}
+
+// MARK: - Services
+
+/// Keeps each answering server's services scan running while the Services page is visible.
+private struct ServicesAttachment: ViewModifier {
+    let rows: [FleetRow]
+    @State private var attached: [String: ServicesModel] = [:]
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { sync() }
+            .onChange(of: rows.filter(\.isOnline).map(\.id)) { _, _ in sync() }
+            .onDisappear {
+                for model in attached.values { model.detach() }
+                attached = [:]
+            }
+    }
+
+    private func sync() {
+        for row in rows where row.isOnline {
+            let model = ServicesStore.shared.model(for: row.server)
+            if attached[row.id] !== model {
+                attached[row.id]?.detach()
+                model.attach()
+                attached[row.id] = model
+            }
+        }
+    }
+}
+
+/// What runs outside Docker on every server: the services each one shows (the same choices as its Services screen).
+private struct ServicesPage: View {
+    let rows: [FleetRow]
+    let openServer: (Server, Screen) -> Void
+    private let visibility = ServiceVisibilityStore.shared
+
+    var body: some View {
+        let sections = rows.map { row in
+            (row: row, snapshot: row.isOnline ? ServicesStore.shared.model(for: row.server).snapshot : nil)
+        }
+        let shown = sections.flatMap { s in (s.snapshot?.services ?? []).filter { visibility.isVisible($0, server: s.row.server.id) } }
+        let read = sections.filter { $0.snapshot != nil }.count
+        VStack(alignment: .leading, spacing: 14) {
+            TileGrid(count: 4) {
+                Headline(title: "Services shown", value: "\(shown.count)", detail: "on \(read) server\(read == 1 ? "" : "s")")
+                Headline(title: "Running", value: "\(shown.filter(\.isRunning).count) / \(shown.count)", detail: "systemd and by hand")
+                let problems = shown.filter(\.isProblem).count
+                Headline(title: "Need attention", value: "\(problems)", detail: problems > 0 ? "failed or restarting" : "None failing",
+                         detailTint: problems > 0 ? Theme.danger : Theme.textMuted)
+                Headline(title: "Started by hand", value: "\(shown.filter { $0.kind == .process }.count)",
+                         detail: "not run by systemd")
+            }
+            ForEach(sections, id: \.row.id) { section in
+                ServicesServerSection(row: section.row, snapshot: section.snapshot,
+                                      error: section.row.isOnline ? ServicesStore.shared.model(for: section.row.server).error : nil,
+                                      open: { openServer(section.row.server, .services) })
+            }
+        }
+        .modifier(ServicesAttachment(rows: rows))
+    }
+}
+
+private struct ServicesServerSection: View {
+    let row: FleetRow
+    let snapshot: ServicesSnapshot?
+    let error: String?
+    let open: () -> Void
+    private let visibility = ServiceVisibilityStore.shared
+
+    var body: some View {
+        let shown = (snapshot?.services ?? []).filter { visibility.isVisible($0, server: row.server.id) }
+            .sorted { ($0.isProblem ? 0 : 1, $0.name.lowercased()) < ($1.isProblem ? 0 : 1, $1.name.lowercased()) }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                StatusDot(status: lightStatus(row), glow: row.isOnline)
+                Text(row.server.name).font(.system(size: 15, weight: .semibold))
+                if snapshot != nil {
+                    let problems = shown.filter(\.isProblem).count
+                    if problems > 0 {
+                        Text("\(problems) need\(problems == 1 ? "s" : "") attention").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.danger)
+                    }
+                    Text("\(shown.count) shown · \((snapshot?.services.count ?? 0) - shown.count) hidden")
+                        .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                }
+                Spacer()
+                Button("Open Services", action: open).buttonStyle(.bordered).controlSize(.small).handCursor()
+            }
+            if !row.isOnline {
+                Text(offlineNote(row)).font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+            } else if snapshot != nil {
+                if shown.isEmpty {
+                    Text("Nothing shown on this server. Open Services to choose what to watch.").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 12, alignment: .top)], spacing: 12) {
+                        ForEach(shown) { service in
+                            ServiceCard(service: service, serverID: row.server.id,
+                                        webHost: row.state.overview?.tailscaleIP ?? row.state.overview?.ipAddress)
+                        }
+                    }
+                }
+            } else if let error {
+                Text(error).font(.system(size: 12)).foregroundStyle(Theme.textMuted).lineLimit(3)
+            } else {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Looking for services…") }
+                    .font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+            }
+        }
+        .padding(.top, 6)
     }
 }
 

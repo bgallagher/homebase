@@ -1,0 +1,82 @@
+{
+  "hasSystemd" : false,
+  "isRoot" : true,
+  "services" : [
+    {
+      "detail" : "nginx: master process \/usr\/sbin\/nginx -c \/etc\/nginx\/nginx.conf",
+      "id" : "process\/nginx",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "nginx",
+      "path" : "nginx:",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 80
+        }
+      ],
+      "product" : "nginx",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "\/usr\/sbin\/sshd",
+      "id" : "process\/sshd",
+      "isPlumbing" : true,
+      "kind" : "process",
+      "name" : "OpenSSH server",
+      "path" : "\/usr\/sbin\/sshd",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 22
+        }
+      ],
+      "product" : "ssh",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : false
+    },
+    {
+      "detail" : "\/usr\/sbin\/smbd -D",
+      "id" : "process\/smbd",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "Samba",
+      "path" : "\/usr\/sbin\/smbd",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 445
+        }
+      ],
+      "product" : "samba",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    },
+    {
+      "detail" : "\/usr\/local\/bin\/syncthing serve --no-browser",
+      "id" : "process\/syncthing",
+      "isPlumbing" : false,
+      "kind" : "process",
+      "name" : "Syncthing",
+      "path" : "\/usr\/local\/bin\/syncthing",
+      "ports" : [
+        {
+          "address" : "0.0.0.0",
+          "port" : 8384
+        }
+      ],
+      "product" : "syncthing",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "visibleByDefault" : true
+    }
+  ]
+}

@@ -82,6 +82,35 @@ public struct IconChoices: Sendable, Equatable {
         return overrides.count != before
     }
 
+    // MARK: discovered services
+
+    /// A discovered service's key, `<server id>|service:<service id>`. Stack ids never contain a colon, so the two kinds of
+    /// key can't meet.
+    public static func key(server: String, service: DiscoveredService) -> String { "\(server)|service:\(service.id)" }
+
+    /// A service's icon: the user's choice, else its product's icon or a guess from its name. Nil: the letter.
+    public func serviceIcon(_ service: DiscoveredService, server: String, catalog: IconCatalog?) -> String? {
+        if let chosen = overrides[Self.key(server: server, service: service)] { return chosen.isEmpty ? nil : chosen }
+        return AppIconGuess.iconID(for: service, in: catalog)
+    }
+
+    public func prefersLetter(_ service: DiscoveredService, server: String) -> Bool {
+        overrides[Self.key(server: server, service: service)] == ""
+    }
+
+    public func isChosen(_ service: DiscoveredService, server: String) -> Bool {
+        overrides[Self.key(server: server, service: service)] != nil
+    }
+
+    /// `id`: an icon; "" for the letter; nil to go back to the automatic choice. False (nothing changes) for an id that
+    /// may not be saved.
+    @discardableResult
+    public mutating func choose(_ id: String?, for service: DiscoveredService, server: String) -> Bool {
+        guard id.map({ $0.isEmpty || (AppIconRef(id: $0)?.isChoosable ?? false) }) ?? true else { return false }
+        overrides[Self.key(server: server, service: service)] = id
+        return true
+    }
+
     /// Every choice that used `id` goes back to automatic (the image was deleted). Returns whether anything changed.
     @discardableResult
     public mutating func removeUses(of id: String) -> Bool {

@@ -123,6 +123,22 @@ final class AppIconStore {
         if let id, !id.isEmpty { ensure([id], urgent: true) }
     }
 
+    // Discovered services (the Services screen): same rules, keyed `<server>|service:<id>`.
+
+    func serviceIcon(_ service: DiscoveredService, server: String) -> String? {
+        choices.serviceIcon(service, server: server, catalog: catalog)
+    }
+
+    func prefersLetter(_ service: DiscoveredService, server: String) -> Bool { choices.prefersLetter(service, server: server) }
+    func guessedIcon(_ service: DiscoveredService) -> String? { AppIconGuess.iconID(for: service, in: catalog) }
+    func isChosen(_ service: DiscoveredService, server: String) -> Bool { choices.isChosen(service, server: server) }
+
+    func choose(_ id: String?, for service: DiscoveredService, server: String) {
+        guard choices.choose(id, for: service, server: server) else { return }
+        saveChoices()
+        if let id, !id.isEmpty { ensure([id], urgent: true) }
+    }
+
     /// A removed server's choices go with it (the user's own images stay, they may be used elsewhere).
     func forget(serverID: String) {
         if choices.forget(serverID: serverID) { saveChoices() }
@@ -341,6 +357,64 @@ struct ServiceIconView: View {
     }
 }
 
+/// A discovered service's icon: the chosen or guessed catalog icon, else the site icon of the first web page it serves,
+/// else a letter.
+struct SystemServiceIconView: View {
+    let service: DiscoveredService
+    let serverID: String
+    /// The address the Mac reaches the server on, for the site icon of its web port.
+    var webHost: String?
+    var size: CGFloat = 26
+
+    var body: some View {
+        let store = AppIconStore.shared
+        let name = store.serviceIcon(service, server: serverID)
+        let letter = store.prefersLetter(service, server: serverID)
+        let site = letter ? nil : webHref
+        Group {
+            if let name, let image = store.image(name) {
+                IconImage(image: image, size: size)
+            } else if name == nil, let site, let image = FaviconStore.shared.image(for: site) {
+                IconImage(image: image, size: size)
+            } else {
+                LetterTile(name: service.name, size: size)
+            }
+        }
+        .task(id: "\(name ?? "-")|\(store.catalog != nil)|\(site ?? "")") {
+            store.ensureCatalog()
+            if let name { store.ensure([name], urgent: true) }
+            else if store.catalog != nil, let site { FaviconStore.shared.ensure([site]) }
+        }
+    }
+
+    private var webHref: String? {
+        guard let port = service.ports.first(where: { $0.isLikelyWeb && $0.linkHost(preferred: webHost) != nil }),
+              let host = port.linkHost(preferred: webHost) else { return nil }
+        return "http://\(host):\(port.port)"
+    }
+}
+
+/// A discovered service's icon that opens the picker when clicked.
+struct EditableServiceIcon: View {
+    let service: DiscoveredService
+    let serverID: String
+    var webHost: String?
+    var size: CGFloat = 26
+    @State private var picking = false
+
+    var body: some View {
+        Button { picking = true } label: {
+            SystemServiceIconView(service: service, serverID: serverID, webHost: webHost, size: size).contentShape(Rectangle())
+        }
+        .buttonStyle(.pointer)
+        .help("Change the icon")
+        .accessibilityLabel("Icon of \(service.name), change")
+        .popover(isPresented: $picking, arrowEdge: .bottom) {
+            IconPicker(target: .service(service), serverID: serverID, close: { picking = false })
+        }
+    }
+}
+
 /// An icon that opens the picker when clicked: the app's icon, or one service's when `container` is set.
 struct EditableIcon: View {
     let stack: DockerStack
@@ -365,16 +439,82 @@ struct EditableIcon: View {
         .help("Change the icon")
         .accessibilityLabel(container.map { "Icon of \(AppIconStore.serviceKey($0)), change" } ?? "Icon of \(stack.name), change")
         .popover(isPresented: $picking, arrowEdge: .bottom) {
-            IconPicker(stack: stack, container: container, serverID: serverID, close: { picking = false })
+            IconPicker(target: .app(stack, container), serverID: serverID, close: { picking = false })
         }
+    }
+}
+
+/// What an icon is being chosen for: a Docker app or one of its services, or a discovered (non-Docker) service.
+enum IconTarget {
+    case app(DockerStack, DockerContainer?)
+    case service(DiscoveredService)
+
+    var title: String {
+        switch self {
+        case .app(let stack, let container): container.map(IconChoices.serviceKey) ?? stack.name
+        case .service(let s): s.name
+        }
+    }
+
+    @MainActor func current(_ store: AppIconStore, server: String) -> String? {
+        switch self {
+        case .app(let stack, let container):
+            container.map { store.serviceIcon($0, in: stack, server: server) } ?? store.stackIcon(stack, server: server)
+        case .service(let s): store.serviceIcon(s, server: server)
+        }
+    }
+
+    @MainActor func isChosen(_ store: AppIconStore, server: String) -> Bool {
+        switch self {
+        case .app(let stack, let container): store.isChosen(stack, service: container, server: server)
+        case .service(let s): store.isChosen(s, server: server)
+        }
+    }
+
+    @MainActor func choose(_ id: String?, _ store: AppIconStore, server: String) {
+        switch self {
+        case .app(let stack, let container): store.choose(id, for: stack, service: container, server: server)
+        case .service(let s): store.choose(id, for: s, server: server)
+        }
+    }
+
+    @MainActor func guess(_ store: AppIconStore) -> String? {
+        switch self {
+        case .app(let stack, let container): container.map { store.guessedServiceIcon($0) } ?? store.guessedStackIcon(stack)
+        case .service(let s): store.guessedIcon(s)
+        }
+    }
+
+    /// The second button: an app's letter, or (a Docker service) the app's own icon.
+    var alternateLabel: String {
+        if case .app(_, let container) = self, container != nil { return "Use App's Icon" }
+        return "Use Letter"
+    }
+
+    /// The automatic icon first (an Unraid template icon included), then guesses from the names involved.
+    @MainActor func suggestions(_ store: AppIconStore, catalog: IconCatalog) -> [String] {
+        var out: [String] = []
+        switch self {
+        case .app(let stack, let container):
+            if let container { out.append(contentsOf: [store.guessedServiceIcon(container)].compactMap { $0 }) }
+            out.append(contentsOf: [store.guessedStackIcon(stack)].compactMap { $0 })
+            out += stack.containers.compactMap { AppIconGuess.iconID(for: $0, in: catalog) }
+            out += catalog.search(stack.name, limit: 10)
+            if let container { out += catalog.search(IconChoices.serviceKey(container), limit: 10) }
+        case .service(let s):
+            out.append(contentsOf: [store.guessedIcon(s)].compactMap { $0 })
+            out += catalog.search(s.name, limit: 10)
+            if let unit = s.unit { out += catalog.search(ServiceCatalog.baseName(unit), limit: 10) }
+        }
+        var seen = Set<String>()
+        return out.filter { seen.insert($0).inserted }
     }
 }
 
 /// Search both icon collections and pick one, use an image of your own (Upload Image… or drop a file), or go back to the
 /// automatic choice.
 struct IconPicker: View {
-    let stack: DockerStack
-    let container: DockerContainer?
+    let target: IconTarget
     let serverID: String
     let close: () -> Void
     @State private var query = ""
@@ -382,7 +522,7 @@ struct IconPicker: View {
     @State private var importProblem: String?
     @State private var dropTargeted = false
 
-    private var title: String { container.map(AppIconStore.serviceKey) ?? stack.name }
+    private var title: String { target.title }
 
     var body: some View {
         let store = AppIconStore.shared
@@ -443,11 +583,11 @@ struct IconPicker: View {
             }
             Divider()
             HStack(spacing: 8) {
-                Button(automaticLabel) { store.choose(nil, for: stack, service: container, server: serverID); close() }
+                Button(automaticLabel) { target.choose(nil, store, server: serverID); close() }
                     .handCursor()
-                    .disabled(!store.isChosen(stack, service: container, server: serverID))
-                Button(container == nil ? "Use Letter" : "Use App's Icon") {
-                    store.choose("", for: stack, service: container, server: serverID); close()
+                    .disabled(!target.isChosen(store, server: serverID))
+                Button(target.alternateLabel) {
+                    target.choose("", store, server: serverID); close()
                 }
                 .handCursor()
                 Spacer()
@@ -478,25 +618,13 @@ struct IconPicker: View {
     }
 
     private var automaticLabel: String {
-        let store = AppIconStore.shared
-        let guess = container.map { store.guessedServiceIcon($0) } ?? store.guessedStackIcon(stack)
+        let guess = target.guess(AppIconStore.shared)
         guard let guess, let ref = AppIconRef(id: guess) else { return "Automatic" }
         if case .remote = ref { return "Automatic (Unraid template)" }
         return "Automatic (\(ref.displayName))"
     }
 
-    /// The automatic icon first (an Unraid template icon included), then guesses for this app and its other services.
-    private func suggestions(_ catalog: IconCatalog) -> [String] {
-        let store = AppIconStore.shared
-        var out: [String] = []
-        if let container { out.append(contentsOf: [store.guessedServiceIcon(container)].compactMap { $0 }) }
-        out.append(contentsOf: [store.guessedStackIcon(stack)].compactMap { $0 })
-        out += stack.containers.compactMap { AppIconGuess.iconID(for: $0, in: catalog) }
-        out += catalog.search(stack.name, limit: 10)
-        if let container { out += catalog.search(AppIconStore.serviceKey(container), limit: 10) }
-        var seen = Set<String>()
-        return out.filter { seen.insert($0).inserted }
-    }
+    private func suggestions(_ catalog: IconCatalog) -> [String] { target.suggestions(AppIconStore.shared, catalog: catalog) }
 
     private func pickFile() {
         let panel = NSOpenPanel()
@@ -517,20 +645,20 @@ struct IconPicker: View {
             importProblem = "That file isn't an image Rackoon can read (or it is over 8 MB)."
             return
         }
-        AppIconStore.shared.choose(id, for: stack, service: container, server: serverID)
+        target.choose(id, AppIconStore.shared, server: serverID)
         close()
     }
 
     private func cell(_ id: String) -> some View {
         let store = AppIconStore.shared
-        let current = container.map { store.serviceIcon($0, in: stack, server: serverID) } ?? store.stackIcon(stack, server: serverID)
+        let current = target.current(store, server: serverID)
         let ref = AppIconRef(id: id)
         let isCustom: Bool = if case .custom = ref { true } else { false }
         return Button {
             if ref?.isChoosable == true {
-                store.choose(id, for: stack, service: container, server: serverID)
+                target.choose(id, store, server: serverID)
             } else {
-                store.choose(nil, for: stack, service: container, server: serverID)   // the template icon is the automatic one
+                target.choose(nil, store, server: serverID)   // the template icon is the automatic one
             }
             close()
         } label: {

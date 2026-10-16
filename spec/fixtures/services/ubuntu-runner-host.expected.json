@@ -1,0 +1,839 @@
+{
+  "hasSystemd" : true,
+  "isRoot" : false,
+  "services" : [
+    {
+      "activeSeconds" : 180722.88686900001,
+      "detail" : "Avahi mDNS\/DNS-SD Stack",
+      "enabledAtBoot" : true,
+      "id" : "system\/avahi-daemon.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 2060288,
+      "name" : "avahi-daemon",
+      "path" : "\/usr\/lib\/systemd\/system\/avahi-daemon.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "avahi-daemon.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180716.59343800001,
+      "detail" : "Beszel Agent Service",
+      "enabledAtBoot" : true,
+      "id" : "system\/beszel-agent.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 10530816,
+      "name" : "Beszel agent",
+      "path" : "\/etc\/systemd\/system\/beszel-agent.service",
+      "ports" : [
+
+      ],
+      "product" : "beszel-agent",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "beszel-agent.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 111791.759412,
+      "detail" : "Bluetooth service",
+      "enabledAtBoot" : true,
+      "id" : "system\/bluetooth.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 802816,
+      "name" : "bluetooth",
+      "path" : "\/usr\/lib\/systemd\/system\/bluetooth.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "bluetooth.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.67933800002,
+      "detail" : "Thunderbolt system service",
+      "id" : "system\/bolt.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 1503232,
+      "name" : "bolt",
+      "path" : "\/usr\/lib\/systemd\/system\/bolt.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "bolt.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.84168800001,
+      "detail" : "chrony, an NTP client\/server",
+      "enabledAtBoot" : true,
+      "id" : "system\/chrony.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 6516736,
+      "name" : "chrony",
+      "path" : "\/usr\/lib\/systemd\/system\/chrony.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "chrony.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 84852.72180900001,
+      "detail" : "containerd container runtime",
+      "enabledAtBoot" : true,
+      "id" : "system\/containerd.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 66277376,
+      "name" : "containerd",
+      "path" : "\/usr\/lib\/systemd\/system\/containerd.service",
+      "ports" : [
+
+      ],
+      "product" : "containerd",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "containerd.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.98173500001,
+      "detail" : "Regular background program processing daemon",
+      "enabledAtBoot" : true,
+      "id" : "system\/cron.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 540672,
+      "name" : "cron",
+      "path" : "\/usr\/lib\/systemd\/system\/cron.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "cron.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 82375.593810999999,
+      "detail" : "CUPS Scheduler",
+      "enabledAtBoot" : true,
+      "id" : "system\/cups.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 2543616,
+      "name" : "cups",
+      "path" : "\/usr\/lib\/systemd\/system\/cups.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "cups.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 82375.590500000006,
+      "detail" : "Make remote CUPS printers available locally",
+      "enabledAtBoot" : true,
+      "id" : "system\/cups-browsed.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 4022272,
+      "name" : "cups-browsed",
+      "path" : "\/usr\/lib\/systemd\/system\/cups-browsed.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "cups-browsed.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.89584400001,
+      "detail" : "D-Bus System Message Bus",
+      "id" : "system\/dbus.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 4378624,
+      "name" : "dbus",
+      "path" : "\/usr\/lib\/systemd\/system\/dbus.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "dbus.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 88872.684002000009,
+      "detail" : "D-Bus User Message Bus",
+      "id" : "user\/dbus.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 696320,
+      "name" : "dbus",
+      "path" : "\/usr\/lib\/systemd\/user\/dbus.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "dbus.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 84836.165345000001,
+      "detail" : "Docker Application Container Engine",
+      "enabledAtBoot" : true,
+      "id" : "system\/docker.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 60534784,
+      "name" : "Docker Engine",
+      "path" : "\/usr\/lib\/systemd\/system\/docker.service",
+      "ports" : [
+
+      ],
+      "product" : "docker",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "docker.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 88872.678532000005,
+      "detail" : "PipeWire filter chain daemon",
+      "enabledAtBoot" : true,
+      "id" : "user\/filter-chain.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 851968,
+      "name" : "filter-chain",
+      "path" : "\/usr\/lib\/systemd\/user\/filter-chain.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "filter-chain.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180714.55945299999,
+      "detail" : "Firmware update daemon",
+      "id" : "system\/fwupd.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 37232640,
+      "name" : "fwupd",
+      "path" : "\/usr\/lib\/systemd\/system\/fwupd.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "fwupd.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.53431700001,
+      "detail" : "Getty on tty1",
+      "enabledAtBoot" : true,
+      "id" : "system\/getty@tty1.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 667648,
+      "name" : "getty (tty1)",
+      "path" : "\/usr\/lib\/systemd\/system\/getty@.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "getty@tty1.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180716.74057699999,
+      "detail" : "GitHub Actions Runner (example-repo.runner1)",
+      "enabledAtBoot" : true,
+      "id" : "system\/actions.runner.example-repo.runner1.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 175841280,
+      "name" : "GitHub Actions runner",
+      "path" : "\/etc\/systemd\/system\/actions.runner.example-repo.runner1.service",
+      "ports" : [
+
+      ],
+      "product" : "github-runner",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "actions.runner.example-repo.runner1.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 180722.82459400001,
+      "detail" : "IIO Sensor Proxy service",
+      "id" : "system\/iio-sensor-proxy.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 1736704,
+      "name" : "iio-sensor-proxy",
+      "path" : "\/usr\/lib\/systemd\/system\/iio-sensor-proxy.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "iio-sensor-proxy.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180716.58085299999,
+      "detail" : "Follow lab journal",
+      "enabledAtBoot" : true,
+      "id" : "system\/lab-journal.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 6217728,
+      "name" : "lab-journal",
+      "path" : "\/etc\/systemd\/system\/lab-journal.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "lab-journal.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 180722.997145,
+      "detail" : "netconsole listener for lab",
+      "enabledAtBoot" : true,
+      "id" : "system\/lab-netconsole.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 1445888,
+      "name" : "lab-netconsole",
+      "path" : "\/etc\/systemd\/system\/lab-netconsole.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "lab-netconsole.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 180722.649748,
+      "detail" : "Modem Manager",
+      "enabledAtBoot" : true,
+      "id" : "system\/ModemManager.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 9244672,
+      "name" : "ModemManager",
+      "path" : "\/usr\/lib\/systemd\/system\/ModemManager.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "ModemManager.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 88872.681001000004,
+      "detail" : "Bluetooth mpris proxy",
+      "enabledAtBoot" : true,
+      "id" : "user\/mpris-proxy.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 380928,
+      "name" : "mpris-proxy",
+      "path" : "\/usr\/lib\/systemd\/user\/mpris-proxy.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "mpris-proxy.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.70334500002,
+      "detail" : "Dispatcher daemon for systemd-networkd",
+      "enabledAtBoot" : true,
+      "id" : "system\/networkd-dispatcher.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 21024768,
+      "name" : "networkd-dispatcher",
+      "path" : "\/usr\/lib\/systemd\/system\/networkd-dispatcher.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "networkd-dispatcher.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.74192100001,
+      "detail" : "Network Manager",
+      "enabledAtBoot" : true,
+      "id" : "system\/NetworkManager.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 12017664,
+      "name" : "NetworkManager",
+      "path" : "\/usr\/lib\/systemd\/system\/NetworkManager.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "NetworkManager.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 108429.515914,
+      "detail" : "OpenBSD Secure Shell server",
+      "enabledAtBoot" : false,
+      "id" : "system\/ssh.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 6594560,
+      "name" : "OpenSSH server",
+      "path" : "\/usr\/lib\/systemd\/system\/ssh.service",
+      "ports" : [
+
+      ],
+      "product" : "ssh",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "ssh.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 88872.691112,
+      "detail" : "PipeWire Multimedia Service",
+      "enabledAtBoot" : true,
+      "id" : "user\/pipewire.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 2048000,
+      "name" : "pipewire",
+      "path" : "\/usr\/lib\/systemd\/user\/pipewire.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "pipewire.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 88872.673882000003,
+      "detail" : "PipeWire PulseAudio",
+      "enabledAtBoot" : true,
+      "id" : "user\/pipewire-pulse.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 1683456,
+      "name" : "pipewire-pulse",
+      "path" : "\/usr\/lib\/systemd\/user\/pipewire-pulse.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "pipewire-pulse.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.830196,
+      "detail" : "Authorization Manager",
+      "id" : "system\/polkit.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 7213056,
+      "name" : "polkit",
+      "path" : "\/usr\/lib\/systemd\/system\/polkit.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "polkit.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180731.22966499999,
+      "detail" : "RPC bind portmap service",
+      "enabledAtBoot" : true,
+      "id" : "system\/rpcbind.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 2199552,
+      "name" : "rpcbind",
+      "path" : "\/usr\/lib\/systemd\/system\/rpcbind.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "rpcbind.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.806625,
+      "detail" : "System Logging Service",
+      "enabledAtBoot" : true,
+      "id" : "system\/rsyslog.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 8224768,
+      "name" : "rsyslog",
+      "path" : "\/usr\/lib\/systemd\/system\/rsyslog.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "rsyslog.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.00091900001,
+      "detail" : "RealtimeKit Scheduling Policy Service",
+      "enabledAtBoot" : false,
+      "id" : "system\/rtkit-daemon.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 638976,
+      "name" : "rtkit-daemon",
+      "path" : "\/usr\/lib\/systemd\/system\/rtkit-daemon.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "rtkit-daemon.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180732.81980100001,
+      "detail" : "Journal Service",
+      "id" : "system\/systemd-journald.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 93319168,
+      "name" : "systemd-journald",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-journald.service",
+      "ports" : [
+
+      ],
+      "restarts" : 1,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-journald.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.88563599999,
+      "detail" : "User Login Management",
+      "id" : "system\/systemd-logind.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 3198976,
+      "name" : "systemd-logind",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-logind.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-logind.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180730.50031800001,
+      "detail" : "Network Management",
+      "enabledAtBoot" : true,
+      "id" : "system\/systemd-networkd.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 4083712,
+      "name" : "systemd-networkd",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-networkd.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-networkd.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180732.72007700001,
+      "detail" : "Userspace Out-Of-Memory (OOM) Killer",
+      "enabledAtBoot" : true,
+      "id" : "system\/systemd-oomd.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 1581056,
+      "name" : "systemd-oomd",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-oomd.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-oomd.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180732.715215,
+      "detail" : "Network Name Resolution",
+      "enabledAtBoot" : true,
+      "id" : "system\/systemd-resolved.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 9342976,
+      "name" : "systemd-resolved",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-resolved.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-resolved.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180732.698512,
+      "detail" : "Rule-based Manager for Device Events and Files",
+      "id" : "system\/systemd-udevd.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 62038016,
+      "name" : "systemd-udevd",
+      "path" : "\/usr\/lib\/systemd\/system\/systemd-udevd.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "systemd-udevd.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 84850.466943000007,
+      "detail" : "Tailscale node agent",
+      "enabledAtBoot" : true,
+      "id" : "system\/tailscaled.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 28184576,
+      "name" : "Tailscale",
+      "path" : "\/usr\/lib\/systemd\/system\/tailscaled.service",
+      "ports" : [
+
+      ],
+      "product" : "tailscale",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "tailscaled.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 180716.19688599999,
+      "detail" : "Disk Manager",
+      "enabledAtBoot" : true,
+      "id" : "system\/udisks2.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 6393856,
+      "name" : "udisks2",
+      "path" : "\/usr\/lib\/systemd\/system\/udisks2.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "udisks2.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.71265200002,
+      "detail" : "Unattended Upgrades Shutdown",
+      "enabledAtBoot" : true,
+      "id" : "system\/unattended-upgrades.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 15478784,
+      "name" : "unattended-upgrades",
+      "path" : "\/usr\/lib\/systemd\/system\/unattended-upgrades.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "unattended-upgrades.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180715.21619100001,
+      "detail" : "Daemon for power management",
+      "enabledAtBoot" : false,
+      "id" : "system\/upower.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 7454720,
+      "name" : "upower",
+      "path" : "\/usr\/lib\/systemd\/system\/upower.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "upower.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 88872.692588999998,
+      "detail" : "User Manager for UID 1000",
+      "id" : "system\/user@1000.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 18444288,
+      "name" : "user (1000)",
+      "path" : "\/usr\/lib\/systemd\/system\/user@.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "user@1000.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180710.23429600001,
+      "detail" : "Wazuh agent",
+      "enabledAtBoot" : true,
+      "id" : "system\/wazuh-agent.service",
+      "isPlumbing" : false,
+      "kind" : "system",
+      "memoryBytes" : 851849216,
+      "name" : "Wazuh agent",
+      "path" : "\/usr\/lib\/systemd\/system\/wazuh-agent.service",
+      "ports" : [
+
+      ],
+      "product" : "wazuh-agent",
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "wazuh-agent.service",
+      "visibleByDefault" : true
+    },
+    {
+      "activeSeconds" : 88872.679887000006,
+      "detail" : "Multimedia Service Session Manager",
+      "enabledAtBoot" : true,
+      "id" : "user\/wireplumber.service",
+      "isPlumbing" : true,
+      "kind" : "user",
+      "memoryBytes" : 6189056,
+      "name" : "wireplumber",
+      "path" : "\/usr\/lib\/systemd\/user\/wireplumber.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "wireplumber.service",
+      "visibleByDefault" : false
+    },
+    {
+      "activeSeconds" : 180722.844319,
+      "detail" : "WPA supplicant",
+      "enabledAtBoot" : true,
+      "id" : "system\/wpa_supplicant.service",
+      "isPlumbing" : true,
+      "kind" : "system",
+      "memoryBytes" : 3379200,
+      "name" : "wpa_supplicant",
+      "path" : "\/usr\/lib\/systemd\/system\/wpa_supplicant.service",
+      "ports" : [
+
+      ],
+      "restarts" : 0,
+      "status" : "running",
+      "subState" : "running",
+      "unit" : "wpa_supplicant.service",
+      "visibleByDefault" : false
+    }
+  ]
+}
