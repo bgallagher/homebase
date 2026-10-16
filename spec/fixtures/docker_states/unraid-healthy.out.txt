@@ -1,0 +1,47 @@
+9dd4f2413a021f9a92b28f87977e0b9a6459f9effe8d0583362a000a9ddb3635	nextcloud-aio-apache	running	Up About an hour (healthy)	nextcloud-aio	
+2b10a7aeb9c48a6cfc0fc2442473da4377a87df5a6a1a261878860d51816810a	nextcloud-aio-nextcloud	running	Up About an hour (healthy)	nextcloud-aio	
+f7571f770471562469186464d8398d3ee981dad77ed097303ded02dcee087833	nextcloud-aio-imaginary	running	Up About an hour (healthy)	nextcloud-aio	
+49869fcde752b1ce8f2a04b5b1e5e9a83bf6c488b00259127d20bc75949697b4	nextcloud-aio-fulltextsearch	running	Up About an hour (healthy)	nextcloud-aio	
+ac69a63c1141df365ce5def94ea0c4fe744f75052c9d14f4c980c6912c25c9cf	nextcloud-aio-clamav	running	Up About an hour (healthy)	nextcloud-aio	
+2d29dc17cfa56667ed51c6fb1f7ef5e4a6985834b3f32d050a271a714517c356	nextcloud-aio-redis	running	Up About an hour (healthy)	nextcloud-aio	
+2cfb3082ee97b343445b528724b316d259e0c3e82067610b163257c3ddff1ca3	nextcloud-aio-database	running	Up About an hour (healthy)	nextcloud-aio	
+3fc19fe3ebc0398cab3985c8f38cecef30e982d957aecbba844c8ba973090686	nextcloud-aio-whiteboard	running	Up About an hour (healthy)	nextcloud-aio	
+9606b2d78b27874c384ad56b1bae41d9e1334880936681a3f584b46550bcee3e	nextcloud-aio-notify-push	running	Up About an hour (healthy)	nextcloud-aio	
+6bb38de77ef28eb214c2d493366581f6fbda20000b6eff69ec0510ece0d03f51	nextcloud-aio-talk	running	Up About an hour (healthy)	nextcloud-aio	
+7b4ab28e79dec9948ed2b94d47290c55ba864dd144da8dcc83662368f96f4628	nextcloud-aio-eurooffice	running	Up About an hour (healthy)	nextcloud-aio	
+2abc7736e0874e42245018511ddd91916a4caa6df4283ed7c12e9142fb6f383e	nextcloud-aio-borgbackup	exited	Exited (0) About an hour ago	nextcloud-aio	
+8973fecad9a293e90a026796082258f8e162eccafc7eac2e3442e8181eb21395	nextcloud-aio-watchtower	exited	Exited (0) 2 hours ago	nextcloud-aio	
+cbebd978f2a8ada0d184cb9958ac06eb7b1adaf4b713d854eafdaf1b6b6561d1	StirlingPDF	created	Created		
+319b98b331e775cb2b311d5c32e7d4c04f1e8b90c6248f2485035e86f023e9dd	nextcloud-aio-mastercontainer	running	Up 2 hours (healthy)	nextcloud-aio	
+ea1dd31451932652ff176fface2acfd0dcbe82a6dad10987124db5f56942dab2	Glance	running	Up 2 hours		
+9dc47b18147ffedd01878d3b4e074b10e6bf48a7eb42f3ca4b4eaf435f1046b1	ClamAV	created	Created		
+726513e5d451c57c16f55dbb024deb6ae3f615f5cd0a36d996d666f8817dc043	beszel-agent	running	Up 4 hours		
+26908a66f60faf7abfe3d591889f24c9ba987def7cf83c0cbceb586e3977fa23	immich_machine_learning	running	Up 41 hours (healthy)	immich	
+a2e4237f5640fa9619b71f6b8fcc537eeead7748569921b9e447035160a4776e	immich_server	running	Up 41 hours (healthy)	immich	
+26d81c29de537696ecf8915c40a605242bac06ad490ec89a31ab717b351c680c	super-productivity	running	Up 4 hours		
+9ab9d2ec2ffc303b133f4a414a683c7167c20e3d403f26ed3ae128d0e983e7d0	binhex-delugevpn	running	Up 4 hours		
+8a20a440da2b86933ec2c15a7fc0044e483074f8b3f2c85555bcb034224ef0ac	Draw.io	created	Created		
+0058b2d74c322ba7ccfcd799d196d6cd2d85f9bc600185fa060d8d1f67a51a30	postgresql17	running	Up 4 hours		
+0314b96dca0c44e8354fb9ffd7a8267ae28c4bb61d6a5ffb1bc41db4c0488066	Portainer-Agent	running	Up 4 hours		
+841361a7c260dba1c9543cb92bbe9eb70635dba8d5bc7044a8a4470da74e09ce	binhex-sabnzbdvpn	running	Up 4 hours		
+26809355cce40c6955d503ebeeea570af56769439efbb8d56317365de16b0a16	binhex-plexpass	running	Up 4 hours (healthy)		
+58ce9139c01e045978b5b526a9e4a6c34aa98ad22e2d0110ee4c1c94415d7474	Jellyfin	running	Up 4 hours (healthy)		
+2c99e79292fe765176ef25ae5b545243509c3c95a60891bd574c3fc92be0ed34	teslamate-teslamate-1	running	Up 41 hours	teslamate	
+ec80a2ac437c4273325aaf2453be267e958cdf1ff34dffafc139200b1fd846e6	teslamate-grafana-1	running	Up 41 hours	teslamate	
+5bd0874f20cc64d506e506ac53cc4179aedab4e09d1a5fed3439d264ca47b99a	Duplicacy	running	Up 41 hours		
+d95396f1336e95121bebe84832a750854b5f5ecc190485cd9cb21701658d1674	binhex-seerr	running	Up 4 hours (healthy)		
+bf88e6417501ef23ba32dfde6fd18b091c8f0966e44b375f37c62002a74fb7d2	binhex-prowlarr	running	Up 4 hours (healthy)		
+a3ae3cc1952c449c73109376fae7764eb36c6bbed929bd6b541d25324ffc450d	ConvertX	running	Up 4 hours		
+b1a8c0e0b3dbb0d1dd94620d7a3f4f6255418a6a8903cc84b2ca3752c20494d2	Nginx-Proxy-Manager-Official	running	Up 4 hours		
+28f36ee7fea623db398077c4abc1fe486bcac40d4512477d789065168b30e966	teslamate-mosquitto-1	running	Up 41 hours	teslamate	
+59bb0fb313c9016bd04b4c46b745a89ab6870cd9ffdde6ffdce549defc66c12c	immich_postgres	running	Up 41 hours (healthy)	immich	
+b76bb15fae33505c2af07d8c73cea5ee125f4e4f493c3573f3d8a22f3dd4a1fd	immich_redis	running	Up 41 hours (healthy)	immich	
+468dda4e41eb993f77c1374b5731337ce0b1e776032caa554c19babe46232dd9	flaresolverr	running	Up 41 hours		
+44021a770f6c650acf281b3528efb41607c2433a8216f57591586db8d3563291	binhex-readarr	running	Up 4 hours (healthy)		
+9c20f9fabc21791c66b7bab07a8573ac7eae2ad86acf7130f063245e6eaa9d3a	binhex-sonarr	running	Up 4 hours (healthy)		
+c72e4f3e9be045ed4c66fe4913aa5cbaac46cccb8d9fc3b42cc9ba68e96b54ec	binhex-radarr	running	Up 4 hours (healthy)		
+09e4691e05d7842a3a64530dbb4d544f47b374b66934cedb0ca823873a4c153c	kiwix-serve	running	Up 4 hours		
+0eca19846cfa4660ccb807c6590ffb8dc49ee336da52108303ff0c421cd063a4	db-backup	running	Up 4 hours		
+4b5dbefe7a499d3e68d51077832e5a8671eb3a5a2c8f7983ef0f5522515e5f3a	nextcloud-aio-collabora	exited	Exited (0) 3 months ago	nextcloud-aio	
+c2b2d7162fc4a3294a0da84381209a467de5361f6862566aa516e418bf8c7715	AutoSlackPack	exited	Exited (137) 4 months ago		
+af109be78a95482c51d27b95448f792925c3a62a65771684523f2f8df2d6bf7b	IT-Tools	running	Up 4 hours		
