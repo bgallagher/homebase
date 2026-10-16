@@ -802,6 +802,23 @@ if args.count > 2, args[2] == "apt-stream-check" {
     print(failures == 0 ? "apt-stream-check: all passed" : "apt-stream-check: \(failures) FAILED")
     exit(failures == 0 ? 0 : 1)
 }
+if args.count > 2, args[2] == "alerts" {
+    // Read-only: the background alert checks (services, containers, Unraid) and the signals they raise.
+    var signals: [AlertSignal] = []
+    let services = await ServicesSession(transport: transport).refresh()
+    if let snap = services.snapshot { signals += AlertRules.services(snap) { $0.visibleByDefault } } else { print("services: \(services.error ?? "?")") }
+    if let reading = await DockerStatesSession(transport: transport).read() {
+        print("containers: \(reading.containers.count)\(reading.problem.map { ", problem \($0)" } ?? "")")
+        signals += AlertRules.containers(reading)
+        let hrefs = CertificateCheck.targets(reading.containers.map(\.href))
+        if !hrefs.isEmpty { print("https bookmarks to check from the Mac: \(hrefs)") }
+    } else { print("containers: ssh failed") }
+    let nas = await UnraidSession(transport: transport).refresh()
+    if let snap = nas.snapshot { signals += AlertRules.storage(snap) }
+    print(signals.isEmpty ? "no alerts" : "\(signals.count) alert(s):")
+    for s in signals { print("   [\(s.severity.rawValue)] \(s.title): \(s.detail ?? "")") }
+    exit(0)
+}
 if args.count > 2, args[2] == "services" {
     // Read-only: the Services screen's scan, shown the way the screen sorts it (shown first, then hidden).
     let session = ServicesSession(transport: transport)

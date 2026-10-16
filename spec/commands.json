@@ -22,6 +22,17 @@
       ]
     },
     {
+      "id": "docker_states",
+      "description": "Read-only, light container check for background alerts: every container's id, name, state, status text (which carries the exit code: 'Exited (1) 2 hours ago'), compose project and Homepage bookmark address (for certificate checks). No `docker stats`, so it is fast. Errors are folded into stdout (2>&1) so a refused socket or a missing docker can be told apart from no containers. Ends with true.",
+      "script": "docker ps -a --no-trunc --format '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Status}}\\t{{.Label \"com.docker.compose.project\"}}\\t{{.Label \"homepage.href\"}}' 2>&1; true",
+      "timeoutSeconds": 15,
+      "distros": [
+        "debian",
+        "ubuntu",
+        "unraid"
+      ]
+    },
+    {
       "id": "docker_start",
       "kind": "action",
       "description": "docker start one container. {id} must match ^[0-9a-f]{12,64}$.",

@@ -23,6 +23,7 @@ enum Demo {
     static var favicons: URL { directory.appendingPathComponent("favicons", isDirectory: true) }
     static var appIcons: URL { directory.appendingPathComponent("app-icons", isDirectory: true) }
     static var serviceSettings: URL { directory.appendingPathComponent("services", isDirectory: true) }
+    static var alertSettings: URL { directory.appendingPathComponent("alerts", isDirectory: true) }
 
     /// A store holding just the demo servers, in a temporary folder (never the real `servers.json`).
     static func store() -> ServerStore {
@@ -256,6 +257,7 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
         if command == ServerSession.overviewCommand { return CommandResult(stdout: overview()) }
         if command == DockerSession.command { return CommandResult(stdout: docker()) }
         if command == ServicesSession.command { return CommandResult(stdout: DemoServices.output(for: profile)) }
+        if command == DockerStatesSession.command { return CommandResult(stdout: dockerStates()) }
         if let status = DemoServices.read(command) { return CommandResult(stdout: status) }
         if command == UpdatesSession.command || command.contains("apt-get") && !command.contains("autoremove") { return try await updates.run(command, timeout: timeout) }
         if command.contains("/proc/sys/kernel/random/boot_id") && command.count < 80 { return CommandResult(stdout: "demo-boot-1\n") }
@@ -382,6 +384,23 @@ final class DemoTransport: SSHTransport, @unchecked Sendable {
         ##unhealthy
         \(unhealthy.joined(separator: "\n"))
         """
+    }
+
+    /// The light container check for alerts, from the same made-up containers as the Docker poll.
+    private func dockerStates() -> String {
+        var rows: [String] = []
+        for stack in profile.stacks {
+            for c in stack.containers {
+                let id = String(SHA256.hash(data: Data("\(stack.name)/\(c.service)".utf8)).map { String(format: "%02x", $0) }.joined())
+                rows.append([id, "\(stack.name)-\(c.service)-1", c.running ? "running" : "exited", c.status, stack.name,
+                             c.service == stack.containers.first?.service ? (stack.bookmark?.href ?? "") : ""].joined(separator: "\t"))
+            }
+        }
+        for c in profile.standalone {
+            let id = String(SHA256.hash(data: Data("standalone/\(c.service)".utf8)).map { String(format: "%02x", $0) }.joined())
+            rows.append([id, c.service, c.running ? "running" : "exited", c.status, "", ""].joined(separator: "\t"))
+        }
+        return rows.joined(separator: "\n") + "\n"
     }
 
     private func docker() -> String {

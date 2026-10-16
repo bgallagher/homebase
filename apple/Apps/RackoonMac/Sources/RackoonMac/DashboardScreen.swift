@@ -4,18 +4,19 @@ import RackoonCore
 import SwiftUI
 
 /// Every server at once, as a carousel of pages: Health (uptime and resource history), Servers (one tile each),
-/// Docker (every stack, grouped by server), Services (what runs outside Docker) and Bookmarks (grouped by server). Reads what the polls already have: the
+/// Docker (every stack, grouped by server), Services (what runs outside Docker), Alerts (every server's) and Bookmarks. Reads what the polls already have: the
 /// selected server's live poll, the others' once-a-minute poll (`FleetMonitor`), and, while the Docker or Bookmarks page
 /// is showing, each answering server's Docker poll.
 struct DashboardScreen: View {
     let model: AppModel
     let workspace: DockerWorkspace
     let theme: TerminalTheme
+    let openAlert: (ServerAlert) -> Void
     let openServer: (Server, Screen) -> Void
     let openStack: (Server, String) -> Void
 
     enum Page: String, CaseIterable, Identifiable {
-        case health, servers, docker, services, bookmarks
+        case health, servers, docker, services, alerts, bookmarks
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -23,6 +24,7 @@ struct DashboardScreen: View {
             case .servers: "Servers"
             case .docker: "Docker"
             case .services: "Services"
+            case .alerts: "Alerts"
             case .bookmarks: "Bookmarks"
             }
         }
@@ -32,6 +34,7 @@ struct DashboardScreen: View {
             case .servers: "server.rack"
             case .docker: "shippingbox"
             case .services: "gearshape.2"
+            case .alerts: "bell"
             case .bookmarks: "bookmark"
             }
         }
@@ -62,6 +65,10 @@ struct DashboardScreen: View {
         .foregroundStyle(Theme.textPrimary)
         .onAppear { page = Page(rawValue: savedPage) ?? .health }
         .onChange(of: page) { _, new in if let new { savedPage = new.rawValue } }
+        // Set from outside (a clicked notification) while the dashboard is showing.
+        .onChange(of: savedPage) { _, new in
+            if let p = Page(rawValue: new), p != page { withAnimation(.easeInOut(duration: 0.25)) { page = p } }
+        }
         .focusedSceneValue(\.screenRefresh, {
             model.refresh()
             model.fleet.refreshAll()
@@ -140,6 +147,7 @@ struct DashboardScreen: View {
                 case .servers: ServersPage(rows: rows, openServer: openServer)
                 case .docker: DockerPage(rows: rows, workspace: workspace, openServer: openServer, openStack: openStack)
                 case .services: ServicesPage(rows: rows, openServer: openServer)
+                case .alerts: AlertsPage(rows: rows, open: openAlert)
                 case .bookmarks: BookmarksPage(rows: rows, workspace: workspace)
                 }
             }
@@ -901,6 +909,56 @@ private struct ServicesServerSection: View {
             }
         }
         .padding(.top, 6)
+    }
+}
+
+// MARK: - Alerts
+
+/// Every server's alerts in one list, worst first.
+private struct AlertsPage: View {
+    let rows: [FleetRow]
+    let open: (ServerAlert) -> Void
+    @State private var tab: AlertTab = .active
+    private let monitor = AlertMonitor.shared
+
+    var body: some View {
+        let book = monitor.book
+        let known = Set(rows.map(\.id))
+        let active = book.active().filter { known.contains($0.serverID) }
+        let list: [ServerAlert] = switch tab {
+        case .active: active
+        case .muted: book.mutedAlerts().filter { known.contains($0.serverID) }
+        case .history: book.history().filter { known.contains($0.serverID) }
+        }
+        let day = Date().addingTimeInterval(-86400)
+        VStack(alignment: .leading, spacing: 14) {
+            TileGrid(count: 4) {
+                let critical = active.filter { $0.severity == .critical }.count
+                Headline(title: "Critical", value: "\(critical)", detail: critical > 0 ? "needs you now" : "None",
+                         detailTint: critical > 0 ? Theme.danger : Theme.textMuted)
+                let warnings = active.filter { $0.severity == .warning }.count
+                Headline(title: "Warnings", value: "\(warnings)", detail: "\(book.unseenCount()) not seen yet")
+                let affected = Set(active.filter { $0.severity != .info }.map(\.serverID)).count
+                Headline(title: "Servers affected", value: "\(affected) / \(rows.count)", detail: affected == 0 ? "All clear" : "with a warning or worse")
+                Headline(title: "Resolved today", value: "\(book.history().filter { ($0.resolvedAt ?? .distantPast) > day }.count)",
+                         detail: "kept for \(AlertBook.historyDays) days")
+            }
+            AlertsHeaderBar(tab: $tab, counts: [.active: active.count, .muted: book.mutedAlerts().count, .history: book.history().count],
+                            clearable: !book.history().isEmpty)
+            AlertList(alerts: list, tab: tab, showServer: true, open: open)
+        }
+    }
+}
+
+/// The Dashboard's alert tabs and actions (its title is the Dashboard's own).
+private struct AlertsHeaderBar: View {
+    @Binding var tab: AlertTab
+    let counts: [AlertTab: Int]
+    let clearable: Bool
+
+    var body: some View {
+        AlertsHeader(title: "Every server", subtitle: "Connection, disks, updates, containers, services, storage and certificates",
+                     server: nil, tab: $tab, counts: counts, clearable: clearable)
     }
 }
 

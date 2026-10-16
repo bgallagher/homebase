@@ -49,3 +49,16 @@ final class ServiceVisibilityStoreTests: XCTestCase {
         XCTAssertFalse(ServiceVisibilityStore(directory: dir).isVisible(ssh, server: "a"))
     }
 }
+
+/// The demo answers the background container check in the format the alert rules read.
+final class DemoAlertsTests: XCTestCase {
+    func testDemoContainerCheckParses() async throws {
+        let transport = DemoTransport(profile: .homelab)
+        let read = await DockerStatesSession(transport: transport).read()
+        let reading = try XCTUnwrap(read)
+        XCTAssertNil(reading.problem)
+        XCTAssertGreaterThan(reading.containers.count, 10)
+        XCTAssertTrue(reading.containers.contains { $0.status.contains("unhealthy") })
+        XCTAssertTrue(AlertRules.containers(reading).isEmpty, "the demo's containers are all up; the unhealthy one comes from the Overview")
+    }
+}
